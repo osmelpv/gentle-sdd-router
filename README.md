@@ -1,6 +1,6 @@
 # gentle-sdd-router
 
-SDD phase-aware AI routing layer with profile-driven model selection, fallback chains, and hybrid local/online execution.
+SDD phase-aware AI routing layer with profile-driven model resolution and fallback chains.
 
 ---
 
@@ -10,7 +10,7 @@ SDD phase-aware AI routing layer with profile-driven model selection, fallback c
 
 It introduces a **profile-driven approach** to model selection, allowing each phase of an SDD workflow to dynamically resolve the best available model at runtime.
 
-Instead of binding phases to fixed models, this router enables flexible, resilient, and adaptive execution across providers and environments.
+Instead of binding phases to fixed models, this router enables flexible, resilient, and adaptive routing across providers and environments.
 
 ---
 
@@ -60,15 +60,17 @@ If a model fails, degrades, or becomes unavailable, the router automatically mov
 
 Route entries may be written as legacy strings or as objects with reserved fields like `kind`, `target`, and `metadata`. v1 still resolves only one active runner route per phase.
 
+The router discovers `router/router.yaml` by searching the current working directory first and then the module's own location, so the CLI keeps working when it is executed from a different cwd.
+
 ---
 
-### Hybrid Execution
+### Hybrid Targets
 
 Profiles can mix:
 - local models (Ollama)
 - online providers (OpenAI, Anthropic, Google, etc.)
 
-This enables cost optimization and resilience.
+This keeps profiles flexible for future execution layers, but v1 only resolves routes and does not invoke providers.
 
 ---
 
@@ -102,6 +104,14 @@ gsr list
 
 
 This allows seamless integration with agent-driven workflows.
+
+---
+
+## Configuration Format Limits
+
+The bundled YAML parser is intentionally small. It supports the subset used by `router/router.yaml`: mappings, sequences, nested objects, strings, numbers, booleans, and null-like values.
+
+It does not aim to be a full YAML implementation, so advanced YAML features such as anchors, tags, multiline scalars, and complex flow syntax are out of scope for v1.
 
 ---
 

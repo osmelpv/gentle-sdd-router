@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const CANONICAL_PHASES = [
   'orchestrator',
@@ -11,6 +12,10 @@ const CANONICAL_PHASES = [
   'verify',
   'archive',
 ];
+
+// Discovery starts from the consumer cwd and falls back to the module location
+// so CLI/library usage keeps working outside the repo root.
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 export function findProjectRoot(startDir = process.cwd()) {
   let current = path.resolve(startDir);
@@ -30,8 +35,31 @@ export function findProjectRoot(startDir = process.cwd()) {
   }
 }
 
-export function getConfigPath(startDir = process.cwd()) {
-  return path.join(findProjectRoot(startDir), 'router', 'router.yaml');
+export function discoverConfigPath(startPoints = [process.cwd(), MODULE_DIR]) {
+  const seeds = Array.isArray(startPoints) ? startPoints : [startPoints];
+
+  for (const seed of seeds) {
+    try {
+      return path.join(findProjectRoot(seed), 'router', 'router.yaml');
+    } catch {
+      // Keep trying the next consumer context.
+    }
+  }
+
+  return null;
+}
+
+export function getConfigPath(startPoints = [process.cwd(), MODULE_DIR]) {
+  const configPath = discoverConfigPath(startPoints);
+  if (!configPath) {
+    throw new Error('No se encontró router/router.yaml desde el contexto actual ni el módulo.');
+  }
+
+  return configPath;
+}
+
+export function tryGetConfigPath(startPoints = [process.cwd(), MODULE_DIR]) {
+  return discoverConfigPath(startPoints);
 }
 
 export function loadRouterConfig(configPath = getConfigPath()) {
@@ -44,9 +72,21 @@ export function loadRouterConfig(configPath = getConfigPath()) {
 export function saveRouterConfig(config, configPath = getConfigPath()) {
   validateRouterConfig(config);
   const yaml = stringifyYaml(config);
-  const tempPath = `${configPath}.tmp`;
+  const tempPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
+
   fs.writeFileSync(tempPath, yaml, 'utf8');
-  fs.renameSync(tempPath, configPath);
+
+  try {
+    fs.renameSync(tempPath, configPath);
+  } catch (error) {
+    try {
+      fs.unlinkSync(tempPath);
+    } catch {
+      // Ignore cleanup failures; the original error is the important one.
+    }
+
+    throw error;
+  }
 }
 
 export function setActiveProfile(config, profileName) {
@@ -191,6 +231,7 @@ function isObject(value) {
 }
 
 function parseYaml(text) {
+  // Purpose-built parser for the router config subset; keep the grammar small.
   const lines = text.replace(/\r\n/g, '\n').split('\n');
   let index = 0;
 
@@ -428,6 +469,10 @@ function parseScalar(raw) {
 
   if (raw === 'false') {
     return false;
+  }
+
+  if (raw === 'null') {
+    return null;
   }
 
   if (/^-?\d+$/.test(raw)) {

@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import {
+  discoverConfigPath,
   loadRouterConfig,
   resolveRouterState,
   saveRouterConfig,
@@ -100,6 +103,7 @@ test('switches the active profile and persists it', () => {
 
   const persisted = loadRouterConfig(path.join(tempDir, 'router', 'router.yaml'));
   assert.equal(persisted.active_profile, 'budget');
+  assert.ok(!fs.readdirSync(path.join(tempDir, 'router')).some((name) => name.endsWith('.tmp')));
 });
 
 test('saves and reloads route objects without losing their shape', () => {
@@ -142,6 +146,76 @@ test('status command only renders resolved routes', async () => {
   assert.match(output, /Resolved routes:/);
   assert.match(output, /orchestrator: anthropic\/claude-sonnet/);
   assert.doesNotMatch(output, /provider|execute/i);
+});
+
+test('status resolves config from outside the repo cwd', () => {
+  const outsideCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-outside-'));
+  const binPath = fileURLToPath(new URL('../bin/gsr.js', import.meta.url));
+  const result = spawnSync(process.execPath, [binPath, 'status'], {
+    cwd: outsideCwd,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Active profile: default/);
+  assert.match(result.stdout, /Resolved routes:/);
+});
+
+test('status keeps working after cwd changes within the process', async () => {
+  const outsideCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-cwd-'));
+  const originalCwd = process.cwd();
+  const originalWrite = process.stdout.write;
+  const chunks = [];
+
+  process.chdir(outsideCwd);
+  process.stdout.write = function capture(chunk) {
+    chunks.push(String(chunk));
+    return true;
+  };
+
+  try {
+    await runCli(['status']);
+  } finally {
+    process.stdout.write = originalWrite;
+    process.chdir(originalCwd);
+  }
+
+  const output = chunks.join('');
+  assert.match(output, /Active profile: default/);
+  assert.match(output, /Resolved routes:/);
+});
+
+test('status reports invalid configs honestly', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-invalid-'));
+  fs.mkdirSync(path.join(tempDir, 'router'), { recursive: true });
+  fs.writeFileSync(path.join(tempDir, 'router', 'router.yaml'), 'version: nope\n', 'utf8');
+
+  const originalCwd = process.cwd();
+  const originalWrite = process.stdout.write;
+  const chunks = [];
+
+  process.chdir(tempDir);
+  process.stdout.write = function capture(chunk) {
+    chunks.push(String(chunk));
+    return true;
+  };
+
+  try {
+    await runCli(['status']);
+  } finally {
+    process.stdout.write = originalWrite;
+    process.chdir(originalCwd);
+  }
+
+  const output = chunks.join('');
+  assert.match(output, /Status: invalid/);
+  assert.match(output, /version: 1|router\.yaml requiere version: 1/);
+});
+
+test('config discovery returns null when no router config exists', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-missing-'));
+
+  assert.equal(discoverConfigPath([tempDir]), null);
 });
 
 function loadFixtureConfig(yaml = fixtureYaml) {

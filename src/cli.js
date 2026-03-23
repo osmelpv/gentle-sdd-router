@@ -6,6 +6,7 @@ import {
   resolveRouterState,
   saveRouterConfig,
   setActiveProfile,
+  tryGetConfigPath,
 } from './router-config.js';
 
 export async function runCli(argv) {
@@ -51,11 +52,21 @@ function runReload() {
 }
 
 function runStatus() {
-  const configPath = getConfigPath();
-  const config = loadRouterConfig(configPath);
-  const state = resolveRouterState(config);
+  const configPath = tryGetConfigPath();
 
-  process.stdout.write(renderStatus(state, configPath));
+  if (!configPath) {
+    process.stdout.write(renderMissingStatus());
+    return;
+  }
+
+  try {
+    const config = loadRouterConfig(configPath);
+    const state = resolveRouterState(config);
+
+    process.stdout.write(renderStatus(state, configPath));
+  } catch (error) {
+    process.stdout.write(renderInvalidStatus(configPath, error));
+  }
 }
 
 function runList() {
@@ -82,6 +93,24 @@ function renderStatus(state, configPath) {
   }
 
   return `${lines.join('\n')}\n`;
+}
+
+function renderMissingStatus() {
+  return [
+    'Config: missing',
+    'Status: unavailable',
+    'Reason: router/router.yaml no está disponible en el contexto actual ni junto al módulo.',
+  ].join('\n') + '\n';
+}
+
+function renderInvalidStatus(configPath, error) {
+  const message = error instanceof Error ? error.message : String(error);
+
+  return [
+    `Config: ${path.relative(process.cwd(), configPath) || configPath}`,
+    'Status: invalid',
+    `Reason: ${message}`,
+  ].join('\n') + '\n';
 }
 
 function printUsage() {
