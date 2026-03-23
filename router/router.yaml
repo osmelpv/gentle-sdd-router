@@ -1,0 +1,50 @@
+version: 1
+
+active_profile: default
+
+profiles:
+  default:
+    phases:
+      orchestrator:
+        - anthropic/claude-sonnet
+        - openai/gpt
+        - google/gemini-pro
+
+      explore:
+        - google/gemini-flash
+        - openai/gpt
+        - anthropic/claude-sonnet
+
+      spec:
+        - anthropic/claude-opus
+        - openai/o3
+        - google/gemini-pro
+
+      design:
+        - anthropic/claude-opus
+        - openai/o3
+        - google/gemini-pro
+
+      tasks:
+        - google/gemini-flash
+        - openai/gpt
+        - anthropic/claude-sonnet
+
+      apply:
+        - ollama/qwen3-coder
+        - anthropic/claude-sonnet
+        - openai/gpt
+
+      verify:
+        - openai/o3
+        - anthropic/claude-opus
+        - google/gemini-pro
+
+      archive:
+        - google/gemini-flash
+        - openai/gpt
+
+    rules:
+      fallback_enabled: true
+      retry_count: 2
+      timeout_seconds: 30

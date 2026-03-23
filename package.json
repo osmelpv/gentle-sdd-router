@@ -1,0 +1,12 @@
+{
+  "name": "gentle-sdd-router",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "gsr": "./bin/gsr.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}

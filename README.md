@@ -48,7 +48,7 @@ Each phase resolves models independently using a priority chain.
 
 ### Fallback Chains
 
-Each phase can define multiple models:
+Each phase can define multiple route entries:
 
 sdd-apply:
 1: ollama/qwen
@@ -57,6 +57,8 @@ sdd-apply:
 
 
 If a model fails, degrades, or becomes unavailable, the router automatically moves to the next option.
+
+Route entries may be written as legacy strings or as objects with reserved fields like `kind`, `target`, and `metadata`. v1 still resolves only one active runner route per phase.
 
 ---
 

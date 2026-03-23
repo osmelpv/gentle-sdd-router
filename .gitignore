@@ -1,0 +1,4 @@
+.engram/
+node_modules/
+.env
+*.log
