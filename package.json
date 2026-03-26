@@ -1,8 +1,35 @@
 {
   "name": "gentle-sdd-router",
   "version": "0.1.0",
+  "description": "Release-ready non-executing CLI router for SDD adoption, YAML control, and OpenCode boundary reports.",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
+  "keywords": [
+    "sdd",
+    "router",
+    "cli",
+    "adoption",
+    "documentation",
+    "opencode",
+    "release",
+    "compatibility"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/osmelpv/gentle-sdd-router.git"
+  },
+  "files": [
+    "README.md",
+    "assets/",
+    "bin/",
+    "docs/",
+    "src/",
+    "router/"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "bin": {
     "gsr": "./bin/gsr.js"
   },

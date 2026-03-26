@@ -1,4 +1,5 @@
 .engram/
 node_modules/
+AGENTS.md
 .env
 *.log

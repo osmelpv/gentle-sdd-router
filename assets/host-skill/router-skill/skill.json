@@ -1,0 +1,6 @@
+{
+  "name": "router-skill",
+  "scope": "host-local",
+  "boundary": "external-router",
+  "managedBy": "host-adoption"
+}
