@@ -16,6 +16,8 @@ const EXECUTION_HINT_FIELDS = new Set([
   'steps',
 ]);
 
+const ALLOWED_PERMISSION_KEYS = new Set(['read', 'write', 'edit', 'bash', 'delegate']);
+
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -24,6 +26,28 @@ function checkExecutionHints(value, context) {
   for (const key of Object.keys(value)) {
     if (EXECUTION_HINT_FIELDS.has(key)) {
       throw new Error(`${context} must not include execution-oriented field "${key}".`);
+    }
+  }
+}
+
+function validatePermissions(permissions, filePath) {
+  if (!isObject(permissions)) {
+    throw new Error(`Profile file "${filePath}" has "permissions" but it must be an object.`);
+  }
+
+  for (const [key, value] of Object.entries(permissions)) {
+    if (!ALLOWED_PERMISSION_KEYS.has(key)) {
+      throw new Error(
+        `Profile file "${filePath}" has unknown permission key "${key}". ` +
+        `Allowed keys: ${[...ALLOWED_PERMISSION_KEYS].join(', ')}.`
+      );
+    }
+
+    if (typeof value !== 'boolean') {
+      throw new Error(
+        `Profile file "${filePath}" has non-boolean value for permission "${key}". ` +
+        `All permission values must be true or false.`
+      );
     }
   }
 }
@@ -42,6 +66,14 @@ export function validateProfileFile(profile, filePath) {
   }
 
   checkExecutionHints(profile, `Profile file "${filePath}"`);
+
+  if (profile.permissions !== undefined) {
+    validatePermissions(profile.permissions, filePath);
+  }
+
+  if (profile.hidden !== undefined && typeof profile.hidden !== 'boolean') {
+    throw new Error(`Profile file "${filePath}" has "hidden" but it must be a boolean.`);
+  }
 
   return profile;
 }

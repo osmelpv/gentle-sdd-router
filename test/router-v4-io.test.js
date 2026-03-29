@@ -141,6 +141,126 @@ describe('validateProfileFile', () => {
       /execution-oriented field "execute"/
     );
   });
+
+  test('profile with valid permissions passes validation', () => {
+    const profile = {
+      name: 'safety',
+      phases: {
+        orchestrator: [{ phase: 'orchestrator', role: 'primary', target: 'openai/gpt' }],
+      },
+      permissions: {
+        read: true,
+        write: false,
+        edit: false,
+        bash: false,
+        delegate: true,
+      },
+    };
+
+    const result = validateProfileFile(profile, '/fake/safety.router.yaml');
+    assert.equal(result, profile);
+    assert.deepEqual(result.permissions, profile.permissions);
+  });
+
+  test('profile with partial permissions passes validation', () => {
+    const profile = {
+      name: 'restricted',
+      phases: {
+        orchestrator: [{ phase: 'orchestrator', role: 'primary', target: 'openai/gpt' }],
+      },
+      permissions: { write: false, edit: false },
+    };
+
+    const result = validateProfileFile(profile, '/fake/restricted.router.yaml');
+    assert.equal(result, profile);
+  });
+
+  test('profile with hidden:true passes validation', () => {
+    const profile = {
+      name: 'internal',
+      hidden: true,
+      phases: {
+        orchestrator: [{ phase: 'orchestrator', role: 'primary', target: 'openai/gpt' }],
+      },
+    };
+
+    const result = validateProfileFile(profile, '/fake/internal.router.yaml');
+    assert.equal(result, profile);
+    assert.equal(result.hidden, true);
+  });
+
+  test('profile with hidden:false passes validation', () => {
+    const profile = {
+      name: 'visible',
+      hidden: false,
+      phases: {
+        orchestrator: [{ phase: 'orchestrator', role: 'primary', target: 'openai/gpt' }],
+      },
+    };
+
+    const result = validateProfileFile(profile, '/fake/visible.router.yaml');
+    assert.equal(result, profile);
+  });
+
+  test('profile with non-boolean hidden throws', () => {
+    const profile = {
+      name: 'bad',
+      hidden: 'yes',
+      phases: {
+        orchestrator: [{ phase: 'orchestrator', role: 'primary', target: 'openai/gpt' }],
+      },
+    };
+
+    assert.throws(
+      () => validateProfileFile(profile, '/fake/bad.router.yaml'),
+      /"hidden" but it must be a boolean/
+    );
+  });
+
+  test('profile with unknown permission key throws', () => {
+    const profile = {
+      name: 'bad',
+      phases: {
+        orchestrator: [{ phase: 'orchestrator', role: 'primary', target: 'openai/gpt' }],
+      },
+      permissions: { read: true, execute: true },
+    };
+
+    assert.throws(
+      () => validateProfileFile(profile, '/fake/bad.router.yaml'),
+      /unknown permission key "execute"/
+    );
+  });
+
+  test('profile with non-boolean permission value throws', () => {
+    const profile = {
+      name: 'bad',
+      phases: {
+        orchestrator: [{ phase: 'orchestrator', role: 'primary', target: 'openai/gpt' }],
+      },
+      permissions: { read: 'yes' },
+    };
+
+    assert.throws(
+      () => validateProfileFile(profile, '/fake/bad.router.yaml'),
+      /non-boolean value for permission "read"/
+    );
+  });
+
+  test('profile with permissions as non-object throws', () => {
+    const profile = {
+      name: 'bad',
+      phases: {
+        orchestrator: [{ phase: 'orchestrator', role: 'primary', target: 'openai/gpt' }],
+      },
+      permissions: 'all',
+    };
+
+    assert.throws(
+      () => validateProfileFile(profile, '/fake/bad.router.yaml'),
+      /"permissions" but it must be an object/
+    );
+  });
 });
 
 describe('loadV4Profiles', () => {

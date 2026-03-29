@@ -2,6 +2,12 @@ name: safety
 availability: unavailable
 complexity: medium
 fallbacks: balanced
+permissions:
+  read: true
+  write: false
+  edit: false
+  bash: false
+  delegate: true
 phases:
   orchestrator:
     - target: openai/gpt

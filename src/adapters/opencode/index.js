@@ -56,6 +56,15 @@ import {
   createProviderExecutionResultEnvelope,
   validateProviderExecutionRequest,
 } from './provider-execution-contract.js';
+import {
+  generateOpenCodeOverlay as _generateOpenCodeOverlay,
+  mapPermissions as _mapPermissions,
+  mergeOverlayWithExisting as _mergeOverlayWithExisting,
+  mergeOverlayWithFile as _mergeOverlayWithFile,
+  writeOpenCodeConfig as _writeOpenCodeConfig,
+  OPENCODE_CONFIG_PATH as _OPENCODE_CONFIG_PATH,
+  GSR_AGENT_PREFIX as _GSR_AGENT_PREFIX,
+} from './overlay-generator.js';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1309,4 +1318,35 @@ function classifyHandoffCompatibility(report, runtimeContext) {
   }
 
   return 'supported';
+}
+
+// ── OpenCode Overlay Generation ──────────────────────────────────────────────
+
+export const mapPermissions = _mapPermissions;
+export const generateOpenCodeOverlay = _generateOpenCodeOverlay;
+export const mergeOverlayWithExisting = _mergeOverlayWithExisting;
+export const mergeOverlayWithFile = _mergeOverlayWithFile;
+export const writeOpenCodeConfig = _writeOpenCodeConfig;
+export const OPENCODE_CONFIG_PATH = _OPENCODE_CONFIG_PATH;
+export const GSR_AGENT_PREFIX = _GSR_AGENT_PREFIX;
+
+/**
+ * Facade for the `gsr apply opencode [--apply]` CLI command.
+ * Returns a structured report; the CLI is responsible for printing and writing.
+ *
+ * @param {{ apply?: boolean, configPath?: string, targetPath?: string }} options
+ * @returns {{ agents: Record<string, object>, warnings: string[], writtenPath?: string }}
+ */
+export function applyOpenCodeOverlayCommand(options = {}) {
+  const config = loadRouterConfig(options.configPath ?? getConfigPath());
+  const overlay = _generateOpenCodeOverlay(config);
+
+  if (!options.apply) {
+    return { agents: overlay.agent, warnings: overlay.warnings };
+  }
+
+  const merged = _mergeOverlayWithFile(overlay, options.targetPath);
+  const writtenPath = _writeOpenCodeConfig(merged, options.targetPath);
+
+  return { agents: overlay.agent, warnings: overlay.warnings, writtenPath };
 }

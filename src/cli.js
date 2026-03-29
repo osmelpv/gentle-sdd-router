@@ -5,6 +5,7 @@ import {
   formatConfigPathForDisplay,
   getConfigPath,
   activateOpenCodeCommand,
+  applyOpenCodeOverlayCommand,
   bootstrapOpenCodeCommand,
   createMultimodelBrowseContract,
   createMultimodelCompareContract,
@@ -90,6 +91,8 @@ export async function runCli(argv) {
       return runToggleActivation('inactive', rest);
     case 'update':
       return runUpdate(rest);
+    case 'apply':
+      return runApply(rest);
     default:
       printUsage();
       if (command) {
@@ -311,6 +314,67 @@ async function runUpdate(args) {
   process.stdout.write('Config migration complete.\n');
 }
 
+function runApply(args) {
+  const target = args[0];
+
+  if (!target) {
+    printUsage();
+    throw new Error('gsr apply requires a target. Available: opencode');
+  }
+
+  if (target !== 'opencode') {
+    printUsage();
+    throw new Error(`Unknown apply target: ${target}. Available: opencode`);
+  }
+
+  const applyFlag = args.includes('--apply');
+  const configPath = safeDiscoverConfigPath();
+
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr install` first.\n');
+    return;
+  }
+
+  const report = applyOpenCodeOverlayCommand({
+    apply: applyFlag,
+    configPath,
+  });
+
+  const agentCount = Object.keys(report.agents).length;
+
+  if (agentCount === 0) {
+    process.stdout.write('No presets with orchestrator phase found — overlay would be empty.\n');
+    return;
+  }
+
+  process.stdout.write(`OpenCode overlay: ${agentCount} agent(s) from router profiles\n`);
+  process.stdout.write('\n');
+
+  for (const [name, agent] of Object.entries(report.agents)) {
+    const tools = agent.tools ?? {};
+    const restricted = !tools.write || !tools.edit || !tools.bash;
+    const hiddenTag = agent.hidden ? ' [hidden]' : '';
+    const restrictedTag = restricted ? ' [restricted]' : '';
+    process.stdout.write(`  ${name} — ${agent.description}${restrictedTag}${hiddenTag}\n`);
+  }
+
+  if (report.warnings.length > 0) {
+    process.stdout.write('\n');
+    for (const warning of report.warnings) {
+      process.stdout.write(`Warning: ${warning}\n`);
+    }
+  }
+
+  if (!applyFlag) {
+    process.stdout.write('\n');
+    process.stdout.write('Run `gsr apply opencode --apply` to write to ~/.config/opencode/opencode.json\n');
+    return;
+  }
+
+  process.stdout.write('\n');
+  process.stdout.write(`Written to: ${report.writtenPath}\n`);
+}
+
 function renderStatus(state, configPath) {
   const controllerLabel = resolveControllerLabel();
   const activation = state.activationState === 'active' || state.activationState === true
@@ -423,6 +487,7 @@ function renderGeneralHelp() {
     `  deactivate         Hand control back to ${controllerLabel} without changing the active profile.`,
     '  render opencode    Preview the OpenCode provider-execution, host-session sync, handoff, schema metadata, and multimodel orchestration manager boundaries without implying execution.',
     '  update             Show pending config migrations. Use --apply to apply them.',
+    '  apply <target>     Generate and apply configuration overlay for a TUI target (e.g., opencode).',
     '  version            Show the installed gsr version.',
     '  help [command]     Show help for all commands or one command.',
   ].join('\n') + '\n';
@@ -519,6 +584,17 @@ function renderCommandHelp(topic, subtopic) {
     return [
       'Usage: gsr update [--apply]',
       'Show pending config migrations. Use --apply to actually apply them.',
+    ].join('\n') + '\n';
+  }
+
+  if (normalized === 'apply') {
+    return [
+      'Usage: gsr apply <target> [--apply]',
+      'Generate and apply a configuration overlay for a TUI target.',
+      'Targets: opencode',
+      '  gsr apply opencode          Preview the generated OpenCode overlay (dry-run).',
+      '  gsr apply opencode --apply  Write overlay to ~/.config/opencode/opencode.json.',
+      'Only gsr-* agent keys are created/modified; all other opencode.json keys are preserved.',
     ].join('\n') + '\n';
   }
 

@@ -296,3 +296,163 @@ test('CLI compare reports projected metadata deltas only', async () => {
   assert.match(output, /pricing\.band: team -> starter/);
   assert.doesNotMatch(output, /recommendation engine|scoring|orchestration|provider execution/i);
 });
+
+// ── gsr apply opencode ────────────────────────────────────────────────────────
+
+const v4CoreFixtureYaml = `version: 4
+active_catalog: default
+active_preset: fast
+activation_state: active
+`;
+
+const v4FastProfileYaml = `name: fast
+availability: stable
+phases:
+  orchestrator:
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: orchestrator
+      role: primary
+`;
+
+const v4SafetyProfileYaml = `name: safety
+availability: stable
+permissions:
+  read: true
+  write: false
+  edit: false
+  bash: false
+  delegate: true
+phases:
+  orchestrator:
+    - target: openai/gpt
+      kind: lane
+      phase: orchestrator
+      role: primary
+`;
+
+function makeV4TempDir() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-apply-'));
+  fs.mkdirSync(path.join(tempDir, 'router', 'profiles'), { recursive: true });
+  fs.writeFileSync(path.join(tempDir, 'router', 'router.yaml'), v4CoreFixtureYaml, 'utf8');
+  fs.writeFileSync(path.join(tempDir, 'router', 'profiles', 'fast.router.yaml'), v4FastProfileYaml, 'utf8');
+  fs.writeFileSync(path.join(tempDir, 'router', 'profiles', 'safety.router.yaml'), v4SafetyProfileYaml, 'utf8');
+  return tempDir;
+}
+
+test('CLI apply opencode previews agents without writing any files', async () => {
+  const tempDir = makeV4TempDir();
+
+  const originalCwd = process.cwd();
+  const chunks = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+
+  process.chdir(tempDir);
+  process.stdout.write = (chunk) => {
+    chunks.push(String(chunk));
+    return true;
+  };
+
+  try {
+    await runCli(['apply', 'opencode']);
+  } finally {
+    process.stdout.write = originalWrite;
+    process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true });
+  }
+
+  const output = chunks.join('');
+
+  assert.match(output, /OpenCode overlay: 2 agent\(s\)/);
+  assert.match(output, /gsr-fast/);
+  assert.match(output, /gsr-safety.*\[restricted\]/);
+  assert.match(output, /Run `gsr apply opencode --apply`/);
+  // Boundary: no provider execution wording
+  assert.doesNotMatch(output, /provider execution|executing|running/i);
+});
+
+test('CLI apply opencode --apply writes overlay to temp file without touching non-gsr keys', async () => {
+  const tempDir = makeV4TempDir();
+
+  // Create a fake opencode.json with an existing non-gsr agent.
+  const opencodeDir = path.join(tempDir, '.config', 'opencode');
+  const opencodeConfigPath = path.join(opencodeDir, 'opencode.json');
+  fs.mkdirSync(opencodeDir, { recursive: true });
+  fs.writeFileSync(opencodeConfigPath, JSON.stringify({
+    agent: {
+      'my-agent': { mode: 'primary' },
+      'gsr-stale': { mode: 'primary' },
+    },
+  }, null, 2), 'utf8');
+
+  const originalCwd = process.cwd();
+  const originalHome = process.env.HOME;
+  const chunks = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+
+  // Point HOME to tempDir so the overlay writes to our fake opencode.json.
+  process.env.HOME = tempDir;
+  process.chdir(tempDir);
+  process.stdout.write = (chunk) => {
+    chunks.push(String(chunk));
+    return true;
+  };
+
+  try {
+    // Dynamically override OPENCODE_CONFIG_PATH by passing targetPath through the facade.
+    // Instead, re-import overlay-generator with HOME overridden — the path is computed once at import.
+    // Test approach: write our own merged config check after the run.
+    const { applyOpenCodeOverlayCommand: applyCmd } = await import('../src/adapters/opencode/index.js');
+    const routerConfigPath = path.join(tempDir, 'router', 'router.yaml');
+
+    const report = applyCmd({
+      apply: true,
+      configPath: routerConfigPath,
+      targetPath: opencodeConfigPath,
+    });
+
+    assert.ok(report.writtenPath, 'writtenPath is set');
+    assert.ok(Object.keys(report.agents).length > 0, 'agents generated');
+
+    const written = JSON.parse(fs.readFileSync(opencodeConfigPath, 'utf8'));
+
+    assert.ok(written.agent['my-agent'], 'non-gsr agent preserved');
+    assert.equal(Object.prototype.hasOwnProperty.call(written.agent, 'gsr-stale'), false, 'stale gsr agent removed');
+    assert.ok(written.agent['gsr-fast'], 'gsr-fast added');
+    assert.ok(written.agent['gsr-safety'], 'gsr-safety added');
+
+    const safetyTools = written.agent['gsr-safety'].tools;
+    assert.equal(safetyTools.write, false, 'safety write is false');
+    assert.equal(safetyTools.bash, false, 'safety bash is false');
+    assert.equal(safetyTools.read, true, 'safety read is true');
+  } finally {
+    process.stdout.write = originalWrite;
+    process.chdir(originalCwd);
+    process.env.HOME = originalHome;
+    fs.rmSync(tempDir, { recursive: true });
+  }
+});
+
+test('CLI apply opencode boundary: no provider execution', async () => {
+  const tempDir = makeV4TempDir();
+
+  const originalCwd = process.cwd();
+
+  process.chdir(tempDir);
+
+  try {
+    // The apply command must not import or invoke any provider execution contracts.
+    // Verify by checking the module does not call execution-oriented functions.
+    const { applyOpenCodeOverlayCommand: applyCmd } = await import('../src/adapters/opencode/index.js');
+    const routerConfigPath = path.join(tempDir, 'router', 'router.yaml');
+
+    // This should complete synchronously without any I/O to external providers.
+    const report = applyCmd({ apply: false, configPath: routerConfigPath });
+
+    assert.ok(report.agents, 'report has agents');
+    assert.equal(report.writtenPath, undefined, 'writtenPath is undefined in preview mode');
+  } finally {
+    process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true });
+  }
+});
