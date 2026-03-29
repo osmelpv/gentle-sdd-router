@@ -24,7 +24,7 @@ If you use the [gentle-ai](https://github.com/Gentleman-Programming/gentle-ai) e
 
 ### Without gentle-ai (standalone)
 
-gsr works independently. Without gentle-ai, the controller label defaults to `host` and all execution owners fall back to `['host']`. You get the same routing features — just without the Gentleman persona and ecosystem integration.
+gsr works independently. Without gentle-ai, the controller label defaults to `host`, the default persona is `neutral`, and all execution owners fall back to `['host']`. You get the same routing features — just without the Gentleman persona injection and ecosystem integration.
 
 ## First Setup
 
@@ -73,10 +73,15 @@ gsr use claude
 
 # View resolved routes
 gsr reload
+
+# Import or export presets
+gsr export multivendor --compact
+gsr import ./shared.router.yaml --catalog local
 ```
 
 ## Next Steps
 
 - [Presets Guide](presets-guide.md) — understand and customize presets
+- [Import/Export Guide](import-export.md) — share, package, and import presets
 - [Migration Guide](migration-guide.md) — upgrading from older schema versions
 - [Architecture](architecture.md) — how gsr works under the hood

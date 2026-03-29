@@ -14,7 +14,7 @@
 
 <p>
 <a href="https://github.com/osmelpv/gentle-sdd-router/releases"><img src="https://img.shields.io/github/v/release/osmelpv/gentle-sdd-router" alt="Release"></a>
-<a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+<img src="https://img.shields.io/badge/license-UNLICENSED-lightgrey.svg" alt="License: UNLICENSED">
 <img src="https://img.shields.io/badge/Node.js-20+-339933?logo=node.js&logoColor=white" alt="Node.js 20+">
 <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows%20WSL-lightgrey" alt="Platform">
 </p>
@@ -63,7 +63,7 @@ One keystroke to go from cloud to local. One keystroke to enter analysis-only mo
 | **Multi-agent judging** | Multiple models per phase with a judge that cross-references and refines all responses into the best answer |
 | **Phase-based routing** | Assign models to 8 SDD phases (orchestrator, explore, spec, design, tasks, apply, verify, archive) |
 | **Catalog switching** | Switch entire routing configurations instantly (cloud, local, hybrid, analysis-only) |
-| **7 built-in presets** | multivendor, claude, openai, multiagent, ollama, cheap, heavyweight |
+| **8 built-in presets** | multivendor, claude, openai, multiagent, ollama, cheap, heavyweight, safety |
 | **Multi-file profiles** | Each preset is a separate YAML file -- easy to share, import, customize |
 | **Migration system** | Safe schema upgrades with backup, rollback, and version tracking |
 | **Interactive wizard** | Run `gsr` with no args for a guided setup experience |
@@ -118,7 +118,7 @@ gsr help                         # all commands
 
 ## Presets
 
-`gsr` ships with 7 ready-to-use presets, each optimized for a different use case:
+`gsr` ships with 8 ready-to-use presets, each optimized for a different use case:
 
 | Preset | Description | Best for |
 |--------|-------------|----------|
@@ -129,6 +129,7 @@ gsr help                         # all commands
 | **ollama** | All local models (Qwen, QwQ, Devstral) | Offline, no tokens needed |
 | **cheap** | Budget models with solid performance | Cost-sensitive projects |
 | **heavyweight** | 5 lanes per phase (3 models + judge + radar) | Maximum depth and quality |
+| **safety** | Restricted read-only routing profile for analysis and planning | Investigation, debugging, planning |
 
 ### Switching presets
 
@@ -220,6 +221,20 @@ gsr use custom
 
 Share a profile file with your team by copying it into their `router/profiles/` directory. No credentials or secrets -- just model routing declarations.
 
+### Import and export
+
+```bash
+gsr export multivendor                      # print preset YAML to stdout
+gsr export multivendor --compact            # compact gsr:// string for chat/issues
+gsr export multivendor --out /tmp/p.yaml    # write to a file
+gsr export --all                            # export all presets
+
+gsr import ./some-preset.router.yaml        # import from local file
+gsr import https://example.com/preset.yaml  # import from HTTPS URL
+gsr import --compact 'gsr://...'            # import compact shared string
+gsr import ./preset.yaml --catalog local    # place preset under router/profiles/local/
+```
+
 ---
 
 ## Standalone Mode
@@ -231,11 +246,17 @@ Share a profile file with your team by copying it into their `router/profiles/` 
 | **With gentle-ai** | `Alan/gentle-ai` | `gentle-ai`, `agent-teams-lite` |
 | **Without gentle-ai** | `host` | `host` |
 
-Override the controller label in `router/router.yaml`:
+Override the controller label and persona in `router/router.yaml`:
 
 ```yaml
 controller: my-custom-agent
+persona: neutral
 ```
+
+Supported personas:
+- `gentleman` — use the Gentleman-style persona when integrated with gentle-ai
+- `neutral` — neutral architect tone for standalone or calmer host setups
+- `custom` — reserved for future custom persona wiring
 
 ---
 
@@ -273,6 +294,9 @@ The migration system:
 | `gsr compare <left> <right>` | Compare two preset projections |
 | `gsr bootstrap [--intent]` | Step-by-step adoption path |
 | `gsr render opencode` | Preview OpenCode boundary report |
+| `gsr apply opencode [--apply]` | Preview or write OpenCode TAB-switching overlay entries |
+| `gsr export <preset>` | Export a preset to stdout, file, or compact string |
+| `gsr import <source>` | Import a preset from file, URL, or compact string |
 | `gsr version` | Show installed version |
 | `gsr help [command]` | Show help |
 
@@ -312,8 +336,10 @@ The bundled YAML parser is intentionally minimal. It supports the subset used by
 |-------|-------------|
 | [Getting Started](docs/getting-started.md) | Installation, first setup, basic usage |
 | [Presets Guide](docs/presets-guide.md) | Built-in presets, creating custom presets, sharing |
+| [Import/Export Guide](docs/import-export.md) | Export presets, compact sharing strings, import flows |
 | [Migration Guide](docs/migration-guide.md) | Upgrading schema versions safely |
 | [Architecture](docs/architecture.md) | How gsr works, module structure, design decisions |
+| [Release Checklist](docs/release-checklist.md) | npm publish readiness and launch checklist |
 | [Host Adoption (EN)](docs/host-adoption.en.md) | Host-local install/uninstall for OpenCode and other TUIs |
 | [Host Adoption (ES)](docs/host-adoption.es.md) | Adopcion host-local para OpenCode y otros TUIs |
 
@@ -327,10 +353,10 @@ The bundled YAML parser is intentionally minimal. It supports the subset used by
 - exposes `/gsr` session-sync metadata for the active host TUI, but slash-command registration stays host-owned and non-executing.
 - browse/compare visibility flags are explicit for availability, pricing, labels, and guidance; hidden metadata stays redacted
 - render opencode also surfaces a multimodel orchestration manager plan that only labels split/dispatch/merge/judge/radar steps
-- compatibility is explicit: schema v1 and v3 are supported, and v3 powers multimodel browse/compare
+- compatibility is explicit: schema v1, v3, and v4 are supported; v3 powers multimodel browse/compare and v4 is the current multi-file format
 - Host sync: /gsr session metadata is published for host-local slash-command registration; the router stays external and non-executing.
 - Multimodel browse/compare expose shareable schema v3 metadata only.
-- Compatibility: router.yaml version 1 and 3 are supported; v3 powers multimodel browse/compare.
+- Compatibility: router.yaml versions 1, 3, and 4 are supported; v3 powers multimodel browse/compare and v4 is the current multi-file format.
 - Quickstart: run gsr status, then gsr bootstrap if router/router.yaml is missing.
 - Select the active profile in router/router.yaml without changing who is in control.
 - Show who is in control, how to toggle it, the active profile, and resolved routes.
@@ -376,6 +402,6 @@ This project follows [Spec-Driven Development](https://github.com/Gentleman-Prog
 
 <p>Part of the <a href="https://github.com/Gentleman-Programming">Gentleman Programming</a> ecosystem</p>
 
-<a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+<img src="https://img.shields.io/badge/license-UNLICENSED-lightgrey.svg" alt="License: UNLICENSED">
 
 </div>

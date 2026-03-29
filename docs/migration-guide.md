@@ -55,7 +55,7 @@ router/
 router/
   router.yaml          # core config only (v4)
   profiles/
-    balanced.router.yaml
+    multivendor.router.yaml
     safety.router.yaml
 ```
 

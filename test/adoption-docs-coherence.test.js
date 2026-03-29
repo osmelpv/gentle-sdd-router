@@ -16,7 +16,7 @@ test('README states the router boundary clearly and only once for render opencod
   assert.match(readme, /render opencode also surfaces a multimodel orchestration manager plan that only labels split\/dispatch\/merge\/judge\/radar steps/i);
   assert.equal(countOccurrences(readme, '- `gsr render opencode`'), 1);
   assert.match(readme, /Minimal v1 setup/);
-  assert.match(readme, /compatibility is explicit: schema v1 and v3 are supported, and v3 powers multimodel browse\/compare/i);
+  assert.match(readme, /compatibility is explicit: schema v1, v3, and v4 are supported; v3 powers multimodel browse\/compare and v4 is the current multi-file format/i);
 });
 
 test('README and CLI help share adoption wording', async () => {
@@ -27,7 +27,7 @@ test('README and CLI help share adoption wording', async () => {
     'external router boundary, non-executing',
     'Host sync: /gsr session metadata is published for host-local slash-command registration; the router stays external and non-executing.',
     'Multimodel browse/compare expose shareable schema v3 metadata only.',
-    'Compatibility: router.yaml version 1 and 3 are supported; v3 powers multimodel browse/compare.',
+    'Compatibility: router.yaml versions 1, 3, and 4 are supported; v3 powers multimodel browse/compare and v4 is the current multi-file format.',
     'Quickstart: run gsr status, then gsr bootstrap if router/router.yaml is missing.',
     'Select the active profile in router/router.yaml without changing who is in control.',
     'Show who is in control, how to toggle it, the active profile, and resolved routes.',

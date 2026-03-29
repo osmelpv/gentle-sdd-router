@@ -9,7 +9,21 @@ test('package metadata stays adoption-focused and non-executing', () => {
   assert.deepEqual(packageJson.keywords, ['sdd', 'router', 'cli', 'adoption', 'documentation', 'opencode', 'release', 'compatibility']);
   assert.equal(packageJson.private, true);
   assert.equal(packageJson.license, 'UNLICENSED');
-  assert.deepEqual(packageJson.files, ['README.md', 'assets/', 'bin/', 'docs/', 'src/', 'router/']);
+  assert.deepEqual(packageJson.files, [
+    'README.md',
+    'assets/',
+    'bin/',
+    'docs/architecture.md',
+    'docs/getting-started.md',
+    'docs/host-adoption.en.md',
+    'docs/host-adoption.es.md',
+    'docs/import-export.md',
+    'docs/migration-guide.md',
+    'docs/presets-guide.md',
+    'docs/release-checklist.md',
+    'src/',
+    'router/',
+  ]);
   assert.deepEqual(packageJson.engines, { node: '>=20' });
   assert.deepEqual(packageJson.repository, { type: 'git', url: 'git+https://github.com/osmelpv/gentle-sdd-router.git' });
 });

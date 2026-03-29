@@ -695,7 +695,7 @@ function renderGeneralHelp() {
     'external router boundary, non-executing.',
     'Host sync: /gsr session metadata is published for host-local slash-command registration; the router stays external and non-executing.',
     'Multimodel browse/compare expose shareable schema v3 metadata only.',
-    'Compatibility: router.yaml version 1 and 3 are supported; v3 powers multimodel browse/compare.',
+    'Compatibility: router.yaml versions 1, 3, and 4 are supported; v3 powers multimodel browse/compare and v4 is the current multi-file format.',
     'Quickstart: run gsr status, then gsr bootstrap if router/router.yaml is missing.',
     '',
     'Commands:',

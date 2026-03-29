@@ -261,7 +261,7 @@ test('help output lists the available commands', async () => {
   assert.match(output, /Router boundary: external, non-executing\./i);
   assert.match(output, /Host sync: \/gsr session metadata is published for host-local slash-command registration; the router stays external and non-executing\./i);
   assert.match(output, /Multimodel browse\/compare expose shareable schema v3 metadata only\./i);
-  assert.match(output, /Compatibility: router\.yaml version 1 and 3 are supported; v3 powers multimodel browse\/compare\./i);
+  assert.match(output, /Compatibility: router\.yaml versions 1, 3, and 4 are supported; v3 powers multimodel browse\/compare and v4 is the current multi-file format\./i);
   assert.match(output, /Quickstart: run gsr status, then gsr bootstrap if router\/router\.yaml is missing\./i);
   assert.match(output, /use <profile>\s+Select the active profile in router\/router\.yaml without changing who is in control\./i);
   assert.match(output, /status\s+Show who is in control, how to toggle it, the active profile, and resolved routes\./i);

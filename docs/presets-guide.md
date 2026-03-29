@@ -6,7 +6,7 @@ A preset is a YAML file that defines which AI model handles each development pha
 
 ## Built-in Presets
 
-gsr ships with 7 presets optimized for different scenarios:
+gsr ships with 8 presets optimized for different scenarios:
 
 ### multivendor (default)
 
@@ -46,6 +46,10 @@ Budget models with solid performance. Uses GPT-oss, Gemini Flash, and other cost
 ### heavyweight
 
 Maximum depth: 5 lanes per phase (primary + secondary + local + judge + radar). Uses cloud heavyweights plus an Ollama model in every phase for redundancy.
+
+### safety
+
+Restricted read-only analysis profile. Designed for planning, debugging, and investigation workflows where you want multi-model thinking without write/edit/bash permissions.
 
 ## Switching Presets
 
@@ -123,6 +127,8 @@ Presets are plain YAML files. Share them by:
 3. Sharing the YAML content directly
 
 No credentials or secrets are included — only model routing declarations.
+
+For CLI-based sharing and import flows, see the [Import/Export Guide](import-export.md).
 
 ## The 8 Canonical Phases
 

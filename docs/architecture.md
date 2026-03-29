@@ -34,12 +34,14 @@ src/
 │   ├── router-schema-v3.js         # Schema v3 normalization and validation
 │   ├── router-v4-io.js             # v4 multi-file load/save/assembly
 │   ├── controller.js               # gentle-ai detection, controller label resolution
+│   ├── preset-io.js                # import/export helpers and compact sharing format
 │   └── migrations/
 │       ├── index.js                # Migration planner, runner, backup/restore
 │       └── 001_v3-to-v4-multifile.js  # First migration script
 ├── adapters/
 │   └── opencode/
 │       ├── index.js                # OpenCode adapter (load/save, install, reports)
+│       ├── overlay-generator.js    # OpenCode TAB-switching overlay generation
 │       ├── multimodel-contract.js  # Browse/compare metadata contracts
 │       ├── multimodel-orchestration-manager-contract.js
 │       ├── provider-execution-contract.js
@@ -115,6 +117,10 @@ v4 assembled configs carry `_v4Source` as a non-enumerable property. This lets t
 ### Controller resolution
 
 The controller label ("Alan/gentle-ai" or "host") is resolved at runtime by scanning PATH directories for the `gentle-ai` binary. No process execution — just `fs.existsSync()`. The result is cached for the process lifetime.
+
+### Persona and pricing hints
+
+`router/router.yaml` can declare a `persona` value (`gentleman`, `neutral`, `custom`) and lanes can declare `inputPerMillion`, `outputPerMillion`, and `contextWindow`. These are declarative hints used by hosts and UIs — not runtime execution controls.
 
 ### Atomic writes
 
