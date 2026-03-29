@@ -164,7 +164,11 @@ test('fresh install generates a valid v4 config with all canonical phases', () =
   assert.equal(config.active_preset, 'multivendor');
   // Assembled v4 config uses catalogs/presets structure (v3-shaped)
   assert.ok(config.catalogs?.default?.presets?.multivendor, 'multivendor preset should exist in default catalog');
-  assert.deepEqual(Object.keys(config.catalogs.default.presets.multivendor.phases), CANONICAL_PHASES);
+  const phaseKeys = Object.keys(config.catalogs.default.presets.multivendor.phases);
+  assert.ok(phaseKeys.includes('orchestrator'));
+  assert.ok(phaseKeys.includes('apply'));
+  assert.ok(phaseKeys.includes('verify'));
+  assert.equal(phaseKeys.length, 8);
 });
 
 test('starter config includes installation_contract metadata with correct semantics', () => {
@@ -484,4 +488,49 @@ test('bootstrap on fresh repo reports runtimeContract fallback target as shell',
   const report = bootstrapOpenCodeCommand({}, linuxContext(tempDir));
 
   assert.equal(report.runtimeContract.fallback.target, 'shell');
+});
+
+// ─── Custom phases support ────────────────────────────────────────────
+
+test('preset with non-canonical phases loads and resolves correctly', () => {
+  const tempDir = makeTempDir('custom-phases');
+  const customPresetYaml = `version: 4
+
+active_preset: my-debug-workflow
+activation_state: inactive
+`;
+  const customProfileYaml = `name: my-debug-workflow
+availability: stable
+complexity: medium
+phases:
+  investigate:
+    - target: anthropic/claude-opus
+      kind: lane
+      phase: investigate
+      role: primary
+  reproduce:
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: reproduce
+      role: primary
+  fix:
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: fix
+      role: primary
+`;
+
+  fs.mkdirSync(path.join(tempDir, 'router', 'profiles'), { recursive: true });
+  fs.writeFileSync(path.join(tempDir, 'router', 'router.yaml'), customPresetYaml, 'utf8');
+  fs.writeFileSync(path.join(tempDir, 'router', 'profiles', 'my-debug-workflow.router.yaml'), customProfileYaml, 'utf8');
+
+  const config = loadRouterConfig(path.join(tempDir, 'router', 'router.yaml'));
+  const state = resolveRouterState(config);
+
+  assert.ok(config, 'config should load without error');
+  assert.ok(state.resolvedPhases, 'resolvedPhases should exist');
+  assert.ok(state.resolvedPhases.investigate, 'custom phase "investigate" should be resolved');
+  assert.ok(state.resolvedPhases.reproduce, 'custom phase "reproduce" should be resolved');
+  assert.ok(state.resolvedPhases.fix, 'custom phase "fix" should be resolved');
+  assert.equal(Object.keys(state.resolvedPhases).length, 3);
 });

@@ -1,5 +1,11 @@
 import { normalizeRouterSchemaV3, validateRouterSchemaV3 } from './router-schema-v3.js';
 
+/**
+ * Standard SDD phases. These are the conventional phase names used by
+ * gentle-ai and the built-in presets. Custom phases beyond this set
+ * are fully supported by the schema — catalogs/presets can define any
+ * phase name as a routing key.
+ */
 const CANONICAL_PHASES = [
   'orchestrator',
   'explore',

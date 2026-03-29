@@ -5,7 +5,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveControllerLabel } from '../../core/controller.js';
 import {
-  CANONICAL_PHASES,
   applyInstallIntent,
   describeInstallBootstrap,
   listProfiles,
@@ -1010,28 +1009,21 @@ function createFreshInstallConfig() {
 }
 
 function createFreshInstallStarterProfile() {
-  const phaseDefaults = {
-    orchestrator: { target: 'anthropic/claude-opus', role: 'primary', fallbacks: 'openai/gpt-5' },
-    explore: { target: 'google/gemini-pro', role: 'primary', fallbacks: 'anthropic/claude-sonnet' },
-    spec: { target: 'anthropic/claude-opus', role: 'primary', fallbacks: 'openai/gpt-5' },
-    design: { target: 'anthropic/claude-opus', role: 'primary', fallbacks: 'openai/gpt-5' },
-    tasks: { target: 'anthropic/claude-sonnet', role: 'primary', fallbacks: 'openai/gpt' },
-    apply: { target: 'anthropic/claude-sonnet', role: 'primary', fallbacks: 'openai/gpt-5' },
-    verify: { target: 'openai/gpt-5', role: 'judge', fallbacks: 'anthropic/claude-opus' },
-    archive: { target: 'google/gemini-flash', role: 'primary', fallbacks: 'anthropic/claude-haiku' },
-  };
-
   return {
     name: 'multivendor',
     availability: 'stable',
     aliases: 'latest',
     complexity: 'high',
-    phases: Object.fromEntries(
-      CANONICAL_PHASES.map((phaseName) => {
-        const defaults = phaseDefaults[phaseName] ?? { target: 'anthropic/claude-sonnet', role: 'primary', fallbacks: 'openai/gpt' };
-        return [phaseName, [{ target: defaults.target, kind: 'lane', phase: phaseName, role: defaults.role, fallbacks: defaults.fallbacks }]];
-      })
-    ),
+    phases: {
+      orchestrator: [{ target: 'anthropic/claude-opus', kind: 'lane', phase: 'orchestrator', role: 'primary', fallbacks: 'openai/gpt-5' }],
+      explore: [{ target: 'google/gemini-pro', kind: 'lane', phase: 'explore', role: 'primary', fallbacks: 'anthropic/claude-sonnet' }],
+      spec: [{ target: 'anthropic/claude-opus', kind: 'lane', phase: 'spec', role: 'primary', fallbacks: 'openai/gpt-5' }],
+      design: [{ target: 'anthropic/claude-opus', kind: 'lane', phase: 'design', role: 'primary', fallbacks: 'openai/gpt-5' }],
+      tasks: [{ target: 'anthropic/claude-sonnet', kind: 'lane', phase: 'tasks', role: 'primary', fallbacks: 'openai/gpt' }],
+      apply: [{ target: 'anthropic/claude-sonnet', kind: 'lane', phase: 'apply', role: 'primary', fallbacks: 'openai/gpt-5' }],
+      verify: [{ target: 'openai/gpt-5', kind: 'lane', phase: 'verify', role: 'judge', fallbacks: 'anthropic/claude-opus' }],
+      archive: [{ target: 'google/gemini-flash', kind: 'lane', phase: 'archive', role: 'primary', fallbacks: 'anthropic/claude-haiku' }],
+    },
   };
 }
 

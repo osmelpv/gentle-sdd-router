@@ -137,6 +137,42 @@ No credentials or secrets are included — only model routing declarations.
 | **verify** | Validate, find bugs | Different provider than apply (judge perspective) |
 | **archive** | Document, close out | Fast, cheap (Flash, Haiku) |
 
+## Custom Phases
+
+The 8 canonical phases (orchestrator, explore, spec, design, tasks, apply, verify, archive)
+are the standard SDD workflow. However, you can define **any phase name** in your presets:
+
+```yaml
+name: my-debug-workflow
+phases:
+  investigate:
+    - target: anthropic/claude-opus
+      kind: lane
+      phase: investigate
+      role: primary
+  reproduce:
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: reproduce
+      role: primary
+  fix:
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: fix
+      role: primary
+  verify:
+    - target: openai/gpt-5
+      kind: lane
+      phase: verify
+      role: judge
+```
+
+Custom phases work with all gsr features: routing, fallbacks, multi-agent lanes,
+import/export, and overlay generation.
+
+> **Note**: When using gentle-ai, custom phases route correctly but won't load
+> phase-specific skill files (gentle-ai only has skills for the 8 canonical phases).
+
 ## Rules of Thumb
 
 - **Never use the same model for apply and verify** — cross-provider validation catches more issues

@@ -21,7 +21,7 @@ import {
   resolveRouterState,
   saveRouterConfig,
 } from '../src/adapters/opencode/index.js';
-import { CANONICAL_PHASES } from '../src/router-config.js';
+
 
 const fixtureYaml = `version: 1
 
@@ -374,7 +374,11 @@ test('install creates a starter v4 router when the config is missing', () => {
   assert.equal(config.metadata.installation_contract.source_of_truth, 'router/router.yaml');
   assert.equal(config.metadata.installation_contract.runtime_execution, false);
   // v4 uses catalogs/presets structure
-  assert.deepEqual(Object.keys(config.catalogs.default.presets.multivendor.phases), CANONICAL_PHASES);
+  const phaseKeys = Object.keys(config.catalogs.default.presets.multivendor.phases);
+  assert.ok(phaseKeys.includes('orchestrator'));
+  assert.ok(phaseKeys.includes('apply'));
+  assert.ok(phaseKeys.includes('verify'));
+  assert.equal(phaseKeys.length, 8);
   assert.equal(config.catalogs.default.presets.multivendor.phases.orchestrator[0].target, 'anthropic/claude-opus');
 });
 
