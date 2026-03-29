@@ -140,7 +140,8 @@ describe('generateOpenCodeOverlay', () => {
   test('generates correct description format', () => {
     const config = makeConfig({ multivendor: MULTIVENDOR_PRESET });
     const { agent } = generateOpenCodeOverlay(config);
-    assert.equal(agent['gsr-multivendor'].description, 'gsr: multivendor — stable');
+    // Description now includes persona hint in brackets
+    assert.match(agent['gsr-multivendor'].description, /^gsr: multivendor — stable \[.+\]$/);
   });
 
   test('generates restricted tools for safety preset', () => {
@@ -232,7 +233,8 @@ describe('generateOpenCodeOverlay', () => {
   test('uses availability in description', () => {
     const config = makeConfig({ safety: SAFETY_PRESET });
     const { agent } = generateOpenCodeOverlay(config);
-    assert.equal(agent['gsr-safety'].description, 'gsr: safety — unavailable');
+    // Description now includes persona hint in brackets
+    assert.match(agent['gsr-safety'].description, /^gsr: safety — unavailable \[.+\]$/);
   });
 
   test('keeps all-hidden presets in the overlay and marks each as hidden', () => {

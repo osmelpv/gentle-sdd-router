@@ -175,6 +175,7 @@ export function assembleV4Config(coreConfig, profiles) {
     activation_state: coreConfig.activation_state,
     metadata: coreConfig.metadata,
     catalogs: catalogsMap,
+    ...(coreConfig.persona !== undefined ? { persona: coreConfig.persona } : {}),
   };
 
   const profileMap = new Map(

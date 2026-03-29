@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
+import { resolvePersona } from '../../core/controller.js';
 
 const OPENCODE_CONFIG_PATH = join(homedir(), '.config', 'opencode', 'opencode.json');
 const GSR_AGENT_PREFIX = 'gsr-';
@@ -70,6 +71,7 @@ export function generateOpenCodeOverlay(config) {
   const agents = {};
   const warnings = [];
   const catalogs = config.catalogs ?? {};
+  const persona = resolvePersona(config);
 
   for (const [, catalog] of Object.entries(catalogs)) {
     const presets = catalog.presets ?? {};
@@ -89,7 +91,7 @@ export function generateOpenCodeOverlay(config) {
 
       const entry = {
         mode: 'primary',
-        description: `gsr: ${presetName} — ${availability}`,
+        description: `gsr: ${presetName} — ${availability} [${persona}]`,
         model: orchestratorTarget,
         tools: mapPermissions(preset.permissions),
       };

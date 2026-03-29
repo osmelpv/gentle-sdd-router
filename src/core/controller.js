@@ -33,6 +33,19 @@ export function resolveExecutionOwners(config = null) {
 }
 
 /**
+ * Resolve the persona for agent prompts.
+ * Priority: 1) config.persona override (unless 'auto'), 2) gentle-ai detected, 3) "neutral"
+ *
+ * @param {object|null} config - Router config object (may have .persona field)
+ * @returns {string} - 'gentleman' | 'neutral' | 'custom' or any explicit override
+ */
+export function resolvePersona(config = null) {
+  if (config?.persona && config.persona !== 'auto') return config.persona;
+  if (detectGentleAi()) return 'gentleman';
+  return 'neutral';
+}
+
+/**
  * Reset the cached detection (for testing).
  */
 export function resetControllerCache() {

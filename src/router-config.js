@@ -41,7 +41,7 @@ export {
   loadMigrationsRegistry,
 } from './core/migrations/index.js';
 
-export { resolveControllerLabel, resolveExecutionOwners, detectGentleAi } from './core/controller.js';
+export { resolveControllerLabel, resolveExecutionOwners, detectGentleAi, resolvePersona } from './core/controller.js';
 
 export {
   createAgentTeamsLiteIntegrationContract,

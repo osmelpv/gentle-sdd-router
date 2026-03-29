@@ -28,7 +28,7 @@ import {
   setActiveProfile,
   tryGetConfigPath,
 } from './router-config.js';
-import { resolveControllerLabel } from './core/controller.js';
+import { resolveControllerLabel, resolvePersona } from './core/controller.js';
 
 const CURRENT_SCHEMA_VERSION = 4;
 let wizardEntrypointForTesting = null;
@@ -203,7 +203,9 @@ function runList() {
   process.stdout.write('Profiles:\n');
   for (const profile of profiles) {
     const marker = profile.active ? '*' : ' ';
-    process.stdout.write(`${marker} ${profile.name} (${profile.phases.length} phases)\n`);
+    const tags = buildProfileTags(config, profile.name);
+    const tagSuffix = tags.length > 0 ? ` ${tags.map((t) => `[${t}]`).join(' ')}` : '';
+    process.stdout.write(`${marker} ${profile.name} (${profile.phases.length} phases)${tagSuffix}\n`);
   }
 }
 
@@ -497,6 +499,97 @@ async function runImport(args) {
   process.stdout.write(`Imported preset '${result.presetName}'${catalogLabel} → ${result.path}\n`);
 }
 
+/**
+ * Return display tags for a profile (e.g. 'local', 'budget').
+ * Reads from the raw assembled config.
+ */
+function buildProfileTags(config, profileName) {
+  const tags = [];
+
+  // In v3/v4-assembled configs, look up the preset by name.
+  if (config?.version === 3 && config.catalogs) {
+    for (const [, catalog] of Object.entries(config.catalogs)) {
+      const presetName = profileName.includes('/') ? profileName.split('/')[1] : profileName;
+      const preset = catalog.presets?.[presetName];
+      if (!preset) continue;
+
+      // Explicit labels array
+      if (Array.isArray(preset.labels)) {
+        tags.push(...preset.labels);
+      }
+
+      // Infer 'local' when all first-lane targets use the ollama/ provider
+      if (!tags.includes('local')) {
+        const phases = preset.phases ?? {};
+        const targets = Object.values(phases).map((lanes) => {
+          const first = Array.isArray(lanes) ? lanes[0] : null;
+          return typeof first?.target === 'string' ? first.target : null;
+        }).filter(Boolean);
+        if (targets.length > 0 && targets.every((t) => t.startsWith('ollama/'))) {
+          tags.push('local');
+        }
+      }
+
+      // Infer 'budget' from profile name containing 'cheap' or 'budget'
+      const lowerName = presetName.toLowerCase();
+      if (!tags.includes('budget') && (lowerName.includes('cheap') || lowerName.includes('budget'))) {
+        tags.push('budget');
+      }
+
+      break;
+    }
+  }
+
+  return tags;
+}
+
+/**
+ * Look up pricing fields (inputPerMillion, outputPerMillion) for a phase
+ * from the raw assembled config (v3/v4 assembled).
+ * Returns null if no pricing data is available.
+ */
+function lookupLanePricing(config, activeCatalogName, activePresetName, phaseName) {
+  if (!config?.catalogs) return null;
+
+  const catalog = config.catalogs[activeCatalogName];
+  if (!catalog) return null;
+
+  const preset = catalog.presets?.[activePresetName];
+  if (!preset) return null;
+
+  const lanes = preset.phases?.[phaseName];
+  if (!Array.isArray(lanes) || lanes.length === 0) return null;
+
+  const lane = lanes[0];
+  const input = lane?.inputPerMillion;
+  const output = lane?.outputPerMillion;
+
+  // Accept both number and numeric-string values (YAML parser returns floats as strings).
+  const isNumeric = (v) => v !== null && v !== undefined && Number.isFinite(Number(v));
+
+  if (!isNumeric(input) && !isNumeric(output)) return null;
+
+  return { inputPerMillion: isNumeric(input) ? Number(input) : null, outputPerMillion: isNumeric(output) ? Number(output) : null };
+}
+
+/**
+ * Format pricing as "$IN/$OUT" string. Rounds to reasonable precision.
+ */
+function formatPricing(pricing) {
+  if (!pricing) return null;
+
+  const fmt = (n) => {
+    if (n === null || n === undefined) return '?';
+    const num = Number(n);
+    if (!Number.isFinite(num)) return '?';
+    if (num === 0) return '$0';
+    if (num < 1) return `$${num}`;
+    return `$${num.toFixed(2).replace(/\.00$/, '')}`;
+  };
+
+  return `${fmt(pricing.inputPerMillion)}/${fmt(pricing.outputPerMillion)}`;
+}
+
 function renderStatus(state, configPath, config = null) {
   const controllerLabel = resolveControllerLabel();
   const activation = state.activationState === 'active' || state.activationState === true
@@ -548,8 +641,14 @@ function renderStatus(state, configPath, config = null) {
     }
   }
 
+  // Resolved routes with optional pricing
+  const activeCatalogName = state.selectedCatalogName ?? null;
+  const activePresetName = state.selectedPresetName ?? state.activeProfileName ?? null;
+
   for (const [phaseName, route] of Object.entries(state.resolvedPhases)) {
-    lines.push(`- ${phaseName}: ${formatRoute(route.active)}`);
+    const pricing = lookupLanePricing(config, activeCatalogName, activePresetName, phaseName);
+    const pricingStr = pricing ? ` (${formatPricing(pricing)})` : '';
+    lines.push(`- ${phaseName}: ${formatRoute(route.active)}${pricingStr}`);
   }
 
   return `${lines.join('\n')}\n`;
