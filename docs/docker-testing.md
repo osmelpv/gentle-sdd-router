@@ -1,11 +1,24 @@
 # Docker E2E Testing Guide
 
-This guide lets you boot a clean container with `gsr` pre-installed and walk through the full workflow without touching your local machine.
+This guide is the staging ground for a **full-ecosystem** container: `gsr + gentle-ai + OpenCode`, ready for manual validation without touching your local machine.
+
+> Current status: the documented workflow is valid, but the final visual OpenCode validation still requires a human in the loop.
 
 ## Prerequisites
 
 - Docker and Docker Compose installed
 - `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in your environment (optional — most steps work without keys)
+
+## Target container shape
+
+The final container should include:
+
+- `gsr` globally available
+- `gentle-ai` installed and ready
+- `opencode` installed and ready
+- one precreated `/test-project`
+- `gsr install` already executed
+- `gsr apply opencode --apply` already executed
 
 ## Quick Start
 
@@ -63,6 +76,22 @@ gsr apply opencode --apply          # Write to ~/.config/opencode/opencode.json
 cat ~/.config/opencode/opencode.json | grep gsr     # Should show gsr-* entries
 ```
 
+### Step 5b: OpenCode visual validation (manual)
+
+When the full ecosystem image is ready:
+
+```bash
+opencode
+```
+
+Inside OpenCode, validate manually:
+
+1. TAB switching shows the `gsr-*` modes
+2. `gsr-multivendor` appears and is active by default
+3. `gsr-safety` appears with restricted permissions
+4. Switching between modes changes the routing profile as expected
+5. The overlay coexists with any `gentle-ai` agents already present
+
 ### Step 6: Migrations
 
 ```bash
@@ -116,3 +145,12 @@ To also remove the built image:
 ```bash
 docker compose down --rmi local
 ```
+
+## Scenario matrix to validate
+
+1. **Standalone only** — gsr without gentle-ai
+2. **gentle-ai present** — controller/persona integration
+3. **OpenCode overlay applied** — `gsr apply opencode --apply`
+4. **Preset switching** — `multivendor`, `claude`, `ollama`, `safety`
+5. **Import/export** — local file, compact string, URL
+6. **Migration path** — seed v3 project, run `gsr update --apply`
