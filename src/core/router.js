@@ -28,12 +28,36 @@ export function setActiveProfile(config, profileName) {
       throw new Error(`Preset "${presetName}" does not exist in catalog "${catalogName}".`);
     }
 
-    return {
+    const newConfig = {
       ...config,
       active_catalog: catalogName,
       active_preset: presetName,
       active_profile: presetName,
     };
+
+    // Object spread does not copy non-enumerable properties; preserve _v4Source explicitly.
+    // Also update coreConfig inside _v4Source so buildV4WritePlan writes the new active_preset.
+    const v4SourceDescriptor = Object.getOwnPropertyDescriptor(config, '_v4Source');
+    if (v4SourceDescriptor) {
+      const originalSource = v4SourceDescriptor.value;
+      const updatedSource = originalSource
+        ? {
+            ...originalSource,
+            coreConfig: {
+              ...(originalSource.coreConfig ?? {}),
+              active_catalog: catalogName,
+              active_preset: presetName,
+            },
+          }
+        : originalSource;
+
+      Object.defineProperty(newConfig, '_v4Source', {
+        ...v4SourceDescriptor,
+        value: updatedSource,
+      });
+    }
+
+    return newConfig;
   }
 
   if (!config.profiles?.[profileName]) {

@@ -50,6 +50,21 @@ phases:
       role: primary
 `;
 
+const RESTRICTED_HIDDEN_PROFILE_YAML = `name: internal
+hidden: true
+permissions:
+  read: true
+  write: false
+  edit: true
+  bash: false
+  delegate: false
+phases:
+  orchestrator:
+    - target: openai/o3
+      phase: orchestrator
+      role: primary
+`;
+
 const MINIMAL_CORE_CONFIG = {
   version: 4,
   active_preset: 'balanced',
@@ -428,6 +443,29 @@ describe('assembleV4Config', () => {
 
       assert.ok(assembled.catalogs.default?.presets?.balanced, 'balanced in default catalog');
       assert.ok(assembled.catalogs.experimental?.presets?.turbo, 'turbo in experimental catalog');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('preserves permissions and hidden fields in the assembled normalized config', () => {
+    const dir = makeTempDir();
+
+    try {
+      writeFile(dir, 'profiles/internal.router.yaml', RESTRICTED_HIDDEN_PROFILE_YAML);
+
+      const profiles = loadV4Profiles(dir);
+      const assembled = assembleV4Config(MINIMAL_CORE_CONFIG, profiles);
+      const preset = assembled.catalogs.default.presets.internal;
+
+      assert.equal(preset.hidden, true);
+      assert.deepEqual(preset.permissions, {
+        read: true,
+        write: false,
+        edit: true,
+        bash: false,
+        delegate: false,
+      });
     } finally {
       cleanup(dir);
     }

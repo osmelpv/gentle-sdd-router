@@ -535,10 +535,13 @@ test('status resolves config from outside the repo cwd', () => {
   });
 
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Schema: v3/);
+  // The project's router/router.yaml is a v4 multi-file config; status must show v4 not v3.
+  assert.match(result.stdout, /Schema: v4/);
   assert.match(result.stdout, /Selected catalog: default/);
   assert.match(result.stdout, /Selected preset: multivendor/);
-  assert.match(result.stdout, /Active preset: multivendor/);
+  // v4 renders "Active profile:" (not "Active preset:"); both terms appear since
+  // selectedPresetName is also in the output as "Selected preset:"
+  assert.match(result.stdout, /Active profile: multivendor/);
   assert.match(result.stdout, /Activation: active/);
   assert.match(result.stdout, /In control: gsr/);
   assert.match(result.stdout, /Resolved routes:/);
@@ -564,10 +567,12 @@ test('status keeps working after cwd changes within the process', async () => {
   }
 
   const output = chunks.join('');
-  assert.match(output, /Schema: v3/);
+  // The project's router/router.yaml is a v4 multi-file config; status must show v4 not v3.
+  assert.match(output, /Schema: v4/);
   assert.match(output, /Selected catalog: default/);
   assert.match(output, /Selected preset: multivendor/);
-  assert.match(output, /Active preset: multivendor/);
+  // v4 renders "Active profile:" (not "Active preset:")
+  assert.match(output, /Active profile: multivendor/);
   assert.match(output, /Activation: active/);
   assert.match(output, /In control: gsr/);
   assert.match(output, /Resolved routes:/);
@@ -741,6 +746,53 @@ test('v4 save round-trip: modify active_preset then reload matches', () => {
     // No leftover .tmp files
     const allFiles = fs.readdirSync(path.dirname(configPath));
     assert.ok(!allFiles.some((name) => name.endsWith('.tmp')), 'no leftover .tmp files');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true });
+  }
+});
+
+test('v4 save round-trip without previousConfig: setActiveProfile preserves _v4Source so v4 structure is not destroyed', () => {
+  // This is the regression test for the bug where `gsr use <profile>` would destroy
+  // the v4 multi-file structure because saveRouterConfig was called without previousConfig.
+  // The fix: setActiveProfile now preserves the non-enumerable _v4Source property.
+  const { tempDir, configPath } = makeV4TempDir({
+    extraProfiles: [{ filename: 'safety.router.yaml', yaml: v4SafetyProfileYaml }],
+  });
+
+  try {
+    const loaded = loadRouterConfig(configPath);
+
+    // Confirm it's a v4 assembled config
+    assert.ok(Object.getOwnPropertyDescriptor(loaded, '_v4Source'), '_v4Source present on loaded config');
+
+    // Switch active preset — this is what runUse does
+    const updated = setActiveProfile(loaded, 'safety');
+
+    // _v4Source must survive the spread inside setActiveProfile
+    assert.ok(
+      Object.getOwnPropertyDescriptor(updated, '_v4Source'),
+      '_v4Source still present after setActiveProfile'
+    );
+
+    // Save WITHOUT passing previousConfig (simulates the original runUse bug path,
+    // now fixed by setActiveProfile preserving _v4Source)
+    saveRouterConfig(updated, configPath);
+
+    // The core router.yaml must still be a v4 core file (small, version: 4)
+    const coreRaw = fs.readFileSync(configPath, 'utf8');
+    assert.match(coreRaw, /^version: 4/m, 'core router.yaml still has version: 4');
+    assert.doesNotMatch(coreRaw, /catalogs:/, 'core router.yaml must not contain catalogs (that would be a v3 monolith)');
+
+    // Profile files must still exist
+    const profilesDir = path.join(path.dirname(configPath), 'profiles');
+    assert.ok(fs.existsSync(path.join(profilesDir, 'balanced.router.yaml')), 'balanced profile file still exists');
+    assert.ok(fs.existsSync(path.join(profilesDir, 'safety.router.yaml')), 'safety profile file still exists');
+
+    // Reload must give the new preset
+    const reloaded = loadRouterConfig(configPath);
+    assert.equal(reloaded.active_preset, 'safety', 'active_preset updated to safety');
+    assert.equal(reloaded.version, 3, 'reloaded config is assembled as v3-shaped');
+    assert.ok(Object.getOwnPropertyDescriptor(reloaded, '_v4Source'), '_v4Source present after reload');
   } finally {
     fs.rmSync(tempDir, { recursive: true });
   }

@@ -5,25 +5,25 @@ import { resolveControllerLabel } from '../core/controller.js';
  * Run the interactive wizard.
  * @param {object} context - { configPath, routerDir, config, version }
  */
-export async function runWizard(context) {
-  p.intro('gsr — Gentle SDD Router');
+export async function runWizard(context, prompts = p) {
+  prompts.intro('gsr — Gentle SDD Router');
 
   if (!context.configPath) {
     // State A: No router config found
-    return await wizardFreshProject(context);
+    return await wizardFreshProject(context, prompts);
   }
 
   if (context.version < 4) {
     // State B: Outdated config
-    return await wizardOutdatedConfig(context);
+    return await wizardOutdatedConfig(context, prompts);
   }
 
   // State C: Current config
-  return await wizardCurrentConfig(context);
+  return await wizardCurrentConfig(context, prompts);
 }
 
-async function wizardFreshProject(context) {
-  const action = await p.select({
+export async function wizardFreshProject(context, prompts = p) {
+  const action = await prompts.select({
     message: 'No router config found in this directory.',
     options: [
       { value: 'install', label: 'Install', hint: 'Set up gsr in this project' },
@@ -32,23 +32,23 @@ async function wizardFreshProject(context) {
     ],
   });
 
-  if (p.isCancel(action) || action === 'exit') {
-    p.outro('Bye!');
+  if (prompts.isCancel(action) || action === 'exit') {
+    prompts.outro('Bye!');
     return null;
   }
 
   return action; // 'install' or 'help'
 }
 
-async function wizardOutdatedConfig(context) {
+export async function wizardOutdatedConfig(context, prompts = p) {
   const controllerLabel = resolveControllerLabel(context.config);
 
-  p.note(
+  prompts.note(
     `Config version: ${context.version} (latest: 4)\nController: ${controllerLabel}`,
     'Project Status',
   );
 
-  const action = await p.select({
+  const action = await prompts.select({
     message: 'What would you like to do?',
     options: [
       { value: 'update', label: 'Update', hint: 'Migrate config to the latest version' },
@@ -58,24 +58,24 @@ async function wizardOutdatedConfig(context) {
     ],
   });
 
-  if (p.isCancel(action) || action === 'exit') {
-    p.outro('Bye!');
+  if (prompts.isCancel(action) || action === 'exit') {
+    prompts.outro('Bye!');
     return null;
   }
 
   return action;
 }
 
-async function wizardCurrentConfig(context) {
+export async function wizardCurrentConfig(context, prompts = p) {
   const controllerLabel = resolveControllerLabel(context.config);
   const activePreset = context.config?.active_preset || 'unknown';
 
-  p.note(
+  prompts.note(
     `Active preset: ${activePreset}\nController: ${controllerLabel}\nVersion: ${context.version}`,
     'Project Status',
   );
 
-  const action = await p.select({
+  const action = await prompts.select({
     message: 'What would you like to do?',
     options: [
       { value: 'use', label: 'Switch preset', hint: 'Change the active routing preset' },
@@ -87,20 +87,20 @@ async function wizardCurrentConfig(context) {
     ],
   });
 
-  if (p.isCancel(action) || action === 'exit') {
-    p.outro('Bye!');
+  if (prompts.isCancel(action) || action === 'exit') {
+    prompts.outro('Bye!');
     return null;
   }
 
   // Special flow for "use" — need to pick a preset
   if (action === 'use') {
-    return await wizardSwitchPreset(context);
+    return await wizardSwitchPreset(context, prompts);
   }
 
   return action;
 }
 
-async function wizardSwitchPreset(context) {
+export async function wizardSwitchPreset(context, prompts = p) {
   // Get available presets from config
   const presets = [];
   const catalogs = context.config?.catalogs || {};
@@ -117,16 +117,16 @@ async function wizardSwitchPreset(context) {
   }
 
   if (presets.length === 0) {
-    p.log.warn('No presets found.');
+    prompts.log.warn('No presets found.');
     return null;
   }
 
-  const selected = await p.select({
+  const selected = await prompts.select({
     message: 'Select a preset to activate:',
     options: presets,
   });
 
-  if (p.isCancel(selected)) {
+  if (prompts.isCancel(selected)) {
     return null;
   }
 

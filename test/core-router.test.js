@@ -233,3 +233,39 @@ test('validateRouterConfig rejects a raw v4 config (must assemble first)', () =>
     /raw v4 config.*version: 4.*cannot be validated directly/i
   );
 });
+
+test('setActiveProfile preserves _v4Source non-enumerable property on v4 assembled config', () => {
+  const assembled = assembleV4Config(v4CoreConfig, v4Profiles);
+
+  // Confirm _v4Source is present before the call
+  const beforeDescriptor = Object.getOwnPropertyDescriptor(assembled, '_v4Source');
+  assert.ok(beforeDescriptor, '_v4Source exists before setActiveProfile');
+  assert.equal(beforeDescriptor.enumerable, false, '_v4Source is non-enumerable before call');
+
+  const updated = setActiveProfile(assembled, 'default/budget');
+
+  // _v4Source must survive the object spread inside setActiveProfile
+  const afterDescriptor = Object.getOwnPropertyDescriptor(updated, '_v4Source');
+  assert.ok(afterDescriptor, '_v4Source still exists after setActiveProfile');
+  assert.equal(afterDescriptor.enumerable, false, '_v4Source is still non-enumerable after setActiveProfile');
+  assert.ok(updated._v4Source, '_v4Source value is accessible');
+
+  // The profile switch itself must still work
+  assert.equal(updated.active_preset, 'budget');
+  assert.equal(updated.active_profile, 'budget');
+  assert.equal(updated.active_catalog, 'default');
+});
+
+test('setActiveProfile _v4Source coreConfig is updated with new active_preset', () => {
+  const assembled = assembleV4Config(v4CoreConfig, v4Profiles);
+
+  const updated = setActiveProfile(assembled, 'default/budget');
+
+  // _v4Source.coreConfig must reflect the new active_preset so buildV4WritePlan writes correctly
+  assert.equal(updated._v4Source.coreConfig.active_preset, 'budget', 'coreConfig.active_preset updated');
+  assert.equal(updated._v4Source.coreConfig.active_catalog, 'default', 'coreConfig.active_catalog updated');
+
+  // profileMap and routerDir must be preserved from the original source
+  assert.ok(updated._v4Source.profileMap, 'profileMap is preserved');
+  assert.strictEqual(updated._v4Source.routerDir, assembled._v4Source.routerDir, 'routerDir is preserved');
+});

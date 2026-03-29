@@ -1,5 +1,5 @@
 name: safety
-availability: unavailable
+availability: stable
 complexity: medium
 fallbacks: balanced
 permissions:

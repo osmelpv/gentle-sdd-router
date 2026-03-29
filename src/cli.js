@@ -25,6 +25,7 @@ import {
 import { resolveControllerLabel } from './core/controller.js';
 
 const CURRENT_SCHEMA_VERSION = 4;
+let wizardEntrypointForTesting = null;
 
 function safeDiscoverConfigPath() {
   try {
@@ -39,7 +40,8 @@ export async function runCli(argv) {
 
   // Interactive wizard: no command + TTY
   if (!command && process.stdout.isTTY) {
-    const { runWizard } = await import('./ux/wizard.js');
+    const runWizard = wizardEntrypointForTesting
+      ?? (await import('./ux/wizard.js')).runWizard;
     const configPath = safeDiscoverConfigPath();
     let config = null;
     let version = 0;
@@ -101,6 +103,14 @@ export async function runCli(argv) {
   }
 }
 
+export function setWizardEntrypointForTesting(runWizard) {
+  wizardEntrypointForTesting = runWizard;
+}
+
+export function resetWizardEntrypointForTesting() {
+  wizardEntrypointForTesting = null;
+}
+
 function maybeWarnOutdatedConfig() {
   const configPath = tryGetConfigPath();
   if (!configPath) {
@@ -142,7 +152,7 @@ function runUse(args) {
   const configPath = getConfigPath();
   const currentConfig = loadRouterConfig(configPath);
   const nextConfig = setActiveProfile(currentConfig, profileName);
-  saveRouterConfig(nextConfig, configPath);
+  saveRouterConfig(nextConfig, configPath, currentConfig);
 
   process.stdout.write(`Active profile set to: ${profileName}\n`);
 }
@@ -153,7 +163,7 @@ function runReload() {
   const config = loadRouterConfig(configPath);
   const state = resolveRouterState(config);
 
-  process.stdout.write(renderStatus(state, configPath));
+  process.stdout.write(renderStatus(state, configPath, config));
 }
 
 function runStatus() {
@@ -169,7 +179,7 @@ function runStatus() {
     const config = loadRouterConfig(configPath);
     const state = resolveRouterState(config);
 
-    process.stdout.write(renderStatus(state, configPath));
+    process.stdout.write(renderStatus(state, configPath, config));
   } catch (error) {
     process.stdout.write(renderInvalidStatus(configPath, error));
   }
@@ -375,7 +385,7 @@ function runApply(args) {
   process.stdout.write(`Written to: ${report.writtenPath}\n`);
 }
 
-function renderStatus(state, configPath) {
+function renderStatus(state, configPath, config = null) {
   const controllerLabel = resolveControllerLabel();
   const activation = state.activationState === 'active' || state.activationState === true
     ? {
@@ -386,7 +396,10 @@ function renderStatus(state, configPath) {
         state: 'inactive',
         effectiveController: controllerLabel,
       };
-  const schemaVersion = state.schemaVersion ?? state.version;
+  // If the loaded config has _v4Source, it was originally a v4 multi-file config.
+  // resolveRouterState assembles it as v3, so we must detect v4 from the source config.
+  const isV4Source = config !== null && Object.getOwnPropertyDescriptor(config, '_v4Source') !== undefined;
+  const schemaVersion = isV4Source ? 4 : (state.schemaVersion ?? state.version);
   const lines = [
     'Installed: yes',
     `In control: ${activation.effectiveController}`,

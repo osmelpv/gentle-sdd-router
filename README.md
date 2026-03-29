@@ -22,18 +22,38 @@
 
 `gsr` is a **declarative, non-executing router** that assigns AI models to development phases. It doesn't run models -- it tells your agent ecosystem *which* model to use *when*, with fallbacks, multi-agent lanes, and cross-provider diversity built in.
 
-**The core idea**: Different phases of development need different strengths. An architect for design, a coder for implementation, a judge for verification. `gsr` makes this multi-model orchestration declarative and portable.
+### The Power of the Judge
 
-**Before**: One model does everything. No specialization, no cross-checking, no fallbacks.
+What makes `gsr` different from anything else out there is **multi-agent judging per phase**. In a multi-agent preset, each development phase runs multiple models simultaneously -- a primary, a secondary, a radar, and a **judge**:
 
-**After**: Each phase gets the best model for the job. A judge validates. A radar catches blind spots. When tokens run out, switch to local models with one keystroke.
+- **Primary + Secondary**: Two or more models work the same phase independently, each bringing a different perspective from a different provider
+- **Radar**: An additional model scans for blind spots, risks, and edge cases the others may miss
+- **Judge**: A high-reasoning model that collects ALL responses, cross-references them, confronts the different viewpoints, and produces a **refined final answer** -- the best synthesis of every perspective. If the judge has doubts, it can trigger a multi-agent brainstorm before deciding
+
+The judge doesn't just "validate" -- it **decides** which combination of ideas produces the strongest result. It's the difference between one model guessing and multiple models debating.
+
+**Before**: One model does everything. No specialization, no cross-checking, no second opinion.
+
+**After**: Each phase has a team of models. The judge picks the best synthesis. The radar catches what everyone else missed. When tokens run out, switch to local models with a single keystroke.
+
+### Catalogs: Switch Your Entire Setup Instantly
+
+Each catalog groups a complete routing configuration. In OpenCode, catalogs map to TAB-switchable modes:
+
+- **`multivendor`** -- Cloud models from every provider, full write access
+- **`ollama`** -- 100% local models, zero cloud costs, works offline
+- **`safety`** -- Read-only analysis mode with multi-agent judge, no write permissions
+- **`claude`** / **`openai`** -- Single-provider setups
+
+One keystroke to go from cloud to local. One keystroke to enter analysis-only mode. No reconfiguration needed.
 
 ### Key Features
 
 | Feature | Description |
 |---------|-------------|
+| **Multi-agent judging** | Multiple models per phase with a judge that cross-references and refines all responses into the best answer |
 | **Phase-based routing** | Assign models to 8 SDD phases (orchestrator, explore, spec, design, tasks, apply, verify, archive) |
-| **Multi-agent lanes** | Multiple models per phase with roles: primary, secondary, judge, radar |
+| **Catalog switching** | Switch entire routing configurations instantly (cloud, local, hybrid, analysis-only) |
 | **7 built-in presets** | multivendor, claude, openai, multiagent, ollama, cheap, heavyweight |
 | **Multi-file profiles** | Each preset is a separate YAML file -- easy to share, import, customize |
 | **Migration system** | Safe schema upgrades with backup, rollback, and version tracking |

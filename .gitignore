@@ -1,6 +1,45 @@
-.engram/
+# Dependencies
 node_modules/
-AGENTS.md
+
+# Environment and secrets
 .env
+.env.*
+
+# Logs
 *.log
+
+# Engram memory (local only)
+.engram/
+
+# GGA config (local only)
 .gga
+
+# Agent instructions (generated per-machine)
+AGENTS.md
+
+# Migration backups (local per-project)
+router/backups/
+router/.migrations.yaml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Docker (testing only)
+docker-compose.override.yml
+.docker/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Build artifacts
+dist/
+*.tgz

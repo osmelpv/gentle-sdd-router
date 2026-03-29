@@ -200,6 +200,23 @@ describe('generateOpenCodeOverlay', () => {
     assert.equal(warnings.length, 0);
   });
 
+  test('handles catalogs that exist but contain no presets', () => {
+    const config = {
+      version: 3,
+      catalogs: {
+        default: {
+          availability: 'stable',
+          presets: {},
+        },
+      },
+    };
+
+    const { agent, warnings } = generateOpenCodeOverlay(config);
+
+    assert.deepEqual(agent, {});
+    assert.deepEqual(warnings, []);
+  });
+
   test('preset without permissions gets all-true tools', () => {
     const config = makeConfig({ multivendor: MULTIVENDOR_PRESET });
     const { agent } = generateOpenCodeOverlay(config);
@@ -216,6 +233,60 @@ describe('generateOpenCodeOverlay', () => {
     const config = makeConfig({ safety: SAFETY_PRESET });
     const { agent } = generateOpenCodeOverlay(config);
     assert.equal(agent['gsr-safety'].description, 'gsr: safety — unavailable');
+  });
+
+  test('keeps all-hidden presets in the overlay and marks each as hidden', () => {
+    const config = makeConfig({
+      internal: HIDDEN_PRESET,
+      labs: {
+        availability: 'experimental',
+        hidden: true,
+        phases: {
+          orchestrator: [
+            { target: 'google/gemini-pro', kind: 'lane', phase: 'orchestrator', role: 'primary' },
+          ],
+        },
+      },
+    });
+
+    const { agent, warnings } = generateOpenCodeOverlay(config);
+
+    assert.equal(warnings.length, 0);
+    assert.equal(agent['gsr-internal'].hidden, true);
+    assert.equal(agent['gsr-labs'].hidden, true);
+  });
+
+  test('maps mixed permissions independently per generated agent', () => {
+    const config = makeConfig({
+      review: {
+        availability: 'stable',
+        permissions: {
+          read: true,
+          write: false,
+          edit: true,
+          bash: false,
+          delegate: false,
+        },
+        phases: {
+          orchestrator: [
+            { target: 'openai/o3', kind: 'lane', phase: 'orchestrator', role: 'primary' },
+          ],
+        },
+      },
+    });
+
+    const { agent } = generateOpenCodeOverlay(config);
+    const tools = agent['gsr-review'].tools;
+
+    assert.deepEqual(tools, {
+      read: true,
+      write: false,
+      edit: true,
+      bash: false,
+      delegate: false,
+      delegation_read: false,
+      delegation_list: false,
+    });
   });
 });
 

@@ -1,8 +1,7 @@
 version: 4
-
+active_catalog: default
 active_preset: multivendor
 activation_state: active
-
 metadata:
   installation_contract:
     source_of_truth: router/router.yaml
