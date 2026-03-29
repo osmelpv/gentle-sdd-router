@@ -10,6 +10,12 @@ import {
   createMultimodelBrowseContract,
   createMultimodelCompareContract,
   discoverConfigPath,
+  exportPreset,
+  exportPresetCompact,
+  exportAllPresets,
+  importPresetFromYaml,
+  importPresetFromCompact,
+  importPresetFromUrl,
   listProfiles,
   loadRouterConfig,
   deactivateOpenCodeCommand,
@@ -95,6 +101,10 @@ export async function runCli(argv) {
       return runUpdate(rest);
     case 'apply':
       return runApply(rest);
+    case 'export':
+      return runExport(rest);
+    case 'import':
+      return await runImport(rest);
     default:
       printUsage();
       if (command) {
@@ -385,6 +395,108 @@ function runApply(args) {
   process.stdout.write(`Written to: ${report.writtenPath}\n`);
 }
 
+function runExport(args) {
+  const compact = args.includes('--compact');
+  const outIndex = args.indexOf('--out');
+  const outPath = outIndex !== -1 ? args[outIndex + 1] : null;
+  const allFlag = args.includes('--all');
+
+  const configPath = getConfigPath();
+  const config = loadRouterConfig(configPath);
+
+  if (allFlag) {
+    const presetMap = exportAllPresets(config);
+    if (presetMap.size === 0) {
+      process.stdout.write('No presets found to export.\n');
+      return;
+    }
+
+    for (const [name, yaml] of presetMap) {
+      const output = compact ? `${name}: ${exportPresetCompact(config, name)}\n` : `# preset: ${name}\n${yaml}\n---\n`;
+      process.stdout.write(output);
+    }
+
+    return;
+  }
+
+  // Single preset export
+  const presetName = args.find((arg) => !arg.startsWith('--') && arg !== outPath);
+  if (!presetName) {
+    printUsage();
+    throw new Error('gsr export requires a preset name or --all.');
+  }
+
+  const output = compact
+    ? exportPresetCompact(config, presetName) + '\n'
+    : exportPreset(config, presetName) + '\n';
+
+  if (outPath) {
+    fs.writeFileSync(outPath, output, 'utf8');
+    process.stdout.write(`Exported preset '${presetName}' to: ${outPath}\n`);
+  } else {
+    process.stdout.write(output);
+  }
+}
+
+async function runImport(args) {
+  if (args.length === 0) {
+    printUsage();
+    throw new Error('gsr import requires a source: file path, URL (https://), or --compact <string>.');
+  }
+
+  const force = args.includes('--force');
+  const catalogIndex = args.indexOf('--catalog');
+  const catalog = catalogIndex !== -1 ? args[catalogIndex + 1] : undefined;
+
+  const options = { force, catalog };
+
+  // Find the config path to get routerDir
+  const configPath = discoverConfigPath();
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr install` first.\n');
+    return;
+  }
+
+  const routerDir = path.dirname(configPath);
+
+  // Determine the source type
+  const compactFlagIndex = args.indexOf('--compact');
+  let result;
+
+  if (compactFlagIndex !== -1) {
+    // --compact <string>
+    const compactStr = args[compactFlagIndex + 1];
+    if (!compactStr) {
+      throw new Error('gsr import --compact requires a compact string after the flag.');
+    }
+
+    result = importPresetFromCompact(compactStr, routerDir, options);
+  } else {
+    // First non-flag argument is the source
+    const source = args.find((arg) => !arg.startsWith('--') && arg !== catalog);
+
+    if (!source) {
+      printUsage();
+      throw new Error('gsr import requires a source: file path, URL (https://), or --compact <string>.');
+    }
+
+    if (source.startsWith('gsr://')) {
+      // Compact string passed as positional argument
+      result = importPresetFromCompact(source, routerDir, options);
+    } else if (source.startsWith('https://')) {
+      // URL import
+      result = await importPresetFromUrl(source, routerDir, options);
+    } else {
+      // File import
+      const yaml = fs.readFileSync(source, 'utf8');
+      result = importPresetFromYaml(yaml, routerDir, options);
+    }
+  }
+
+  const catalogLabel = result.catalog !== 'default' ? ` (catalog: ${result.catalog})` : '';
+  process.stdout.write(`Imported preset '${result.presetName}'${catalogLabel} → ${result.path}\n`);
+}
+
 function renderStatus(state, configPath, config = null) {
   const controllerLabel = resolveControllerLabel();
   const activation = state.activationState === 'active' || state.activationState === true
@@ -501,6 +613,8 @@ function renderGeneralHelp() {
     '  render opencode    Preview the OpenCode provider-execution, host-session sync, handoff, schema metadata, and multimodel orchestration manager boundaries without implying execution.',
     '  update             Show pending config migrations. Use --apply to apply them.',
     '  apply <target>     Generate and apply configuration overlay for a TUI target (e.g., opencode).',
+    '  export <preset>    Export a preset to stdout, file, or compact string.',
+    '  import <source>    Import a preset from file, URL, or compact string.',
     '  version            Show the installed gsr version.',
     '  help [command]     Show help for all commands or one command.',
   ].join('\n') + '\n';
@@ -615,6 +729,30 @@ function renderCommandHelp(topic, subtopic) {
     return [
       'Usage: gsr version',
       'Show the installed gsr version.',
+    ].join('\n') + '\n';
+  }
+
+  if (normalized === 'export') {
+    return [
+      'Usage: gsr export <preset> [--compact] [--out <path>]',
+      '       gsr export --all [--compact]',
+      'Export a preset to stdout, a file, or as a compact gsr:// string for sharing.',
+      '  <preset>       Name of the preset to export.',
+      '  --all          Export all presets.',
+      '  --compact      Output as a compact gsr:// string (base64-encoded gzip).',
+      '  --out <path>   Write output to a file instead of stdout.',
+    ].join('\n') + '\n';
+  }
+
+  if (normalized === 'import') {
+    return [
+      'Usage: gsr import <source> [--catalog <name>] [--force]',
+      '       gsr import --compact <string> [--catalog <name>] [--force]',
+      'Import a preset from a file, HTTPS URL, or compact gsr:// string.',
+      '  <source>         File path, https:// URL, or gsr:// compact string.',
+      '  --compact <str>  Import from a compact gsr:// string.',
+      '  --catalog <name> Place the imported preset in a named catalog subdirectory.',
+      '  --force          Overwrite an existing preset with the same name.',
     ].join('\n') + '\n';
   }
 

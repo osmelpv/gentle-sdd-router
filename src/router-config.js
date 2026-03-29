@@ -24,6 +24,18 @@ export {
 } from './core/router-v4-io.js';
 
 export {
+  exportPreset,
+  exportPresetCompact,
+  exportAllPresets,
+  importPresetFromYaml,
+  importPresetFromCompact,
+  importPresetFromUrl,
+  encodeCompactString,
+  decodeCompactString,
+  COMPACT_PREFIX,
+} from './core/preset-io.js';
+
+export {
   planMigrations,
   runMigrations,
   loadMigrationsRegistry,

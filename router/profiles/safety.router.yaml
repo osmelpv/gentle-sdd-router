@@ -1,23 +1,6 @@
 name: safety
-availability: stable
-complexity: medium
-fallbacks: balanced
-permissions:
-  read: true
-  write: false
-  edit: false
-  bash: false
-  delegate: true
 phases:
   orchestrator:
-    - target: openai/gpt
-      kind: lane
+    - target: anthropic/claude-opus
       phase: orchestrator
       role: primary
-      fallbacks: anthropic/claude-sonnet
-  verify:
-    - target: openai/o3
-      kind: lane
-      phase: verify
-      role: judge
-      fallbacks: anthropic/claude-opus

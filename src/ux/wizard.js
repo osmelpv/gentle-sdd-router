@@ -82,6 +82,8 @@ export async function wizardCurrentConfig(context, prompts = p) {
       { value: 'status', label: 'Status', hint: 'Show detailed router state' },
       { value: 'reload', label: 'View routes', hint: 'Show resolved routes for current preset' },
       { value: 'list', label: 'List presets', hint: 'Show all available presets' },
+      { value: 'export', label: 'Export preset', hint: 'Export a preset for sharing' },
+      { value: 'import', label: 'Import preset', hint: 'Import a preset from file or URL' },
       { value: 'update', label: 'Check updates', hint: 'Check for config migrations' },
       { value: 'exit', label: 'Exit' },
     ],

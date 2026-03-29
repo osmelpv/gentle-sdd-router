@@ -159,7 +159,7 @@ test('wizardCurrentConfig delegates preset switching and marks the active preset
   assert.equal(prompts.calls.select.length, 2);
   assert.deepEqual(
     prompts.calls.select[0].options.map((option) => option.value),
-    ['use', 'status', 'reload', 'list', 'update', 'exit'],
+    ['use', 'status', 'reload', 'list', 'export', 'import', 'update', 'exit'],
   );
   assert.deepEqual(
     prompts.calls.select[1].options.map((option) => option.label),
@@ -221,4 +221,52 @@ test('runCli with no args and non-TTY falls back to text help', async () => {
   assert.match(output, /Usage: gsr <command> \[args\]/);
   assert.match(output, /Commands:/);
   assert.doesNotMatch(output, /No router config found in this directory/);
+});
+
+test('wizardCurrentConfig exposes export and import options', async () => {
+  const prompts = createPromptStub({ selectResult: 'status' });
+
+  await wizardCurrentConfig(createCurrentContext(), prompts);
+
+  const optionValues = prompts.calls.select[0].options.map((o) => o.value);
+  assert.ok(optionValues.includes('export'), 'export option is present');
+  assert.ok(optionValues.includes('import'), 'import option is present');
+});
+
+test('wizardCurrentConfig export option has a label and hint', async () => {
+  const prompts = createPromptStub({ selectResult: 'status' });
+
+  await wizardCurrentConfig(createCurrentContext(), prompts);
+
+  const exportOption = prompts.calls.select[0].options.find((o) => o.value === 'export');
+  assert.ok(exportOption, 'export option exists');
+  assert.ok(exportOption.label, 'export option has a label');
+  assert.ok(exportOption.hint, 'export option has a hint');
+});
+
+test('wizardCurrentConfig import option has a label and hint', async () => {
+  const prompts = createPromptStub({ selectResult: 'status' });
+
+  await wizardCurrentConfig(createCurrentContext(), prompts);
+
+  const importOption = prompts.calls.select[0].options.find((o) => o.value === 'import');
+  assert.ok(importOption, 'import option exists');
+  assert.ok(importOption.label, 'import option has a label');
+  assert.ok(importOption.hint, 'import option has a hint');
+});
+
+test('wizardCurrentConfig returns export action directly when selected', async () => {
+  const prompts = createPromptStub({ selectResult: 'export' });
+
+  const result = await wizardCurrentConfig(createCurrentContext(), prompts);
+
+  assert.equal(result, 'export');
+});
+
+test('wizardCurrentConfig returns import action directly when selected', async () => {
+  const prompts = createPromptStub({ selectResult: 'import' });
+
+  const result = await wizardCurrentConfig(createCurrentContext(), prompts);
+
+  assert.equal(result, 'import');
 });
