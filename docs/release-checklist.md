@@ -14,8 +14,9 @@ This project is still in **beta**. Do not publish until the checklist below is c
 
 ## Package metadata
 
-- [ ] Confirm final npm package name
-- [ ] Confirm `gsr` bin name does not conflict in npm ecosystem
+- [ ] Keep package name as `gentle-sdd-router` (currently appears available on npm)
+- [ ] Decide whether to publish under a scope such as `@gentleman-programming/gentle-sdd-router`
+- [ ] Keep `gsr` as CLI bin name, but remember `gsr` is already taken on npm by an unrelated package
 - [ ] Decide whether to keep `assets/` in the published package
 - [ ] Change `private: true` to `false`
 - [ ] Decide final license text and add a real `LICENSE` file
