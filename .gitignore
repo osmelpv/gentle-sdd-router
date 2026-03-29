@@ -33,6 +33,8 @@ Thumbs.db
 *~
 
 # Docker (testing only)
+Dockerfile
+docker-compose.yml
 docker-compose.override.yml
 .docker/
 
