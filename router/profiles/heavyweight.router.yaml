@@ -1,0 +1,212 @@
+name: heavyweight
+availability: stable
+complexity: extreme
+phases:
+  orchestrator:
+    - target: anthropic/claude-opus
+      kind: lane
+      phase: orchestrator
+      role: primary
+      fallbacks: anthropic/claude-sonnet
+    - target: openai/gpt-5
+      kind: lane
+      phase: orchestrator
+      role: secondary
+      fallbacks: openai/gpt
+    - target: ollama/qwen3.5
+      kind: lane
+      phase: orchestrator
+      role: tertiary
+      fallbacks: ollama/qwen3
+    - target: google/gemini-pro
+      kind: lane
+      phase: orchestrator
+      role: judge
+      fallbacks: google/gemini-flash
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: orchestrator
+      role: radar
+      fallbacks: anthropic/claude-haiku
+  explore:
+    - target: google/gemini-pro
+      kind: lane
+      phase: explore
+      role: primary
+      fallbacks: google/gemini-flash
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: explore
+      role: secondary
+      fallbacks: anthropic/claude-haiku
+    - target: ollama/qwen3.5
+      kind: lane
+      phase: explore
+      role: tertiary
+      fallbacks: ollama/deepseek-r1
+    - target: openai/gpt-5
+      kind: lane
+      phase: explore
+      role: judge
+      fallbacks: openai/gpt
+    - target: anthropic/claude-opus
+      kind: lane
+      phase: explore
+      role: radar
+      fallbacks: anthropic/claude-sonnet
+  spec:
+    - target: anthropic/claude-opus
+      kind: lane
+      phase: spec
+      role: primary
+      fallbacks: anthropic/claude-sonnet
+    - target: openai/gpt-5
+      kind: lane
+      phase: spec
+      role: secondary
+      fallbacks: openai/gpt
+    - target: ollama/qwen3.5
+      kind: lane
+      phase: spec
+      role: tertiary
+      fallbacks: ollama/qwen3
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: spec
+      role: judge
+      fallbacks: anthropic/claude-haiku
+    - target: google/gemini-pro
+      kind: lane
+      phase: spec
+      role: radar
+      fallbacks: google/gemini-flash
+  design:
+    - target: anthropic/claude-opus
+      kind: lane
+      phase: design
+      role: primary
+      fallbacks: anthropic/claude-sonnet
+    - target: openai/gpt-5
+      kind: lane
+      phase: design
+      role: secondary
+      fallbacks: openai/gpt
+    - target: ollama/qwq
+      kind: lane
+      phase: design
+      role: tertiary
+      fallbacks: ollama/qwen3.5
+    - target: google/gemini-pro
+      kind: lane
+      phase: design
+      role: judge
+      fallbacks: google/gemini-flash
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: design
+      role: radar
+      fallbacks: anthropic/claude-haiku
+  tasks:
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: tasks
+      role: primary
+      fallbacks: anthropic/claude-haiku
+    - target: openai/gpt
+      kind: lane
+      phase: tasks
+      role: secondary
+      fallbacks: openai/gpt-mini
+    - target: ollama/qwen3
+      kind: lane
+      phase: tasks
+      role: tertiary
+      fallbacks: ollama/qwen3.5
+    - target: openai/gpt-5
+      kind: lane
+      phase: tasks
+      role: judge
+      fallbacks: openai/gpt
+    - target: google/gemini-flash
+      kind: lane
+      phase: tasks
+      role: radar
+      fallbacks: google/gemini-flash
+  apply:
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: apply
+      role: primary
+      fallbacks: anthropic/claude-haiku
+    - target: openai/gpt-5
+      kind: lane
+      phase: apply
+      role: secondary
+      fallbacks: openai/gpt
+    - target: ollama/qwen3-coder
+      kind: lane
+      phase: apply
+      role: tertiary
+      fallbacks: ollama/devstral
+    - target: anthropic/claude-opus
+      kind: lane
+      phase: apply
+      role: judge
+      fallbacks: anthropic/claude-sonnet
+    - target: google/gemini-pro
+      kind: lane
+      phase: apply
+      role: radar
+      fallbacks: google/gemini-flash
+  verify:
+    - target: openai/gpt-5
+      kind: lane
+      phase: verify
+      role: primary
+      fallbacks: openai/o3
+    - target: anthropic/claude-opus
+      kind: lane
+      phase: verify
+      role: secondary
+      fallbacks: anthropic/claude-sonnet
+    - target: ollama/qwq
+      kind: lane
+      phase: verify
+      role: tertiary
+      fallbacks: ollama/deepseek-r1
+    - target: google/gemini-pro
+      kind: lane
+      phase: verify
+      role: judge
+      fallbacks: google/gemini-flash
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: verify
+      role: radar
+      fallbacks: anthropic/claude-haiku
+  archive:
+    - target: google/gemini-flash
+      kind: lane
+      phase: archive
+      role: primary
+      fallbacks: google/gemini-flash
+    - target: anthropic/claude-haiku
+      kind: lane
+      phase: archive
+      role: secondary
+      fallbacks: anthropic/claude-sonnet
+    - target: ollama/qwen3
+      kind: lane
+      phase: archive
+      role: tertiary
+      fallbacks: ollama/qwen3.5
+    - target: openai/gpt-mini
+      kind: lane
+      phase: archive
+      role: judge
+      fallbacks: openai/gpt
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: archive
+      role: radar
+      fallbacks: anthropic/claude-haiku

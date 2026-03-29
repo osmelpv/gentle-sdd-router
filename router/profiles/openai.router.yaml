@@ -1,0 +1,52 @@
+name: openai
+availability: stable
+complexity: medium
+phases:
+  orchestrator:
+    - target: openai/gpt-5
+      kind: lane
+      phase: orchestrator
+      role: primary
+      fallbacks: openai/gpt
+  explore:
+    - target: openai/gpt
+      kind: lane
+      phase: explore
+      role: primary
+      fallbacks: openai/gpt-mini
+  spec:
+    - target: openai/gpt-5
+      kind: lane
+      phase: spec
+      role: primary
+      fallbacks: openai/gpt
+  design:
+    - target: openai/gpt-5
+      kind: lane
+      phase: design
+      role: primary
+      fallbacks: openai/gpt
+  tasks:
+    - target: openai/gpt
+      kind: lane
+      phase: tasks
+      role: primary
+      fallbacks: openai/gpt-mini
+  apply:
+    - target: openai/gpt-5
+      kind: lane
+      phase: apply
+      role: primary
+      fallbacks: openai/gpt
+  verify:
+    - target: openai/o3
+      kind: lane
+      phase: verify
+      role: judge
+      fallbacks: openai/gpt-5
+  archive:
+    - target: openai/gpt-mini
+      kind: lane
+      phase: archive
+      role: primary
+      fallbacks: openai/gpt

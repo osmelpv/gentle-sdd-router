@@ -21,6 +21,7 @@ import {
   resolveRouterState,
   saveRouterConfig,
 } from '../src/adapters/opencode/index.js';
+import { CANONICAL_PHASES } from '../src/router-config.js';
 
 const fixtureYaml = `version: 1
 
@@ -348,6 +349,48 @@ test('bootstrap stays shell-ready on a fresh repo', () => {
   assert.equal(report.configPath, undefined);
   assert.ok(Array.isArray(report.nextSteps));
   assert.match(report.reason, /No router\/router\.yaml exists yet/i);
+});
+
+test('install creates a starter v4 router when the config is missing', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-fresh-install-'));
+
+  const context = { cwd: tempDir, moduleDir: tempDir, platform: 'linux', release: '6.8.0-generic' };
+  const report = installOpenCodeCommand({}, context);
+  const configPath = path.join(tempDir, 'router', 'router.yaml');
+  const config = loadRouterConfig(configPath);
+
+  assert.equal(report.status, 'created');
+  assert.equal(report.configPath, configPath);
+  assert.equal(report.activationState, 'inactive');
+  // v4 fresh install uses 'multivendor' as the default active preset
+  assert.equal(report.activeProfileName, 'multivendor');
+  assert.equal(report.installRouteProposalContract.kind, 'install-route-proposal');
+  assert.equal(report.installRouteProposalContract.proposal.safe, true);
+  assert.equal(report.installRouteProposalContract.proposal.activationState, 'inactive');
+  assert.equal(report.installRouteProposalContract.policy.nonExecuting, true);
+  // Assembled v4 config is v3-shaped after loadRouterConfig
+  assert.equal(config.activation_state, 'inactive');
+  assert.equal(config.active_preset, 'multivendor');
+  assert.equal(config.metadata.installation_contract.source_of_truth, 'router/router.yaml');
+  assert.equal(config.metadata.installation_contract.runtime_execution, false);
+  // v4 uses catalogs/presets structure
+  assert.deepEqual(Object.keys(config.catalogs.default.presets.multivendor.phases), CANONICAL_PHASES);
+  assert.equal(config.catalogs.default.presets.multivendor.phases.orchestrator[0].target, 'anthropic/claude-opus');
+});
+
+test('install leaves a fresh router in the requested activation state', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-fresh-install-active-'));
+
+  const context = { cwd: tempDir, moduleDir: tempDir, platform: 'linux', release: '6.8.0-generic' };
+  const report = installOpenCodeCommand({ intent: 'activation=active' }, context);
+  const configPath = path.join(tempDir, 'router', 'router.yaml');
+  const config = loadRouterConfig(configPath);
+
+  assert.equal(report.status, 'created');
+  assert.equal(report.activationState, 'active');
+  assert.equal(report.installRouteProposalContract.proposal.activationState, 'active');
+  assert.equal(report.installRouteProposalContract.proposal.effectiveController, 'gsr');
+  assert.equal(config.activation_state, 'active');
 });
 
 test('bootstrap recovers from a partial setup without rewriting YAML', () => {

@@ -8,6 +8,7 @@
 - `router/router.yaml` is the source of truth.
 - Schema `v1` keeps classic profile routing.
 - Schema `v3` adds multimodel browse/compare metadata.
+- Schema `v4` splits presets into individual files under `router/profiles/`.
 - Host adoption is a separate host-local concern; the router core stays external and agnostic.
 
 ## What it does
@@ -17,6 +18,16 @@
 - resolves phase routes and fallback chains
 - browses and compares shareable multimodel metadata from schema v3
 - reports OpenCode compatibility without running providers or models
+
+## Standalone Mode
+
+`gsr` works with or without `gentle-ai` installed:
+
+- **With `gentle-ai`**: the controller label resolves to `Alan/gentle-ai` and execution owners include `gentle-ai` and `agent-teams-lite`.
+- **Without `gentle-ai`**: the controller label resolves to `host` and execution owners fall back to `['host']`.
+- A `config.controller` override in `router/router.yaml` takes priority over both detection paths.
+
+This makes `gsr` portable and usable in any project, regardless of whether the `gentle-ai` ecosystem is installed globally.
 
 ## What it does not do
 
@@ -100,6 +111,53 @@ gsr browse default/balanced
 gsr compare default/balanced default/focused
 ```
 
+### Multi-file v4 layout
+
+Schema v4 splits presets into individual files for easier management and sharing:
+
+```
+router/
+  router.yaml                    # core: version, active selection, metadata
+  profiles/
+    multivendor.router.yaml      # one preset per file
+    claude.router.yaml
+    openai.router.yaml
+    ollama.router.yaml
+    cheap.router.yaml
+    multiagent.router.yaml
+    heavyweight.router.yaml
+    safety.router.yaml
+```
+
+Core file (`router/router.yaml`):
+
+```yaml
+version: 4
+active_preset: multivendor
+activation_state: active
+metadata:
+  installation_contract:
+    source_of_truth: router/router.yaml
+    runtime_execution: false
+```
+
+Profile file (`router/profiles/balanced.router.yaml`):
+
+```yaml
+name: balanced
+availability: stable
+complexity: high
+phases:
+  orchestrator:
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: orchestrator
+      role: primary
+      fallbacks: openai/gpt
+```
+
+`gsr install` creates a v4 layout by default. Versions 1 and 3 monolithic configs are still supported for backward compatibility.
+
 ## Multimodel browse/compare
 
 Multimodel browse/compare expose shareable schema v3 metadata only.
@@ -119,8 +177,10 @@ Multimodel browse/compare expose shareable schema v3 metadata only.
 - `gsr install [--intent ...]` — Inspect or apply a YAML-first install intent to router/router.yaml.
 - `gsr bootstrap [--intent ...]` — Show or apply a step-by-step bootstrap path for adoption.
 - `gsr activate` — Take control of routing without changing the active profile.
-- `gsr deactivate` — Hand control back to Alan/gentle-ai without changing the active profile.
+- `gsr deactivate` — Hand control back to the host controller (Alan/gentle-ai or host, depending on your setup) without changing the active profile.
 - `gsr render opencode` — Preview the OpenCode provider-execution, host-session sync, handoff, schema metadata, and multimodel orchestration manager boundaries without implying execution.
+- `gsr update [--apply]` — Check for and apply config migrations to the latest schema version. Defaults to dry-run; use `--apply` to execute.
+- `gsr version` — Show the installed gsr version.
 - `gsr help [command]` — Show help for all commands or one command.
 
 ## Examples

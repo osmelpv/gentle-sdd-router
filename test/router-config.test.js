@@ -12,7 +12,7 @@ import {
   saveRouterConfig,
   setActiveProfile,
 } from '../src/adapters/opencode/index.js';
-import { validateRouterSchemaV3 } from '../src/router-config.js';
+import { normalizeRouterSchemaV3, validateRouterSchemaV3 } from '../src/router-config.js';
 import { runCli } from '../src/cli.js';
 
 const fixtureYaml = `version: 1
@@ -233,7 +233,7 @@ test('status command only renders resolved routes', async () => {
 
   const output = chunks.join('');
   assert.match(output, /Installed: yes/);
-  assert.match(output, /In control: Alan\/gentle-ai/);
+  assert.match(output, /In control: (Alan\/gentle-ai|host)/);
   assert.match(output, /Activation: inactive/);
   assert.match(output, /Toggle control: gsr activate/);
   assert.match(output, /Resolved routes:/);
@@ -269,7 +269,7 @@ test('help output lists the available commands', async () => {
   assert.match(output, /browse \[selector\]\s+Inspect shareable multimodel metadata projected from schema v3 without recommending or executing anything\./i);
   assert.match(output, /compare <left> <right>\s+Compare two shareable multimodel projections without recommending or executing anything\./i);
   assert.match(output, /activate\s+Take control of routing without changing the active profile\./i);
-  assert.match(output, /deactivate\s+Hand control back to Alan\/gentle-ai without changing the active profile\./i);
+  assert.match(output, /deactivate\s+Hand control back to (Alan\/gentle-ai|host) without changing the active profile\./i);
   assert.match(output, /install\s+Inspect or apply a YAML-first install intent to router\/router\.yaml\./i);
   assert.match(output, /bootstrap\s+Show or apply a step-by-step bootstrap path for adoption\./i);
   assert.match(output, /render opencode/);
@@ -351,6 +351,41 @@ test('bootstrap command stays shell-ready on a fresh repo', async () => {
   assert.match(output, /Command: bootstrap opencode/);
   assert.match(output, /Status: shell-ready/);
   assert.match(output, /No router\/router\.yaml exists yet/i);
+});
+
+test('install command materializes a starter config on a fresh repo', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-install-fresh-cli-'));
+
+  const binPath = fileURLToPath(new URL('../bin/gsr.js', import.meta.url));
+  const result = spawnSync(process.execPath, [binPath, 'install'], {
+    cwd: tempDir,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Command: install opencode/);
+  assert.match(result.stdout, /Status: created/);
+  assert.match(result.stdout, /Created router\/router\.yaml from scratch/i);
+  assert.ok(fs.existsSync(path.join(tempDir, 'router', 'router.yaml')));
+});
+
+test('install command honors activation intent on a fresh repo', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-install-fresh-active-cli-'));
+
+  const binPath = fileURLToPath(new URL('../bin/gsr.js', import.meta.url));
+  const result = spawnSync(process.execPath, [binPath, 'install', '--intent', 'activation=active'], {
+    cwd: tempDir,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Command: install opencode/);
+  assert.match(result.stdout, /Status: created/);
+
+  const persisted = loadRouterConfig(path.join(tempDir, 'router', 'router.yaml'));
+  assert.equal(persisted.activation_state, 'active');
+  // v4 fresh install uses 'multivendor' as the default active preset
+  assert.equal(persisted.active_preset, 'multivendor');
 });
 
 test('install command can apply YAML intents through the entrypoint', () => {
@@ -444,7 +479,7 @@ test('activate and deactivate toggle activation without changing the active prof
     chunks.length = 0;
     await runCli(['status']);
     output = chunks.join('');
-    assert.match(output, /In control: Alan\/gentle-ai/);
+    assert.match(output, /In control: (Alan\/gentle-ai|host)/);
     assert.match(output, /Activation: inactive/);
     assert.match(output, /Toggle control: gsr activate/);
   } finally {
@@ -502,8 +537,8 @@ test('status resolves config from outside the repo cwd', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Schema: v3/);
   assert.match(result.stdout, /Selected catalog: default/);
-  assert.match(result.stdout, /Selected preset: balanced/);
-  assert.match(result.stdout, /Active preset: balanced/);
+  assert.match(result.stdout, /Selected preset: multivendor/);
+  assert.match(result.stdout, /Active preset: multivendor/);
   assert.match(result.stdout, /Activation: active/);
   assert.match(result.stdout, /In control: gsr/);
   assert.match(result.stdout, /Resolved routes:/);
@@ -531,8 +566,8 @@ test('status keeps working after cwd changes within the process', async () => {
   const output = chunks.join('');
   assert.match(output, /Schema: v3/);
   assert.match(output, /Selected catalog: default/);
-  assert.match(output, /Selected preset: balanced/);
-  assert.match(output, /Active preset: balanced/);
+  assert.match(output, /Selected preset: multivendor/);
+  assert.match(output, /Active preset: multivendor/);
   assert.match(output, /Activation: active/);
   assert.match(output, /In control: gsr/);
   assert.match(output, /Resolved routes:/);
@@ -569,6 +604,263 @@ test('config discovery returns null when no router config exists', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-missing-'));
 
   assert.equal(discoverConfigPath([tempDir]), null);
+});
+
+// ── v4 multi-file tests ──────────────────────────────────────────────────────
+
+const v4CoreYaml = `version: 4
+active_catalog: default
+active_preset: balanced
+activation_state: active
+`;
+
+const v4BalancedProfileYaml = `name: balanced
+phases:
+  orchestrator:
+    - target: anthropic/claude-sonnet
+      phase: orchestrator
+      role: primary
+  verify:
+    - target: openai/o3
+      phase: verify
+      role: judge
+`;
+
+const v4SafetyProfileYaml = `name: safety
+phases:
+  orchestrator:
+    - target: anthropic/claude-opus
+      phase: orchestrator
+      role: primary
+`;
+
+const v4TurboProfileYaml = `name: turbo
+phases:
+  orchestrator:
+    - target: openai/gpt-4o
+      phase: orchestrator
+      role: primary
+`;
+
+function makeV4TempDir({ extraProfiles = [], subdirProfiles = [] } = {}) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-v4-'));
+  const routerDir = path.join(tempDir, 'router');
+  const profilesDir = path.join(routerDir, 'profiles');
+  fs.mkdirSync(profilesDir, { recursive: true });
+
+  fs.writeFileSync(path.join(routerDir, 'router.yaml'), v4CoreYaml, 'utf8');
+  fs.writeFileSync(path.join(profilesDir, 'balanced.router.yaml'), v4BalancedProfileYaml, 'utf8');
+
+  for (const { filename, yaml } of extraProfiles) {
+    fs.writeFileSync(path.join(profilesDir, filename), yaml, 'utf8');
+  }
+
+  for (const { subdir, filename, yaml } of subdirProfiles) {
+    const subdirPath = path.join(profilesDir, subdir);
+    fs.mkdirSync(subdirPath, { recursive: true });
+    fs.writeFileSync(path.join(subdirPath, filename), yaml, 'utf8');
+  }
+
+  return { tempDir, routerDir, configPath: path.join(routerDir, 'router.yaml') };
+}
+
+test('v4 load round-trip: assembles multi-file config with correct catalogs and presets', () => {
+  const { tempDir, configPath } = makeV4TempDir({
+    extraProfiles: [{ filename: 'safety.router.yaml', yaml: v4SafetyProfileYaml }],
+  });
+
+  try {
+    const config = loadRouterConfig(configPath);
+
+    // Assembled config is v3-shaped
+    assert.equal(config.version, 3);
+    assert.equal(config.active_catalog, 'default');
+    assert.equal(config.active_preset, 'balanced');
+    assert.equal(config.activation_state, 'active');
+
+    // Both profiles land in the default catalog
+    assert.ok(config.catalogs.default, 'default catalog exists');
+    assert.ok(config.catalogs.default.presets.balanced, 'balanced preset exists');
+    assert.ok(config.catalogs.default.presets.safety, 'safety preset exists');
+
+    // Phases are preserved
+    assert.ok(config.catalogs.default.presets.balanced.phases.orchestrator, 'orchestrator phase in balanced');
+    assert.ok(config.catalogs.default.presets.balanced.phases.verify, 'verify phase in balanced');
+
+    // _v4Source is non-enumerable and routerDir is set
+    assert.ok(config._v4Source, '_v4Source exists');
+    assert.equal(config._v4Source.routerDir, path.dirname(configPath));
+    assert.ok(!Object.keys(config).includes('_v4Source'), '_v4Source is non-enumerable');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true });
+  }
+});
+
+test('v4 with subdirectory catalog: infers catalog name from subdir', () => {
+  const { tempDir, configPath } = makeV4TempDir({
+    subdirProfiles: [{ subdir: 'experimental', filename: 'turbo.router.yaml', yaml: v4TurboProfileYaml }],
+  });
+
+  try {
+    const config = loadRouterConfig(configPath);
+
+    assert.equal(config.version, 3);
+    assert.ok(config.catalogs.default, 'default catalog exists for root profiles');
+    assert.ok(config.catalogs.experimental, 'experimental catalog inferred from subdir');
+    assert.ok(config.catalogs.experimental.presets.turbo, 'turbo preset in experimental catalog');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true });
+  }
+});
+
+test('v4 save round-trip: modify active_preset then reload matches', () => {
+  const { tempDir, configPath } = makeV4TempDir({
+    extraProfiles: [{ filename: 'safety.router.yaml', yaml: v4SafetyProfileYaml }],
+  });
+
+  try {
+    const loaded = loadRouterConfig(configPath);
+
+    // Switch active preset to 'safety'
+    const updated = setActiveProfile(loaded, 'safety');
+    assert.equal(updated.active_preset, 'safety');
+
+    saveRouterConfig(updated, configPath, loaded);
+
+    // Reload and verify
+    const reloaded = loadRouterConfig(configPath);
+    assert.equal(reloaded.version, 3);
+    assert.equal(reloaded.active_preset, 'safety');
+    assert.equal(reloaded.active_catalog, 'default');
+
+    // Profile files are still present
+    const profilesDir = path.join(path.dirname(configPath), 'profiles');
+    assert.ok(fs.existsSync(path.join(profilesDir, 'balanced.router.yaml')));
+    assert.ok(fs.existsSync(path.join(profilesDir, 'safety.router.yaml')));
+
+    // No leftover .tmp files
+    const allFiles = fs.readdirSync(path.dirname(configPath));
+    assert.ok(!allFiles.some((name) => name.endsWith('.tmp')), 'no leftover .tmp files');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true });
+  }
+});
+
+test('v3 backward compat: monolith loads and resolves correctly', () => {
+  const config = loadFixtureConfig(v3FixtureYaml);
+  const state = resolveRouterState(config);
+
+  // Explicit version assertion
+  assert.equal(config.version, 3);
+  assert.ok(config.catalogs, 'catalogs present');
+  assert.ok(config.catalogs.default, 'default catalog present');
+  assert.equal(state.schemaVersion, 3);
+  assert.equal(state.selectedCatalogName, 'default');
+  assert.equal(state.selectedPresetName, 'balanced');
+
+  // No _v4Source on v3 monolith
+  assert.equal(config._v4Source, undefined);
+});
+
+test('v3 with profiles dir ignored: version field is authoritative', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-v3-profiles-'));
+
+  try {
+    const routerDir = path.join(tempDir, 'router');
+    const profilesDir = path.join(routerDir, 'profiles');
+    fs.mkdirSync(profilesDir, { recursive: true });
+
+    // Write a v3 monolith
+    fs.writeFileSync(path.join(routerDir, 'router.yaml'), v3FixtureYaml, 'utf8');
+
+    // Also write a stale v4-style profile file (should be ignored)
+    fs.writeFileSync(
+      path.join(profilesDir, 'balanced.router.yaml'),
+      v4BalancedProfileYaml,
+      'utf8'
+    );
+
+    const config = loadRouterConfig(path.join(routerDir, 'router.yaml'));
+
+    // Should load as v3 monolith, not v4 multi-file
+    assert.equal(config.version, 3);
+    assert.ok(!config._v4Source, 'no _v4Source for v3 monolith');
+
+    // The monolith catalogs should be used, not inferred from the profiles dir
+    assert.ok(config.catalogs.default.presets.balanced, 'balanced preset from monolith');
+    assert.ok(config.catalogs.default.presets.unavailable, 'unavailable preset from monolith (not in profiles dir)');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true });
+  }
+});
+
+test('v4 normalized equivalence: v4 multi-file produces same normalized output as equivalent v3 monolith', () => {
+  // Equivalent v3 monolith for the v4 fixture above (balanced profile only)
+  const equivalentV3Yaml = `version: 3
+active_catalog: default
+active_preset: balanced
+active_profile: balanced
+activation_state: active
+
+catalogs:
+  default:
+    availability: stable
+    presets:
+      balanced:
+        phases:
+          orchestrator:
+            - target: anthropic/claude-sonnet
+              phase: orchestrator
+              role: primary
+          verify:
+            - target: openai/o3
+              phase: verify
+              role: judge
+`;
+
+  const { tempDir: v4TempDir, configPath: v4ConfigPath } = makeV4TempDir();
+
+  const v3TempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-v3-equiv-'));
+
+  try {
+    // Load v4 multi-file
+    const v4Config = loadRouterConfig(v4ConfigPath);
+
+    // Load equivalent v3 monolith
+    fs.mkdirSync(path.join(v3TempDir, 'router'), { recursive: true });
+    fs.writeFileSync(path.join(v3TempDir, 'router', 'router.yaml'), equivalentV3Yaml, 'utf8');
+    const v3Config = loadRouterConfig(path.join(v3TempDir, 'router', 'router.yaml'));
+
+    // Both normalize to the same output
+    const v4Normalized = normalizeRouterSchemaV3(v4Config);
+    const v3Normalized = normalizeRouterSchemaV3(v3Config);
+
+    assert.equal(v4Normalized.activeCatalogName, v3Normalized.activeCatalogName);
+    assert.equal(v4Normalized.activePresetName, v3Normalized.activePresetName);
+    assert.equal(v4Normalized.activationState, v3Normalized.activationState);
+    assert.equal(v4Normalized.catalogs.length, v3Normalized.catalogs.length);
+
+    const v4DefaultCatalog = v4Normalized.catalogs.find((c) => c.name === 'default');
+    const v3DefaultCatalog = v3Normalized.catalogs.find((c) => c.name === 'default');
+
+    assert.ok(v4DefaultCatalog, 'default catalog in v4 normalized output');
+    assert.ok(v3DefaultCatalog, 'default catalog in v3 normalized output');
+
+    const v4BalancedPreset = v4DefaultCatalog.presets.find((p) => p.name === 'balanced');
+    const v3BalancedPreset = v3DefaultCatalog.presets.find((p) => p.name === 'balanced');
+
+    assert.ok(v4BalancedPreset, 'balanced preset in v4 normalized output');
+    assert.ok(v3BalancedPreset, 'balanced preset in v3 normalized output');
+
+    // Phases should normalize to the same resolved routes
+    assert.deepEqual(
+      v4Normalized.resolvedPhases.orchestrator?.active,
+      v3Normalized.resolvedPhases.orchestrator?.active
+    );
+  } finally {
+    fs.rmSync(v4TempDir, { recursive: true });
+    fs.rmSync(v3TempDir, { recursive: true });
+  }
 });
 
 function loadFixtureConfig(yaml = fixtureYaml) {

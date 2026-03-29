@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   formatConfigPathForDisplay,
   getConfigPath,
@@ -5,22 +8,61 @@ import {
   bootstrapOpenCodeCommand,
   createMultimodelBrowseContract,
   createMultimodelCompareContract,
+  discoverConfigPath,
   listProfiles,
   loadRouterConfig,
   deactivateOpenCodeCommand,
   installOpenCodeCommand,
+  planMigrations,
   renderOpenCodeCommand,
   resolveRouterState,
+  runMigrations,
   saveRouterConfig,
   setActiveProfile,
   tryGetConfigPath,
 } from './router-config.js';
+import { resolveControllerLabel } from './core/controller.js';
+
+const CURRENT_SCHEMA_VERSION = 4;
+
+function safeDiscoverConfigPath() {
+  try {
+    return discoverConfigPath();
+  } catch {
+    return null;
+  }
+}
 
 export async function runCli(argv) {
   const [command, ...rest] = argv;
 
+  // Interactive wizard: no command + TTY
+  if (!command && process.stdout.isTTY) {
+    const { runWizard } = await import('./ux/wizard.js');
+    const configPath = safeDiscoverConfigPath();
+    let config = null;
+    let version = 0;
+    if (configPath) {
+      try {
+        config = loadRouterConfig(configPath);
+        version = config.version ?? 0;
+      } catch {
+        // Invalid config — wizard will handle fresh-project path
+      }
+    }
+    const action = await runWizard({ configPath, config, version });
+    if (!action) return;
+    const cmd = typeof action === 'object' ? action.command : action;
+    const cmdArgs = typeof action === 'object' && action.preset ? [action.preset] : [];
+    return runCli([cmd, ...cmdArgs]);
+  }
+
   if (command === '--help' || command === '-h' || command === 'help' || !command) {
     return runHelp(rest, command);
+  }
+
+  if (command === '--version' || command === '-v' || command === 'version') {
+    return runVersion();
   }
 
   switch (command) {
@@ -46,12 +88,46 @@ export async function runCli(argv) {
       return runToggleActivation('active', rest);
     case 'deactivate':
       return runToggleActivation('inactive', rest);
+    case 'update':
+      return runUpdate(rest);
     default:
       printUsage();
       if (command) {
         throw new Error(`Unknown command: ${command}`);
       }
   }
+}
+
+function maybeWarnOutdatedConfig() {
+  const configPath = tryGetConfigPath();
+  if (!configPath) {
+    return;
+  }
+
+  try {
+    const raw = fs.readFileSync(configPath, 'utf8');
+    // Quick version extraction — avoid full parse for this non-blocking check.
+    const match = raw.match(/^version:\s*(\d+)/m);
+    if (!match) {
+      return;
+    }
+
+    const version = parseInt(match[1], 10);
+    if (Number.isFinite(version) && version < CURRENT_SCHEMA_VERSION) {
+      process.stdout.write(
+        `Note: Your router config (version ${version}) can be upgraded to version ${CURRENT_SCHEMA_VERSION}. Run \`gsr update\` for details.\n`,
+      );
+    }
+  } catch {
+    // Non-blocking: never fail a command because of this check.
+  }
+}
+
+function runVersion() {
+  const pkgPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+  process.stdout.write(`gsr v${pkg.version}\n`);
+  process.stdout.write(`Tip: check for updates with npm update -g gentle-sdd-router\n`);
 }
 
 function runUse(args) {
@@ -69,6 +145,7 @@ function runUse(args) {
 }
 
 function runReload() {
+  maybeWarnOutdatedConfig();
   const configPath = getConfigPath();
   const config = loadRouterConfig(configPath);
   const state = resolveRouterState(config);
@@ -77,6 +154,7 @@ function runReload() {
 }
 
 function runStatus() {
+  maybeWarnOutdatedConfig();
   const configPath = tryGetConfigPath();
 
   if (!configPath) {
@@ -95,6 +173,7 @@ function runStatus() {
 }
 
 function runList() {
+  maybeWarnOutdatedConfig();
   const config = loadRouterConfig(getConfigPath());
   const profiles = listProfiles(config);
 
@@ -106,6 +185,7 @@ function runList() {
 }
 
 function runBrowse(args) {
+  maybeWarnOutdatedConfig();
   const selector = args[0] ?? null;
   const config = loadRouterConfig(getConfigPath());
   const report = createMultimodelBrowseContract(config, selector);
@@ -114,6 +194,7 @@ function runBrowse(args) {
 }
 
 function runCompare(args) {
+  maybeWarnOutdatedConfig();
   const [leftSelector, rightSelector, ...rest] = args;
 
   if (!leftSelector || !rightSelector || rest.length > 0) {
@@ -128,6 +209,7 @@ function runCompare(args) {
 }
 
 function runRender(args) {
+  maybeWarnOutdatedConfig();
   const target = args[0];
 
   if (target !== 'opencode') {
@@ -181,7 +263,56 @@ function runHelp(args, sourceCommand) {
   }
 }
 
+async function runUpdate(args) {
+  const apply = args.includes('--apply');
+
+  const configPath = discoverConfigPath();
+
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr install` first.\n');
+    return;
+  }
+
+  const routerDir = path.dirname(configPath);
+  const plan = planMigrations(routerDir);
+
+  if (plan.pending.length === 0) {
+    process.stdout.write(`Your config is up to date (version ${plan.currentVersion}).\n`);
+    return;
+  }
+
+  process.stdout.write(`Pending migrations (${plan.pending.length}):\n`);
+  for (const migration of plan.pending) {
+    process.stdout.write(`  [${migration.id}] ${migration.name}: ${migration.description}\n`);
+  }
+
+  if (!apply) {
+    process.stdout.write(`Run \`gsr update --apply\` to apply these migrations.\n`);
+    return;
+  }
+
+  const result = await runMigrations(routerDir);
+
+  if (result.applied.length === 0) {
+    process.stdout.write('No migrations were applied.\n');
+    return;
+  }
+
+  process.stdout.write(`Applied migrations:\n`);
+  for (let i = 0; i < result.applied.length; i++) {
+    const id = result.applied[i];
+    const backup = result.backups[i];
+    process.stdout.write(`  [${id}] applied successfully\n`);
+    if (backup) {
+      process.stdout.write(`    Backup: ${backup}\n`);
+    }
+  }
+
+  process.stdout.write('Config migration complete.\n');
+}
+
 function renderStatus(state, configPath) {
+  const controllerLabel = resolveControllerLabel();
   const activation = state.activationState === 'active' || state.activationState === true
     ? {
         state: 'active',
@@ -189,7 +320,7 @@ function renderStatus(state, configPath) {
       }
     : {
         state: 'inactive',
-        effectiveController: 'Alan/gentle-ai',
+        effectiveController: controllerLabel,
       };
   const schemaVersion = state.schemaVersion ?? state.version;
   const lines = [
@@ -236,9 +367,10 @@ function renderStatus(state, configPath) {
 }
 
 function renderMissingStatus() {
+  const controllerLabel = resolveControllerLabel();
   return [
     'Installed: no',
-    'In control: Alan/gentle-ai',
+    `In control: ${controllerLabel}`,
     'Activation: inactive',
     'Toggle control: gsr activate',
     'Active profile: unavailable',
@@ -268,6 +400,7 @@ function printUsage() {
 }
 
 function renderGeneralHelp() {
+  const controllerLabel = resolveControllerLabel();
   return [
     'Usage: gsr <command> [args]',
     'Router boundary: external, non-executing. Use gsr to inspect or update router/router.yaml.',
@@ -287,8 +420,10 @@ function renderGeneralHelp() {
     '  install            Inspect or apply a YAML-first install intent to router/router.yaml.',
     '  bootstrap          Show or apply a step-by-step bootstrap path for adoption.',
     '  activate           Take control of routing without changing the active profile.',
-    '  deactivate         Hand control back to Alan/gentle-ai without changing the active profile.',
+    `  deactivate         Hand control back to ${controllerLabel} without changing the active profile.`,
     '  render opencode    Preview the OpenCode provider-execution, host-session sync, handoff, schema metadata, and multimodel orchestration manager boundaries without implying execution.',
+    '  update             Show pending config migrations. Use --apply to apply them.',
+    '  version            Show the installed gsr version.',
     '  help [command]     Show help for all commands or one command.',
   ].join('\n') + '\n';
 }
@@ -346,11 +481,12 @@ function renderCommandHelp(topic, subtopic) {
   }
 
   if (normalized === 'activate' || normalized === 'deactivate') {
+    const controllerLabel = resolveControllerLabel();
     return [
       `Usage: gsr ${normalized}`,
       normalized === 'activate'
         ? 'Take control of routing without changing the active profile.'
-        : 'Hand control back to Alan/gentle-ai without changing the active profile.',
+        : `Hand control back to ${controllerLabel} without changing the active profile.`,
     ].join('\n') + '\n';
   }
 
@@ -376,6 +512,20 @@ function renderCommandHelp(topic, subtopic) {
     return [
       'Usage: gsr bootstrap [--intent <spec>] [--profile <name>] [--activation active|inactive] [--phase <name> --chain <models>] [--apply]',
       'Show or apply a step-by-step bootstrap path for adoption.',
+    ].join('\n') + '\n';
+  }
+
+  if (normalized === 'update') {
+    return [
+      'Usage: gsr update [--apply]',
+      'Show pending config migrations. Use --apply to actually apply them.',
+    ].join('\n') + '\n';
+  }
+
+  if (normalized === 'version') {
+    return [
+      'Usage: gsr version',
+      'Show the installed gsr version.',
     ].join('\n') + '\n';
   }
 

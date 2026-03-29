@@ -1,0 +1,52 @@
+name: cheap
+availability: stable
+complexity: low
+phases:
+  orchestrator:
+    - target: openai/gpt-oss-20b
+      kind: lane
+      phase: orchestrator
+      role: primary
+      fallbacks: google/gemma-3-27b
+  explore:
+    - target: google/gemini-flash
+      kind: lane
+      phase: explore
+      role: primary
+      fallbacks: openai/gpt-mini
+  spec:
+    - target: openai/gpt-oss-120b
+      kind: lane
+      phase: spec
+      role: primary
+      fallbacks: openai/gpt-oss-20b
+  design:
+    - target: openai/gpt-oss-120b
+      kind: lane
+      phase: design
+      role: primary
+      fallbacks: openai/gpt-oss-20b
+  tasks:
+    - target: openai/gpt-mini
+      kind: lane
+      phase: tasks
+      role: primary
+      fallbacks: openai/gpt-oss-20b
+  apply:
+    - target: openai/gpt-oss-120b
+      kind: lane
+      phase: apply
+      role: primary
+      fallbacks: openai/gpt-oss-20b
+  verify:
+    - target: openai/gpt-oss-20b
+      kind: lane
+      phase: verify
+      role: judge
+      fallbacks: openai/gpt-oss-120b
+  archive:
+    - target: openai/gpt-mini
+      kind: lane
+      phase: archive
+      role: primary
+      fallbacks: google/gemini-flash

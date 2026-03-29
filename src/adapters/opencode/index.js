@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveControllerLabel } from '../../core/controller.js';
 import {
+  CANONICAL_PHASES,
   applyInstallIntent,
   describeInstallBootstrap,
   listProfiles,
@@ -16,6 +18,11 @@ import {
   stringifyYaml,
   validateRouterConfig,
 } from '../../core/router.js';
+import {
+  assembleV4Config,
+  buildV4WritePlan,
+  loadV4Profiles,
+} from '../../core/router-v4-io.js';
 import {
   detectOpenCodeRuntimeCapabilities,
   evaluateOpenCodeRuntimeContract,
@@ -146,6 +153,23 @@ export function tryGetConfigPath(startPoints = [process.cwd(), MODULE_DIR]) {
 export function loadRouterConfig(configPath = getConfigPath()) {
   const raw = fs.readFileSync(configPath, 'utf8');
   const config = parseYaml(raw);
+
+  if (config.version === 4) {
+    const routerDir = path.dirname(configPath);
+    const profiles = loadV4Profiles(routerDir);
+    const assembled = assembleV4Config(config, profiles);
+
+    Object.defineProperty(assembled, '_v4Source', {
+      value: { ...assembled._v4Source, routerDir },
+      enumerable: false,
+      configurable: true,
+      writable: true,
+    });
+
+    validateRouterConfig(assembled);
+    return assembled;
+  }
+
   validateRouterConfig(config);
   return config;
 }
@@ -170,8 +194,36 @@ export function deactivateOpenCodeCommand(context = detectOpenCodeRuntimeContext
   return buildOpenCodeSurfaceReport('deactivate', context);
 }
 
-export function saveRouterConfig(config, configPath = getConfigPath()) {
+export function saveRouterConfig(config, configPath = getConfigPath(), previousConfig = null) {
   validateRouterConfig(config);
+
+  // Detect v4 configs: either config has _v4Source or previousConfig does (spread loses non-enumerable).
+  const v4Source = config._v4Source ?? previousConfig?._v4Source ?? null;
+
+  if (v4Source) {
+    // Restore _v4Source if it was lost by object spread (e.g., setActiveProfile returns a plain spread).
+    // Also update coreConfig to reflect the new assembled config's top-level fields so buildV4WritePlan
+    // can correctly detect changes made via setActiveProfile / setActivationState.
+    const configWithSource = config._v4Source
+      ? config
+      : Object.defineProperty({ ...config }, '_v4Source', {
+          value: {
+            ...v4Source,
+            coreConfig: {
+              ...v4Source.coreConfig,
+              active_catalog: config.active_catalog,
+              active_preset: config.active_preset,
+              activation_state: config.activation_state,
+              metadata: config.metadata,
+            },
+          },
+          enumerable: false,
+          configurable: true,
+          writable: true,
+        });
+    return saveV4Config(configWithSource, configPath, previousConfig);
+  }
+
   const yaml = stringifyYaml(config);
   const tempPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
 
@@ -187,6 +239,68 @@ export function saveRouterConfig(config, configPath = getConfigPath()) {
     }
 
     throw error;
+  }
+}
+
+function saveV4Config(config, configPath, previousConfig) {
+  // Pass previousConfig as-is (may be null for fresh installs); buildV4WritePlan handles null as "all new".
+  const writePlan = buildV4WritePlan(previousConfig, config);
+  const routerDir = config._v4Source.routerDir ?? path.dirname(configPath);
+
+  // Ensure profiles directory exists
+  const profilesDir = path.join(routerDir, 'profiles');
+  fs.mkdirSync(profilesDir, { recursive: true });
+
+  // Write profiles FIRST (core last for crash safety)
+  for (const pw of writePlan.profileWrites) {
+    const profilePath = pw.filePath ?? path.join(profilesDir, `${pw.presetName}.router.yaml`);
+    const profileDir = path.dirname(profilePath);
+    fs.mkdirSync(profileDir, { recursive: true });
+    const yaml = stringifyYaml(pw.content);
+    const tempPath = `${profilePath}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tempPath, yaml, 'utf8');
+
+    try {
+      fs.renameSync(tempPath, profilePath);
+    } catch (error) {
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {
+        // Ignore cleanup failures.
+      }
+
+      throw error;
+    }
+  }
+
+  // Delete removed profiles
+  for (const pd of writePlan.profileDeletes) {
+    if (pd.filePath && fs.existsSync(pd.filePath)) {
+      fs.unlinkSync(pd.filePath);
+    }
+  }
+
+  // Write core LAST
+  if (writePlan.coreChanged) {
+    // Strip undefined fields before serialization so they don't appear as `null` in YAML.
+    const coreToWrite = Object.fromEntries(
+      Object.entries(writePlan.coreContent).filter(([, v]) => v !== undefined)
+    );
+    const coreYaml = stringifyYaml(coreToWrite);
+    const tempPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tempPath, coreYaml, 'utf8');
+
+    try {
+      fs.renameSync(tempPath, configPath);
+    } catch (error) {
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {
+        // Ignore cleanup failures.
+      }
+
+      throw error;
+    }
   }
 }
 
@@ -218,7 +332,7 @@ export function createOpenCodeSlashCommandManifest(state = {}, configPath = null
       createSlashCommand('install', 'Inspect or apply a YAML-first install intent.', '/gsr install [--intent ...]', ['config']),
       createSlashCommand('bootstrap', 'Show or apply a step-by-step bootstrap path.', '/gsr bootstrap [--intent ...]', ['config']),
       createSlashCommand('activate', 'Take control of routing without changing the active profile.', '/gsr activate', ['config', 'activation']),
-      createSlashCommand('deactivate', 'Hand control back to Alan/gentle-ai without changing the active profile.', '/gsr deactivate', ['config', 'activation']),
+      createSlashCommand('deactivate', `Hand control back to ${resolveControllerLabel()} without changing the active profile.`, '/gsr deactivate', ['config', 'activation']),
       createSlashCommand('render-opencode', 'Preview the OpenCode boundary report.', '/gsr render opencode', ['config', 'catalog', 'profile']),
       createSlashCommand('help', 'Show help for all commands or one command.', '/gsr help [command]', ['config', 'catalog', 'profile']),
     ],
@@ -485,16 +599,19 @@ function buildInstallationSurfaceReport(command, options, context) {
     ? detectOpenCodeRuntimeContext(context)
     : context;
   const capabilities = getOpenCodeCapabilities(runtimeContext);
-  const configPath = discoverConfigPath([runtimeContext.cwd]);
-  const runtimeContract = evaluateOpenCodeRuntimeContract({
-    command,
-    context: runtimeContext,
-    intent: options.intent,
-    configAvailable: Boolean(configPath),
-  });
-  const providerExecutionContract = runtimeContract.providerExecutionContract;
+  let configPath = discoverConfigPath([runtimeContext.cwd]);
+  let normalizedIntent;
+  let freshInstallCreated = false;
 
   if (!capabilities.platformValidated) {
+    const runtimeContract = evaluateOpenCodeRuntimeContract({
+      command,
+      context: runtimeContext,
+      intent: options.intent,
+      configAvailable: Boolean(configPath),
+      configValid: Boolean(configPath),
+    });
+
     return attachHandoffDelegationContract({
       command,
       target: 'opencode',
@@ -503,30 +620,141 @@ function buildInstallationSurfaceReport(command, options, context) {
       reason: 'OpenCode install/bootstrap is only supported on Linux/WSL.',
       capabilities,
       runtimeContract,
-      providerExecutionContract,
+      providerExecutionContract: runtimeContract.providerExecutionContract,
     }, runtimeContext, command);
   }
-
-  let normalizedIntent;
 
   try {
     normalizedIntent = normalizeInstallIntent(options.intent);
   } catch (error) {
-      return attachHandoffDelegationContract({
-        command,
-        target: 'opencode',
-        status: 'invalid-intent',
-        supported: true,
-        configPath: configPath ?? undefined,
-        reason: error instanceof Error ? error.message : String(error),
-        capabilities,
-        runtimeContract,
-        providerExecutionContract,
-      }, runtimeContext, command);
-    }
+    const runtimeContract = evaluateOpenCodeRuntimeContract({
+      command,
+      context: runtimeContext,
+      intent: options.intent,
+      configAvailable: Boolean(configPath),
+      configValid: Boolean(configPath),
+    });
+
+    return attachHandoffDelegationContract({
+      command,
+      target: 'opencode',
+      status: 'invalid-intent',
+      supported: true,
+      configPath: configPath ?? undefined,
+      reason: error instanceof Error ? error.message : String(error),
+      capabilities,
+      runtimeContract,
+      providerExecutionContract: runtimeContract.providerExecutionContract,
+    }, runtimeContext, command);
+  }
+
+  const freshConfigPath = path.join(runtimeContext.cwd, 'router', 'router.yaml');
+  let installRouteProposalContract = null;
 
   if (!configPath) {
-    if (command === 'bootstrap') {
+    if (command === 'install') {
+      const starterConfig = createFreshInstallConfig();
+
+      if (options.apply === false) {
+        const plannedConfig = normalizedIntent.length > 0
+          ? applyInstallIntent(starterConfig, options.intent)
+          : starterConfig;
+        const plannedState = resolveRouterState(plannedConfig);
+        const plannedActivation = resolveActivationState(plannedConfig);
+        installRouteProposalContract = createInstallRouteProposalContract({
+          configPath: freshConfigPath,
+          intent: options.intent ?? null,
+          directives: normalizedIntent,
+          state: plannedState,
+          activation: plannedActivation,
+        });
+        const runtimeContract = evaluateOpenCodeRuntimeContract({
+          command,
+          context: runtimeContext,
+          intent: options.intent,
+          configAvailable: false,
+          configValid: true,
+        });
+
+        return attachHandoffDelegationContract({
+          ...attachRouterSchemaFacts({}, plannedState),
+          command,
+          target: 'opencode',
+          status: 'planned',
+          supported: true,
+          configPath: freshConfigPath,
+          activeProfileName: plannedState.activeProfileName,
+          activationState: plannedActivation.state,
+          effectiveController: plannedActivation.effectiveController,
+          resolvedPhases: plannedState.resolvedPhases,
+          installRouteProposalContract,
+          reason: 'A starter router/router.yaml would be created from scratch on apply.',
+          nextSteps: [
+            'Run gsr install to create router/router.yaml with the starter schema v1 contract.',
+            'Or keep the shell-only flow and review the starter file before applying.',
+          ],
+          capabilities,
+          runtimeContract: {
+            ...runtimeContract,
+            fallback: {
+              verdict: 'minimal-fallback',
+              target: 'shell',
+              reason: 'No router/router.yaml exists yet; the install path can materialize a starter YAML contract on apply.',
+            },
+          },
+          providerExecutionContract: runtimeContract.providerExecutionContract,
+        }, runtimeContext, command);
+      }
+
+      const nextConfig = normalizedIntent.length > 0
+        ? applyInstallIntent(starterConfig, options.intent)
+        : starterConfig;
+      const freshNextState = resolveRouterState(nextConfig);
+      const freshNextActivation = resolveActivationState(nextConfig);
+      installRouteProposalContract = createInstallRouteProposalContract({
+        configPath: freshConfigPath,
+        intent: options.intent ?? null,
+        directives: normalizedIntent,
+        state: freshNextState,
+        activation: freshNextActivation,
+      });
+
+      try {
+        fs.mkdirSync(path.dirname(freshConfigPath), { recursive: true });
+        saveRouterConfig(nextConfig, freshConfigPath);
+      } catch (error) {
+        const runtimeContract = evaluateOpenCodeRuntimeContract({
+          command,
+          context: runtimeContext,
+          intent: options.intent,
+          configAvailable: false,
+          configValid: false,
+        });
+
+        return attachHandoffDelegationContract({
+          command,
+          target: 'opencode',
+          status: 'invalid-config',
+          supported: true,
+          configPath: freshConfigPath,
+          reason: error instanceof Error ? error.message : String(error),
+          capabilities,
+          runtimeContract,
+          providerExecutionContract: runtimeContract.providerExecutionContract,
+        }, runtimeContext, command);
+      }
+
+      configPath = freshConfigPath;
+      freshInstallCreated = true;
+    } else if (command === 'bootstrap') {
+      const runtimeContract = evaluateOpenCodeRuntimeContract({
+        command,
+        context: runtimeContext,
+        intent: options.intent,
+        configAvailable: false,
+        configValid: false,
+      });
+
       return attachHandoffDelegationContract({
         command,
         target: 'opencode',
@@ -547,21 +775,40 @@ function buildInstallationSurfaceReport(command, options, context) {
             reason: 'Use the shell bootstrap path until router/router.yaml exists.',
           },
         },
-        providerExecutionContract,
+        providerExecutionContract: runtimeContract.providerExecutionContract,
       }, runtimeContext, command);
     }
 
-    return attachHandoffDelegationContract({
-      command,
-      target: 'opencode',
-      status: 'missing-config',
-      supported: capabilities.platformValidated,
-      reason: 'router/router.yaml was not found for the install/bootstrap surface.',
-      capabilities,
-      runtimeContract,
-      providerExecutionContract,
-    }, runtimeContext, command);
+    if (!configPath) {
+      const runtimeContract = evaluateOpenCodeRuntimeContract({
+        command,
+        context: runtimeContext,
+        intent: options.intent,
+        configAvailable: false,
+        configValid: false,
+      });
+
+      return attachHandoffDelegationContract({
+        command,
+        target: 'opencode',
+        status: 'missing-config',
+        supported: capabilities.platformValidated,
+        reason: 'router/router.yaml was not found for the install/bootstrap surface.',
+        capabilities,
+        runtimeContract,
+        providerExecutionContract: runtimeContract.providerExecutionContract,
+      }, runtimeContext, command);
+    }
   }
+
+  const runtimeContract = evaluateOpenCodeRuntimeContract({
+    command,
+    context: runtimeContext,
+    intent: options.intent,
+    configAvailable: true,
+    configValid: true,
+  });
+  const providerExecutionContract = runtimeContract.providerExecutionContract;
 
   try {
     const config = loadRouterConfig(configPath);
@@ -600,18 +847,23 @@ function buildInstallationSurfaceReport(command, options, context) {
     }
 
     if (normalizedIntent.length === 0) {
+      const freshInstallStatus = command === 'install' && freshInstallCreated;
+
       return attachHandoffDelegationContract({
         ...routerSchemaFacts,
         command,
         target: 'opencode',
-        status: 'ready',
+        status: freshInstallStatus ? 'created' : 'ready',
         supported: true,
         configPath,
         activeProfileName: state.activeProfileName,
         activationState: activation.state,
         effectiveController: activation.effectiveController,
         resolvedPhases: state.resolvedPhases,
-        reason: command === 'bootstrap'
+        ...(freshInstallStatus && installRouteProposalContract ? { installRouteProposalContract } : {}),
+        reason: freshInstallStatus
+          ? 'Created router/router.yaml from scratch with the starter schema v1 contract.'
+          : command === 'bootstrap'
           ? 'Bootstrap is available; use the shell step-by-step mode or provide an explicit intent.'
           : 'Installation contract is valid and ready for YAML-first updates.',
         nextSteps: command === 'bootstrap'
@@ -644,21 +896,29 @@ function buildInstallationSurfaceReport(command, options, context) {
 
     const nextState = resolveRouterState(nextConfig);
     const nextActivation = resolveActivationState(nextConfig);
+    const freshInstallStatus = command === 'install' && freshInstallCreated;
 
-    return attachHandoffDelegationContract({
-      ...routerSchemaFacts,
-      command,
-      target: 'opencode',
-      status: changed ? (options.apply === false ? 'planned' : 'updated') : 'noop',
-      supported: true,
-      configPath,
-      activeProfileName: nextState.activeProfileName,
-      activationState: nextActivation.state,
-      effectiveController: nextActivation.effectiveController,
-      resolvedPhases: nextState.resolvedPhases,
-      reason: changed
-        ? options.apply === false
-          ? 'The install intent maps cleanly to router/router.yaml but was not applied.'
+      return attachHandoffDelegationContract({
+        ...routerSchemaFacts,
+        command,
+        target: 'opencode',
+        status: freshInstallStatus
+          ? 'created'
+          : changed
+            ? (options.apply === false ? 'planned' : 'updated')
+            : 'noop',
+        supported: true,
+        configPath,
+        activeProfileName: nextState.activeProfileName,
+        activationState: nextActivation.state,
+        effectiveController: nextActivation.effectiveController,
+        resolvedPhases: nextState.resolvedPhases,
+        ...(freshInstallStatus ? { installRouteProposalContract } : {}),
+        reason: freshInstallStatus
+          ? 'Created router/router.yaml from scratch and applied the install intent.'
+          : changed
+          ? options.apply === false
+            ? 'The install intent maps cleanly to router/router.yaml but was not applied.'
           : 'The install intent was applied to router/router.yaml.'
         : 'The install intent already matches router/router.yaml.',
       nextSteps: command === 'bootstrap' && options.apply !== true
@@ -710,6 +970,107 @@ function buildInstallationSurfaceReport(command, options, context) {
     }, runtimeContext, command);
   }
 }
+
+function createFreshInstallConfig() {
+  const coreConfig = {
+    version: 4,
+    active_preset: 'multivendor',
+    activation_state: 'inactive',
+    metadata: {
+      installation_contract: {
+        source_of_truth: 'router/router.yaml',
+        install_command: 'gsr install',
+        bootstrap_command: 'gsr bootstrap',
+        shell_fallback: 'gsr bootstrap --no-apply',
+        runtime_execution: false,
+      },
+    },
+  };
+
+  const starterProfile = createFreshInstallStarterProfile();
+  const profiles = [
+    {
+      filePath: null,
+      fileName: 'multivendor.router.yaml',
+      catalogName: 'default',
+      content: starterProfile,
+    },
+  ];
+
+  return assembleV4Config(coreConfig, profiles);
+}
+
+function createFreshInstallStarterProfile() {
+  const phaseDefaults = {
+    orchestrator: { target: 'anthropic/claude-opus', role: 'primary', fallbacks: 'openai/gpt-5' },
+    explore: { target: 'google/gemini-pro', role: 'primary', fallbacks: 'anthropic/claude-sonnet' },
+    spec: { target: 'anthropic/claude-opus', role: 'primary', fallbacks: 'openai/gpt-5' },
+    design: { target: 'anthropic/claude-opus', role: 'primary', fallbacks: 'openai/gpt-5' },
+    tasks: { target: 'anthropic/claude-sonnet', role: 'primary', fallbacks: 'openai/gpt' },
+    apply: { target: 'anthropic/claude-sonnet', role: 'primary', fallbacks: 'openai/gpt-5' },
+    verify: { target: 'openai/gpt-5', role: 'judge', fallbacks: 'anthropic/claude-opus' },
+    archive: { target: 'google/gemini-flash', role: 'primary', fallbacks: 'anthropic/claude-haiku' },
+  };
+
+  return {
+    name: 'multivendor',
+    availability: 'stable',
+    aliases: 'latest',
+    complexity: 'high',
+    phases: Object.fromEntries(
+      CANONICAL_PHASES.map((phaseName) => {
+        const defaults = phaseDefaults[phaseName] ?? { target: 'anthropic/claude-sonnet', role: 'primary', fallbacks: 'openai/gpt' };
+        return [phaseName, [{ target: defaults.target, kind: 'lane', phase: phaseName, role: defaults.role, fallbacks: defaults.fallbacks }]];
+      })
+    ),
+  };
+}
+
+function createInstallRouteProposalContract({ configPath, intent, directives, state, activation }) {
+  const routePlan = Object.fromEntries(Object.entries(state.resolvedPhases ?? {}).map(([phaseName, phase]) => [
+    phaseName,
+    {
+      active: phase.active,
+      candidates: [...(phase.candidates ?? [])],
+    },
+  ]));
+
+  const contract = {
+    kind: 'install-route-proposal',
+    contractVersion: '1',
+    source: {
+      configPath,
+      intent,
+    },
+    directives,
+    proposal: {
+      safe: true,
+      activeProfileName: state.activeProfileName,
+      activationState: activation.state,
+      effectiveController: activation.effectiveController,
+      routePlan,
+      rationale: activation.state === 'active'
+        ? 'Fresh install created router/router.yaml and left control with gsr as requested.'
+        : `Fresh install created router/router.yaml and left control with ${resolveControllerLabel()} as requested.`,
+    },
+    policy: {
+      nonExecuting: true,
+      nonOwning: true,
+      routerExternal: true,
+    },
+  };
+
+  return {
+    ...contract,
+    planToken: createStableFingerprint(contract),
+    rebindToken: createStableFingerprint({
+      contract,
+      source: contract.source,
+      directives: contract.directives,
+    }),
+  };
+}
+
 
 function buildOpenCodeSurfaceReport(command, context) {
   const runtimeContext = context?.supported === undefined

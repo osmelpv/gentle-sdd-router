@@ -1,0 +1,52 @@
+name: ollama
+availability: stable
+complexity: medium
+phases:
+  orchestrator:
+    - target: ollama/qwen3.5
+      kind: lane
+      phase: orchestrator
+      role: primary
+      fallbacks: ollama/qwen3
+  explore:
+    - target: ollama/qwen3.5
+      kind: lane
+      phase: explore
+      role: primary
+      fallbacks: ollama/deepseek-r1
+  spec:
+    - target: ollama/qwen3.5
+      kind: lane
+      phase: spec
+      role: primary
+      fallbacks: ollama/qwen3
+  design:
+    - target: ollama/qwen3.5
+      kind: lane
+      phase: design
+      role: primary
+      fallbacks: ollama/qwq
+  tasks:
+    - target: ollama/qwen3
+      kind: lane
+      phase: tasks
+      role: primary
+      fallbacks: ollama/qwen3.5
+  apply:
+    - target: ollama/qwen3-coder
+      kind: lane
+      phase: apply
+      role: primary
+      fallbacks: ollama/devstral
+  verify:
+    - target: ollama/qwq
+      kind: lane
+      phase: verify
+      role: judge
+      fallbacks: ollama/deepseek-r1
+  archive:
+    - target: ollama/qwen3
+      kind: lane
+      phase: archive
+      role: primary
+      fallbacks: ollama/qwen3.5

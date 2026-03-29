@@ -19,6 +19,10 @@
     "type": "git",
     "url": "git+https://github.com/osmelpv/gentle-sdd-router.git"
   },
+  "homepage": "https://github.com/osmelpv/gentle-sdd-router#readme",
+  "bugs": {
+    "url": "https://github.com/osmelpv/gentle-sdd-router/issues"
+  },
   "files": [
     "README.md",
     "assets/",

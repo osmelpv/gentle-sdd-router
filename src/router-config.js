@@ -16,6 +16,22 @@ export {
 } from './core/router.js';
 
 export {
+  loadV4Profiles,
+  assembleV4Config,
+  disassembleV4Config,
+  buildV4WritePlan,
+  validateProfileFile,
+} from './core/router-v4-io.js';
+
+export {
+  planMigrations,
+  runMigrations,
+  loadMigrationsRegistry,
+} from './core/migrations/index.js';
+
+export { resolveControllerLabel, resolveExecutionOwners, detectGentleAi } from './core/controller.js';
+
+export {
   createAgentTeamsLiteIntegrationContract,
   compareOpenCodeSessionSnapshots,
   createMultimodelBrowseContract,

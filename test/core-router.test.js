@@ -13,6 +13,7 @@ import {
   setActiveProfile,
   validateRouterConfig,
 } from '../src/core/router.js';
+import { assembleV4Config } from '../src/core/router-v4-io.js';
 
 const fixtureConfig = {
   version: 1,
@@ -97,4 +98,138 @@ test('core keeps shell bootstrap available when no intent is provided', () => {
   assert.match(guidance.reason, /shell bootstrap/i);
   assert.ok(Array.isArray(guidance.nextSteps));
   assert.ok(guidance.nextSteps.length > 0);
+});
+
+// ─── v4 assembled config fixtures ────────────────────────────────────────────
+// Lanes must be v3-style objects: { kind: 'lane', phase, role, target, ... }
+
+const v4CoreConfig = {
+  version: 4,
+  active_catalog: 'default',
+  active_preset: 'default',
+  activation_state: 'inactive',
+};
+
+const v4Profiles = [
+  {
+    filePath: '/fake/profiles/default.router.yaml',
+    fileName: 'default.router.yaml',
+    catalogName: 'default',
+    content: {
+      name: 'default',
+      phases: {
+        orchestrator: [
+          { kind: 'lane', phase: 'orchestrator', role: 'primary', target: 'anthropic/claude-sonnet' },
+          { kind: 'lane', phase: 'orchestrator', role: 'judge', target: 'openai/gpt' },
+        ],
+        explore: [
+          { kind: 'lane', phase: 'explore', role: 'primary', target: 'google/gemini-flash' },
+          { kind: 'lane', phase: 'explore', role: 'judge', target: 'openai/gpt' },
+        ],
+      },
+    },
+  },
+  {
+    filePath: '/fake/profiles/budget.router.yaml',
+    fileName: 'budget.router.yaml',
+    catalogName: 'default',
+    content: {
+      name: 'budget',
+      phases: {
+        orchestrator: [
+          { kind: 'lane', phase: 'orchestrator', role: 'primary', target: 'openai/gpt' },
+        ],
+        explore: [
+          { kind: 'lane', phase: 'explore', role: 'primary', target: 'openai/gpt' },
+        ],
+      },
+    },
+  },
+];
+
+test('setActiveProfile works with a v4 assembled (v3-shaped) config', () => {
+  const assembled = assembleV4Config(v4CoreConfig, v4Profiles);
+
+  assert.equal(assembled.version, 3);
+  assert.equal(assembled.active_preset, 'default');
+
+  const updated = setActiveProfile(assembled, 'default/budget');
+
+  assert.equal(updated.active_catalog, 'default');
+  assert.equal(updated.active_preset, 'budget');
+  assert.equal(updated.active_profile, 'budget');
+  assert.equal(updated.activation_state, 'inactive');
+});
+
+test('setActiveProfile with v4 assembled config using short preset name (implicit catalog)', () => {
+  const assembled = assembleV4Config(v4CoreConfig, v4Profiles);
+
+  const updated = setActiveProfile(assembled, 'budget');
+
+  assert.equal(updated.active_catalog, 'default');
+  assert.equal(updated.active_preset, 'budget');
+  assert.equal(updated.active_profile, 'budget');
+});
+
+test('listProfiles with a v4 assembled (v3-shaped) config lists all presets', () => {
+  const assembled = assembleV4Config(v4CoreConfig, v4Profiles);
+  const profiles = listProfiles(assembled);
+
+  assert.equal(profiles.length, 2);
+
+  const names = profiles.map((p) => p.name);
+  assert.ok(names.includes('default/default'));
+  assert.ok(names.includes('default/budget'));
+
+  const activeProfile = profiles.find((p) => p.active);
+  assert.ok(activeProfile);
+  assert.equal(activeProfile.name, 'default/default');
+});
+
+test('listProfiles with v4 assembled config reflects switched preset as active', () => {
+  const assembled = assembleV4Config(v4CoreConfig, v4Profiles);
+  const switched = setActiveProfile(assembled, 'default/budget');
+  const profiles = listProfiles(switched);
+
+  const activeProfile = profiles.find((p) => p.active);
+  assert.ok(activeProfile);
+  assert.equal(activeProfile.name, 'default/budget');
+
+  const inactiveProfile = profiles.find((p) => !p.active);
+  assert.equal(inactiveProfile.name, 'default/default');
+});
+
+test('resolveRouterState works with a v4 assembled (v3-shaped) config', () => {
+  const assembled = assembleV4Config(v4CoreConfig, v4Profiles);
+  const state = resolveRouterState(assembled);
+
+  assert.equal(state.version, 3);
+  assert.equal(state.activeProfileName, 'default');
+  assert.equal(state.selectedCatalogName, 'default');
+  assert.equal(state.selectedPresetName, 'default');
+  assert.equal(state.activationState, 'inactive');
+  assert.equal(state.effectiveController, 'Alan/gentle-ai');
+  assert.ok(Array.isArray(state.profiles));
+  assert.equal(state.profiles.length, 2);
+  // v3 resolved phases contain lane objects
+  assert.equal(state.resolvedPhases.orchestrator.active.role, 'primary');
+  assert.equal(state.resolvedPhases.orchestrator.active.target, 'anthropic/claude-sonnet');
+  assert.equal(state.resolvedPhases.explore.active.role, 'primary');
+  assert.equal(state.resolvedPhases.explore.active.target, 'google/gemini-flash');
+  assert.equal(state.resolvedPhases.explore.candidates.length, 2);
+});
+
+test('validateRouterConfig accepts a v4 assembled (v3-shaped) config', () => {
+  const assembled = assembleV4Config(v4CoreConfig, v4Profiles);
+
+  assert.equal(validateRouterConfig(assembled), true);
+});
+
+test('validateRouterConfig rejects a raw v4 config (must assemble first)', () => {
+  const rawV4 = { version: 4, active_preset: 'default', active_catalog: 'default' };
+
+  assert.throws(
+    () => validateRouterConfig(rawV4),
+    /raw v4 config.*version: 4.*cannot be validated directly/i
+  );
 });

@@ -12,6 +12,7 @@ const CANONICAL_PHASES = [
 ];
 
 export function setActiveProfile(config, profileName) {
+  // v4 assembled configs have version: 3 after assembly, so the v3 path below handles them.
   if (config.version === 3) {
     const [catalogNameFromSelector, presetNameFromSelector] = profileName.includes('/')
       ? profileName.split('/', 2)
@@ -154,9 +155,10 @@ export function describeInstallBootstrap(config, intent) {
   };
 }
 
-export function resolveRouterState(config) {
+export function resolveRouterState(config, controllerLabel = 'Alan/gentle-ai') {
+  // v4 assembled configs have version: 3 after assembly, so resolveRouterStateV3 handles them.
   if (config.version === 3) {
-    return resolveRouterStateV3(config);
+    return resolveRouterStateV3(config, controllerLabel);
   }
 
   const activationState = readConfiguredActivationState(config);
@@ -197,7 +199,7 @@ export function resolveRouterState(config) {
       enumerable: false,
     },
     effectiveController: {
-      value: activationState === 'active' ? 'gsr' : 'Alan/gentle-ai',
+      value: activationState === 'active' ? 'gsr' : controllerLabel,
       enumerable: false,
     },
   });
@@ -205,7 +207,7 @@ export function resolveRouterState(config) {
   return state;
 }
 
-function resolveRouterStateV3(config) {
+function resolveRouterStateV3(config, controllerLabel = 'Alan/gentle-ai') {
   const schema = normalizeRouterSchemaV3(config);
 
   const state = {
@@ -232,7 +234,7 @@ function resolveRouterStateV3(config) {
       enumerable: false,
     },
     effectiveController: {
-      value: schema.activationState === 'active' ? 'gsr' : 'Alan/gentle-ai',
+      value: schema.activationState === 'active' ? 'gsr' : controllerLabel,
       enumerable: false,
     },
   });
@@ -241,6 +243,7 @@ function resolveRouterStateV3(config) {
 }
 
 export function listProfiles(config) {
+  // v4 assembled configs have version: 3 after assembly, so the v3 path below handles them.
   if (config.version === 3) {
     const schema = normalizeRouterSchemaV3(config);
 
@@ -263,6 +266,15 @@ export function listProfiles(config) {
 export function validateRouterConfig(config) {
   if (!isObject(config)) {
     throw new Error('router.yaml must contain a valid root object.');
+  }
+
+  // v4 assembled configs have version: 3 (assembled via assembleV4Config).
+  // A raw v4 core config (version: 4, no catalogs) must be assembled first.
+  if (config.version === 4) {
+    throw new Error(
+      'A raw v4 config (version: 4) cannot be validated directly. ' +
+      'Call assembleV4Config() first to produce a v3-shaped assembled config, then validate.'
+    );
   }
 
   if (config.version === 3) {
@@ -556,12 +568,12 @@ export function parseYaml(text) {
   return document;
 }
 
-export function resolveActivationState(config) {
+export function resolveActivationState(config, controllerLabel = 'Alan/gentle-ai') {
   const activationState = readConfiguredActivationState(config);
 
   return {
     state: activationState,
-    effectiveController: activationState === 'active' ? 'gsr' : 'Alan/gentle-ai',
+    effectiveController: activationState === 'active' ? 'gsr' : controllerLabel,
   };
 }
 

@@ -1,0 +1,92 @@
+name: multiagent
+availability: stable
+complexity: high
+phases:
+  orchestrator:
+    - target: anthropic/claude-opus
+      kind: lane
+      phase: orchestrator
+      role: primary
+      fallbacks: anthropic/claude-sonnet
+    - target: openai/gpt-5
+      kind: lane
+      phase: orchestrator
+      role: judge
+      fallbacks: openai/gpt
+  explore:
+    - target: google/gemini-pro
+      kind: lane
+      phase: explore
+      role: primary
+      fallbacks: google/gemini-flash
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: explore
+      role: radar
+      fallbacks: anthropic/claude-haiku
+  spec:
+    - target: anthropic/claude-opus
+      kind: lane
+      phase: spec
+      role: primary
+      fallbacks: anthropic/claude-sonnet
+    - target: openai/gpt-5
+      kind: lane
+      phase: spec
+      role: judge
+      fallbacks: openai/gpt
+  design:
+    - target: anthropic/claude-opus
+      kind: lane
+      phase: design
+      role: primary
+      fallbacks: anthropic/claude-sonnet
+    - target: openai/gpt-5
+      kind: lane
+      phase: design
+      role: judge
+      fallbacks: openai/gpt
+  tasks:
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: tasks
+      role: primary
+      fallbacks: anthropic/claude-haiku
+    - target: openai/gpt
+      kind: lane
+      phase: tasks
+      role: secondary
+      fallbacks: openai/gpt-mini
+  apply:
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: apply
+      role: primary
+      fallbacks: anthropic/claude-haiku
+    - target: openai/gpt-5
+      kind: lane
+      phase: apply
+      role: secondary
+      fallbacks: openai/gpt
+  verify:
+    - target: openai/gpt-5
+      kind: lane
+      phase: verify
+      role: judge
+      fallbacks: openai/o3
+    - target: anthropic/claude-opus
+      kind: lane
+      phase: verify
+      role: radar
+      fallbacks: anthropic/claude-sonnet
+  archive:
+    - target: google/gemini-flash
+      kind: lane
+      phase: archive
+      role: primary
+      fallbacks: google/gemini-flash
+    - target: anthropic/claude-haiku
+      kind: lane
+      phase: archive
+      role: radar
+      fallbacks: anthropic/claude-sonnet

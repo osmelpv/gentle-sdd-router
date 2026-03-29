@@ -1,0 +1,53 @@
+name: multivendor
+availability: stable
+aliases: latest
+complexity: high
+phases:
+  orchestrator:
+    - target: anthropic/claude-opus
+      kind: lane
+      phase: orchestrator
+      role: primary
+      fallbacks: openai/gpt-5
+  explore:
+    - target: google/gemini-pro
+      kind: lane
+      phase: explore
+      role: primary
+      fallbacks: anthropic/claude-sonnet
+  spec:
+    - target: anthropic/claude-opus
+      kind: lane
+      phase: spec
+      role: primary
+      fallbacks: openai/gpt-5
+  design:
+    - target: anthropic/claude-opus
+      kind: lane
+      phase: design
+      role: primary
+      fallbacks: openai/gpt-5
+  tasks:
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: tasks
+      role: primary
+      fallbacks: openai/gpt
+  apply:
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: apply
+      role: primary
+      fallbacks: openai/gpt-5
+  verify:
+    - target: openai/gpt-5
+      kind: lane
+      phase: verify
+      role: judge
+      fallbacks: anthropic/claude-opus
+  archive:
+    - target: google/gemini-flash
+      kind: lane
+      phase: archive
+      role: primary
+      fallbacks: anthropic/claude-haiku

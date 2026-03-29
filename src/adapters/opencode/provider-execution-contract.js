@@ -1,5 +1,7 @@
+import { resolveExecutionOwners } from '../../core/controller.js';
+
 const DEFAULT_CONTRACT_VERSION = '1';
-const DEFAULT_EXECUTION_OWNERS = ['gentle-ai', 'agent-teams-lite'];
+const DEFAULT_EXECUTION_OWNERS = resolveExecutionOwners();
 
 const DEFAULT_CAPABILITIES = {
   contractPublication: 'supported',
@@ -23,8 +25,8 @@ const DEFAULT_REASONS = {
   bootstrap: 'Bootstrap is shell-first and still non-executing.',
   activate: 'Activation toggles routing control, not provider execution.',
   deactivate: 'Deactivation returns control to the host layer, not provider execution.',
-  providerExecution: 'Provider execution belongs to gentle-ai or agent-teams-lite, not the router.',
-  workflowOrchestration: 'Workflow orchestration is owned by gentle-ai and agent-teams-lite.',
+  providerExecution: `Provider execution belongs to ${DEFAULT_EXECUTION_OWNERS.join(' or ')}, not the router.`,
+  workflowOrchestration: `Workflow orchestration is owned by ${DEFAULT_EXECUTION_OWNERS.join(' and ')}.`,
   delegationHandoff: 'Delegation and handoff orchestration is outside the router boundary.',
   memoryOwnership: 'Durable memory and context ownership belongs to Engram.',
 };
