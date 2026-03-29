@@ -1,12 +1,22 @@
 import * as p from '@clack/prompts';
 import { resolveControllerLabel } from '../core/controller.js';
 
+const BANNER = `
+    ⚖️
+   ╱ ╲
+  ┌─────┐
+  │ GSR │
+  └──┬──┘
+ ╱╱│╲╲│╱╱╲╲
+◉  ◉  ◉  ◉  ◉
+`;
+
 /**
  * Run the interactive wizard.
  * @param {object} context - { configPath, routerDir, config, version }
  */
 export async function runWizard(context, prompts = p) {
-  prompts.intro('gsr — Gentle SDD Router');
+  prompts.intro(BANNER.trim() + '\n  Gentle SDD Router [BETA]');
 
   if (!context.configPath) {
     // State A: No router config found

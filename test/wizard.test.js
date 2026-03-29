@@ -142,7 +142,7 @@ test('runWizard routes fresh projects into the fresh-project flow', async () => 
   const result = await runWizard({ configPath: null, version: 0, config: null }, prompts);
 
   assert.equal(result, 'help');
-  assert.deepEqual(prompts.calls.intro, ['gsr — Gentle SDD Router']);
+  assert.ok(prompts.calls.intro[0].includes('GSR'));
   assert.equal(prompts.calls.select[0].message, 'No router config found in this directory.');
 });
 

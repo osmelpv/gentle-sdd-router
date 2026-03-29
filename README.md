@@ -1,11 +1,26 @@
 <div align="center">
 
-<!-- Logo placeholder: gavel-wielding octopus with judge hat -->
 <!-- TODO: Replace with actual logo when designed -->
+<!-- Logo concept: gavel-wielding octopus with judge hat -->
+
+<pre>
+    ⚖️
+   ╱ ╲
+  ┌─────┐
+  │ GSR │
+  └──┬──┘
+ ╱╱│╲╲│╱╱╲╲
+╱╱ │ ╲│╱ ╲ ╲╲
+◉  ◉  ◉  ◉  ◉
+</pre>
 
 <h1>Gentle SDD Router</h1>
 
 <p><strong>Multi-model routing by phase. Judge, compare, refine. Your models, your rules.</strong></p>
+
+<p>
+<img src="https://img.shields.io/badge/status-BETA-orange?style=for-the-badge" alt="Beta">
+</p>
 
 <p>
 <a href="https://github.com/osmelpv/gentle-sdd-router/releases"><img src="https://img.shields.io/github/v/release/osmelpv/gentle-sdd-router" alt="Release"></a>
@@ -13,6 +28,10 @@
 <img src="https://img.shields.io/badge/Node.js-20+-339933?logo=node.js&logoColor=white" alt="Node.js 20+">
 <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows%20WSL-lightgrey" alt="Platform">
 </p>
+
+<blockquote>
+<p>⚠️ <strong>Beta</strong> — This project is under active development. APIs, schema, and presets may change. <a href="https://github.com/osmelpv/gentle-sdd-router/issues">Report issues</a>.</p>
+</blockquote>
 
 </div>
 
