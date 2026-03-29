@@ -2,13 +2,39 @@ import * as p from '@clack/prompts';
 import { resolveControllerLabel } from '../core/controller.js';
 
 const BANNER = `
-    ⚖️
-   ╱ ╲
-  ┌─────┐
-  │ GSR │
-  └──┬──┘
- ╱╱│╲╲│╱╱╲╲
-◉  ◉  ◉  ◉  ◉
+                                                      :!???????~!??????7~.
+                                                  .!YY!:.     .!:      .^?YJ^
+                                   ..           .5P~           .           .?G!
+                               ...#7JB.        7#^             .              YB.
+                           :~7GP5#! 7#       Y#      .:^^..   ..   .:^:.      ~#:
+                   .. .?Y5?!^..P^P?G~ ?#     !@    .!55J?JY55YJ??JY55JJJYPJ:.   !#
+                 .G?JBB#^G      G^G?G^ JB  :?#J   :PG:       .:::..       7#7.  .#P7.
+                 .@~ 7G?G^G      G:GP#~^#:?#....~.P#                       ^@^:^...:#~
+                  :#^ 7PJP^P   :^G#5P.~~. Y#.^^.^!#.                        Y#^^.~.:#~
+                   :#^ ?5BPJ#BY!~B#       G5??J5?#Y   ^~:.           ..:~.   @5J5???GY
+                    ^#~.#5~!:?GB!?#.     J#  ^.~.G5   .P@PBP       ^#5#@!    @:^::.  @^
+                     .!!:      #! !#:..  :@Y^~^~7#    B@##:        J#@@!   ~@B~^~^^P@.
+                               J@^ ?@7?5!#?.^!7Y.Y@7    !?.       .  ^?^    #@^~Y!~: 5#
+                             :#7J@:.#B .#@J .: ~.@@~       .7!!7JJ.       #@@Y.^ ~  P#
+                             G# .5Y7^   #B!?7?J?5@@@@.         .          P@@@#J?J7??~5P
+                             :#Y:   .~Y@@7  !.~:^@@@@7                    @@@@@.!.^^  !@
+                               ^7P#G#?:5#5P?J~!?#GJG@.                    P@JY#B?~!??G5:
+                                  @~GY. 5BJYYYYJ~~55.7.                  ^:G#!.:!77!^
+                                  !#^#Y. #G!????!^  G?                    G:7@#57~^^^^:.
+                                   ~#B@Y. #~     .Y#!    P           ~?   .#J:YGY!~^^~!?55?.
+                                     7B###Y77JG#B?     PP     ?.     #~    5#Y!?YJ!^.    ~GP:  .!^
+                                        !G#@#GJ~.     ^#G     7@#.    .#J    .Y#@#!!PPY77.  ^5YJ57@~
+                                     .?5Y7:.      .:~B@?    .P@@@#7    .B#!     ^Y##J~7!JGP?^.:~?#P
+                                   :GP^    ..:~7!^!G#^   .J##~Y##!   .Y@P?^.     :!?J!..~?YYJ!.
+                                  7#:  .^7!^YGYJY??G@:.  7GGB?   :PBPG. :.Y@#J7YJ7^..   ~GP
+                                 .@^ .!~BJ77^      BB   ~PY#       ~#7B   .@~.^~!YY?5P?:  J#.
+                                 .@^ YJ#:   .YYY#! ?@.  !~^#       ?B 5   J@  YB?Y?..:BYY. &5
+                                  J#::~5G7~ !#:7@5   G#   7Y#       :@~7  ^@^  :#:#YB  .#::@~
+                                   ^P55?G#.#  B#G   :@^  Y.BJ     .#!~~  B#    #@^ &?Y#5P5#!
+                                      ..   B5^:5B?7JGJ  ~77G7      BY!Y. .GP?75#!.~#~ ^~~:
+                                            #P!~:^^:..^7^5#         !@^7!. .^^^^~!#?
+                                             !J5GG7!PGG5JJ.          ~YJPPGJ!JGPY?:
+                                                 ^77!.                    :77!.
 `;
 
 /**
@@ -16,7 +42,7 @@ const BANNER = `
  * @param {object} context - { configPath, routerDir, config, version }
  */
 export async function runWizard(context, prompts = p) {
-  prompts.intro(BANNER.trim() + '\n  Gentle SDD Router [BETA]');
+  prompts.intro(BANNER.trim() + '\n  GSR — Gentle SDD Router [BETA]');
 
   if (!context.configPath) {
     // State A: No router config found

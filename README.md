@@ -1,18 +1,8 @@
 <div align="center">
 
-<!-- TODO: Replace with actual logo when designed -->
-<!-- Logo concept: gavel-wielding octopus with judge hat -->
-
-<pre>
-    ⚖️
-   ╱ ╲
-  ┌─────┐
-  │ GSR │
-  └──┬──┘
- ╱╱│╲╲│╱╱╲╲
-╱╱ │ ╲│╱ ╲ ╲╲
-◉  ◉  ◉  ◉  ◉
-</pre>
+<a href="assets/img/gsr-logo.png">
+<img src="assets/img/gsr-logo.png" alt="GSR — Gentle SDD Router" width="200">
+</a>
 
 <h1>Gentle SDD Router</h1>
 
