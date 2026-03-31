@@ -1,3 +1,5 @@
+> **Archived**: This exploration document is preserved for historical reference. The change it describes was not implemented or was superseded.
+
 # Exploration: Open Source Token Usage Monitoring Tools
 
 **Date:** 2026-03-29  

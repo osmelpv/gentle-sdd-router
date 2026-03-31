@@ -1473,7 +1473,7 @@ function renderCommandHelp(topic, subtopic) {
       'Generate and apply a configuration overlay for a TUI target.',
       'Targets: opencode',
       '  gsr apply opencode          Preview the generated OpenCode overlay (dry-run).',
-      '  gsr apply opencode --apply  Write overlay to ~/.config/opencode/opencode.json.',
+      '  gsr apply opencode --apply  Write overlay to ./opencode.json in the project root.',
       'Only gsr-* agent keys are created/modified; all other opencode.json keys are preserved.',
     ].join('\n') + '\n';
   }
@@ -1683,7 +1683,7 @@ function renderCommandHelp(topic, subtopic) {
     return [
       'Usage: gsr setup uninstall [--confirm]',
       'Fully uninstall gsr from this project:',
-      '  1. Removes gsr-* agent entries from ~/.config/opencode/opencode.json',
+      '  1. Removes gsr-* agent entries from ./opencode.json (project-local)',
       '  2. Creates a backup of router/ at .router-backup-<timestamp>',
       '  3. Deletes the router/ directory',
       '',

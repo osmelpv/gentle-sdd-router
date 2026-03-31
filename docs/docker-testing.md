@@ -17,8 +17,8 @@ The final container should include:
 - `gentle-ai` installed and ready
 - `opencode` installed and ready
 - one precreated `/test-project`
-- `gsr install` already executed
-- `gsr apply opencode --apply` already executed
+- `gsr setup install` already executed
+- `gsr setup apply opencode --apply` already executed
 
 ## Quick Start
 
@@ -52,18 +52,18 @@ gsr list               # Should show at least 1 preset
 ### Step 3: Switch presets
 
 ```bash
-gsr use claude         # Switch to claude preset; v4 structure preserved
+gsr route use claude   # Switch to claude preset; v4 structure preserved
 gsr status             # Should show claude active
-gsr use multivendor    # Switch back to multivendor
+gsr route use multivendor  # Switch back to multivendor
 gsr status             # Should show multivendor active again
 ```
 
 ### Step 4: Export presets
 
 ```bash
-gsr export multivendor                               # Print YAML to stdout
-gsr export multivendor --compact                     # Print gsr:// compact string
-gsr export multivendor --out /tmp/my-preset.yaml     # Save to file
+gsr profile export multivendor                               # Print YAML to stdout
+gsr profile export multivendor --compact                     # Print gsr:// compact string
+gsr profile export multivendor --out /tmp/my-preset.yaml     # Save to file
 ls /tmp/my-preset.yaml                               # Should exist
 cat /tmp/my-preset.yaml                              # Inspect the content
 ```
@@ -71,9 +71,9 @@ cat /tmp/my-preset.yaml                              # Inspect the content
 ### Step 5: Apply opencode overlay
 
 ```bash
-gsr apply opencode                  # Preview what would be written (dry run)
-gsr apply opencode --apply          # Write to ~/.config/opencode/opencode.json
-cat ~/.config/opencode/opencode.json | grep gsr     # Should show gsr-* entries
+gsr setup apply opencode            # Preview what would be written (dry run)
+gsr setup apply opencode --apply    # Write to ./opencode.json in the project root
+cat opencode.json | grep gsr        # Should show gsr-* entries
 ```
 
 ### Step 5b: OpenCode visual validation (manual)
@@ -95,7 +95,7 @@ Inside OpenCode, validate manually:
 ### Step 6: Migrations
 
 ```bash
-gsr update             # Should say "up to date" or apply pending migrations
+gsr setup update       # Should say "up to date" or list pending migrations
 ```
 
 ### Step 7: Persona and pricing
@@ -150,7 +150,7 @@ docker compose down --rmi local
 
 1. **Standalone only** — gsr without gentle-ai
 2. **gentle-ai present** — controller/persona integration
-3. **OpenCode overlay applied** — `gsr apply opencode --apply`
-4. **Preset switching** — `multivendor`, `claude`, `ollama`, `safety`
-5. **Import/export** — local file, compact string, URL
-6. **Migration path** — seed v3 project, run `gsr update --apply`
+3. **OpenCode overlay applied** — `gsr setup apply opencode --apply`
+4. **Preset switching** — `gsr route use multivendor`, `claude`, `ollama`, `safety`
+5. **Import/export** — `gsr profile import`/`gsr profile export`, local file, compact string, URL
+6. **Migration path** — seed v3 project, run `gsr setup update --apply`

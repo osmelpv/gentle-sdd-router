@@ -8,7 +8,7 @@ This project is still in **beta**. Do not publish until the checklist below is c
 - [ ] Docker E2E environment prepared and validated manually in OpenCode
 - [ ] README and docs audited for consistency
 - [ ] Import/export flow tested on a clean machine or container
-- [ ] Overlay generation tested with a real `~/.config/opencode/opencode.json`
+- [ ] Overlay generation tested with a real `./opencode.json` in the project root
 - [ ] Safety preset validated interactively in OpenCode
 - [ ] Token usage monitor scope for v1 is decided clearly
 

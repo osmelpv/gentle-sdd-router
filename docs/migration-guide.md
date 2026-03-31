@@ -12,7 +12,7 @@ When gsr's schema evolves, the migration system upgrades your project config saf
 ## Checking for Migrations
 
 ```bash
-gsr update
+gsr setup update
 ```
 
 This shows pending migrations without applying them (dry-run by default):
@@ -21,13 +21,13 @@ This shows pending migrations without applying them (dry-run by default):
 Pending migrations:
   001 — v3-to-v4-multifile: Convert monolith to multi-file profile structure
 
-Run `gsr update --apply` to apply these migrations.
+Run `gsr setup update --apply` to apply these migrations.
 ```
 
 ## Applying Migrations
 
 ```bash
-gsr update --apply
+gsr setup update --apply
 ```
 
 For each migration:
@@ -108,7 +108,7 @@ You don't need to migrate immediately — older configs continue to work. But mi
 When running any gsr command on a project with an older schema version, you'll see a one-line hint:
 
 ```
-Note: Your router config (version 3) can be upgraded to version 4. Run `gsr update` for details.
+Note: Your router config (version 3) can be upgraded to version 4. Run `gsr setup update` for details.
 ```
 
 This appears once per command and doesn't block your work.

@@ -157,22 +157,24 @@ No credentials or secrets are included — only model routing declarations.
 
 For full CLI-based sharing and import flows, see the [Import/Export Guide](import-export.md).
 
-## The 8 Canonical Phases
+## The 10 Canonical Phases
 
 | Phase | Purpose | Best model type |
 |-------|---------|----------------|
 | **orchestrator** | Coordinate work, make decisions | Strong reasoning (Opus, GPT-5) |
 | **explore** | Investigate codebase, research | Large context (Gemini Pro) |
+| **propose** | Structure a formal proposal from exploration | Strong reasoning (Opus) |
 | **spec** | Write specifications | Strong writing + reasoning |
 | **design** | Architecture decisions | Deep reasoning (Opus) |
 | **tasks** | Break down into tasks | Fast, structured (Sonnet) |
 | **apply** | Write code | Best coding model (Sonnet, GPT-5) |
 | **verify** | Validate, find bugs | Different provider than apply (judge perspective) |
+| **debug** | Diagnose root cause when verify fails | Strong reasoning + large context |
 | **archive** | Document, close out | Fast, cheap (Flash, Haiku) |
 
 ## Custom Phases
 
-The 8 canonical phases (orchestrator, explore, spec, design, tasks, apply, verify, archive)
+The 10 canonical phases (orchestrator, explore, propose, spec, design, tasks, apply, verify, debug, archive)
 are the standard SDD workflow. However, you can define **any phase name** in your presets:
 
 ```yaml
@@ -204,7 +206,7 @@ Custom phases work with all gsr features: routing, fallbacks, multi-agent lanes,
 import/export, and overlay generation.
 
 > **Note**: When using gentle-ai, custom phases route correctly but won't load
-> phase-specific skill files (gentle-ai only has skills for the 8 canonical phases).
+> phase-specific skill files (gentle-ai only has skills for the 10 canonical phases).
 
 ## Rules of Thumb
 

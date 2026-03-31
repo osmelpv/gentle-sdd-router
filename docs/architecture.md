@@ -34,6 +34,7 @@ src/
 │   ├── router-schema-v3.js         # Schema v3 normalization and validation
 │   ├── router-v4-io.js             # v4 multi-file load/save/assembly
 │   ├── controller.js               # gentle-ai detection, controller label resolution
+│   ├── phases.js                   # Canonical phase list and metadata
 │   ├── preset-io.js                # import/export helpers and compact sharing format
 │   └── migrations/
 │       ├── index.js                # Migration planner, runner, backup/restore
@@ -49,7 +50,10 @@ src/
 │       ├── agent-teams-lite-contract.js
 │       └── runtime-contract.js
 └── ux/
-    └── wizard.js                   # Interactive wizard (@clack/prompts)
+    ├── wizard.js                   # Interactive wizard (@clack/prompts)
+    └── tui/                        # Full-screen TUI (Ink 6 + React 19)
+        ├── app.js                  # TUI entry point (fullscreen-ink)
+        └── screens/                # Split-panel screens (@inkjs/ui)
 ```
 
 ## Data Flow
@@ -128,11 +132,16 @@ All file writes use temp-file + rename pattern. For v4 multi-file saves, profile
 
 ## Dependencies
 
-**Production**: `@clack/prompts` (interactive wizard, 2 transitive deps)
+**Production**:
+- `@clack/prompts` — interactive fallback wizard
+- `ink` ^6.8.0 — React renderer for the terminal TUI
+- `react` ^19.2.4 — component model for the TUI
+- `@inkjs/ui` ^2.0.0 — pre-built Ink UI components (split panels, text input, etc.)
+- `fullscreen-ink` ^0.1.0 — fullscreen mode wrapper for Ink apps
 
 **Development**: none
 
-**Runtime**: Node.js 20+ standard library only (`node:fs`, `node:path`, `node:crypto`, `node:test`, `node:assert`)
+**Runtime**: Node.js 20+ standard library (`node:fs`, `node:path`, `node:crypto`, `node:test`, `node:assert`)
 
 ## Schema Versions
 

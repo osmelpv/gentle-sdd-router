@@ -1,3 +1,5 @@
+> **Archived**: This exploration document is preserved for historical reference. The change it describes was not implemented or was superseded.
+
 # Exploration: usage-quota-tui
 
 > **Change**: `usage-quota-tui`

@@ -139,7 +139,7 @@ Beyond the core agents, judge, and radar, `gsr` defines specialized roles:
 | **Security Auditor** | Finds injection, auth bypass, data exposure, CVEs | explore, verify |
 | **Tester** | Writes TDD tests that FAIL (defines "done") | tasks |
 
-Each role has a contract (skill) that defines its input, output, and behavioral rules. Contracts are shipped with gsr and synced to Engram for persistent access across sessions.
+Each role has a contract (skill) that defines its input, output, and behavioral rules. Contracts are shipped with gsr; `gsr sync` generates a local manifest so the host TUI can discover and consume them.
 
 ### Catalogs: Switch Your Entire Setup Instantly
 
@@ -165,7 +165,7 @@ One keystroke to go from cloud to local. One keystroke to enter analysis-only mo
 | **Dynamic model picker** | Fetches models from OpenRouter + Ollama in real time. Always fresh pricing and capabilities |
 | **Catalog switching** | Switch entire routing configurations instantly (cloud, local, hybrid, analysis-only) |
 | **8 built-in presets** | multivendor, claude, openai, multiagent, ollama, cheap, heavyweight, safety |
-| **Agent contracts** | 9 role contracts + 10 phase compositions shipped as skills. `gsr sync` pushes to Engram |
+| **Agent contracts** | 9 role contracts + 10 phase compositions shipped as skills. `gsr sync` generates a local manifest for host discovery |
 | **Interactive TUI** | Split-panel wizard for profile creation, editing, and comparison |
 | **Non-executing boundary** | Declares routing only -- never calls models or runs providers |
 
@@ -184,6 +184,7 @@ gsr route activate                  gsr takes routing control
 gsr route deactivate                Host takes control back
 
 gsr profile list                    List profiles with catalog info
+gsr profile show [name]             Show routes for a profile
 gsr profile create <name>           Create empty profile
 gsr profile delete <name>           Delete profile
 gsr profile rename <old> <new>      Rename profile
@@ -196,6 +197,8 @@ gsr catalog create <name>           Create catalog (disabled by default)
 gsr catalog delete <name>           Delete empty catalog
 gsr catalog enable <name>           Show in TUI host (TAB cycling)
 gsr catalog disable <name>          Hide from TUI host
+gsr catalog move <profile> <cat>    Move a profile to a different catalog
+gsr catalog use <name> [preset]     Set active catalog and preset
 
 gsr inspect browse [selector]       Multimodel metadata
 gsr inspect compare <a> <b>         Compare two presets
@@ -205,10 +208,9 @@ gsr setup install                   Install router config
 gsr setup uninstall                 Remove gsr overlay
 gsr setup bootstrap                 Guided first-time setup
 gsr setup update [--apply]          Config migrations
-gsr setup apply <target> [--apply]  Generate TUI overlay
+gsr setup apply <target> [--apply]  Generate TUI overlay (writes to ./opencode.json)
 
-gsr sync                            Push global contracts to Engram
-gsr catalog use <name> [preset]     Set active catalog and preset
+gsr sync                            Generate sync manifest for agent contracts
 ```
 
 Each category supports `help`: `gsr route help`, `gsr catalog help`, etc.
@@ -410,21 +412,21 @@ router/contracts/
     orchestrator.md ... archive.md
 ```
 
-### Syncing contracts to Engram
+### Syncing contracts
 
-Contracts are pushed to Engram for persistent access across sessions:
+`gsr sync` generates a local `.sync-manifest.json` inside `router/contracts/`. This manifest lists all role contracts and phase compositions with checksums, so the host TUI can discover and consume them.
 
 ```bash
-gsr sync                          # push all 19 contracts to Engram (idempotent)
+gsr sync                          # generate .sync-manifest.json (idempotent)
 ```
 
-This runs automatically on `npm install -g` via postinstall. Use `gsr sync` manually during development (npm link) or as a repair command if Engram data is lost.
+Use `gsr sync` after modifying contracts during development, or as a repair command to regenerate the manifest if it is lost.
 
 ### Global vs Project data
 
 | Data | Scope | Created by | Cleaned by |
 |------|-------|-----------|------------|
-| Role contracts, phase compositions | **Global** | `npm install -g` / `gsr sync` | `npm uninstall -g` |
+| Role contracts, phase compositions | **Global** | Bundled with package (`npm install -g`) | `npm uninstall -g` |
 | Custom profiles, project agents | **Project** | `gsr install` / TUI wizard | `gsr setup uninstall` |
 
 `gsr setup uninstall` NEVER touches global contracts. It only cleans project-specific data.
