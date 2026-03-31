@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "generated_at": "2026-03-31T15:51:34.173Z",
+  "contracts": [
+    {
+      "type": "role",
+      "name": "agent",
+      "topic_key": "gsr/contracts/roles/agent",
+      "file": "router/contracts/roles/agent.md",
+      "checksum": "94b301537b897bf7bb8eb22f86a06e7cd01f0f86018a66d2a57fef1a4eb900d1"
+    },
+    {
+      "type": "role",
+      "name": "investigator",
+      "topic_key": "gsr/contracts/roles/investigator",
+      "file": "router/contracts/roles/investigator.md",
+      "checksum": "328c92a1cdd04443f22ca12ab18a3746e1d905d58b13a41b3e2c169506f4f955"
+    },
+    {
+      "type": "role",
+      "name": "judge-debate-protocol",
+      "topic_key": "gsr/contracts/roles/judge-debate-protocol",
+      "file": "router/contracts/roles/judge-debate-protocol.md",
+      "checksum": "0224e0bcbea90cce31883c994b3e691c4a5eac63774ffb60f1b40b02d8b9d237"
+    },
+    {
+      "type": "role",
+      "name": "judge",
+      "topic_key": "gsr/contracts/roles/judge",
+      "file": "router/contracts/roles/judge.md",
+      "checksum": "6c906049eac82eeed0b48e85200aa50c8150e22ef09863f329fb9d705a8c6bff"
+    },
+    {
+      "type": "role",
+      "name": "radar-context-protocol",
+      "topic_key": "gsr/contracts/roles/radar-context-protocol",
+      "file": "router/contracts/roles/radar-context-protocol.md",
+      "checksum": "04716ce5b79ec318e3ece12dc4935f4acdac9a0b0339d4fe50e5637d4a7ab714"
+    },
+    {
+      "type": "role",
+      "name": "radar",
+      "topic_key": "gsr/contracts/roles/radar",
+      "file": "router/contracts/roles/radar.md",
+      "checksum": "1107439a77b9f63b3c3f5ea8f7181f4488792445e2deec0586f65be7216aed53"
+    },
+    {
+      "type": "role",
+      "name": "risk-detector",
+      "topic_key": "gsr/contracts/roles/risk-detector",
+      "file": "router/contracts/roles/risk-detector.md",
+      "checksum": "a11d29a464d1c733fa81507979edeb9dc78925b6fdd860803c02011b71bbc234"
+    },
+    {
+      "type": "role",
+      "name": "security-auditor",
+      "topic_key": "gsr/contracts/roles/security-auditor",
+      "file": "router/contracts/roles/security-auditor.md",
+      "checksum": "ff4d6f33a6947ca6e5385480c17448d2d64be848ec8ba6a154bdc3e7345a5a20"
+    },
+    {
+      "type": "role",
+      "name": "tester",
+      "topic_key": "gsr/contracts/roles/tester",
+      "file": "router/contracts/roles/tester.md",
+      "checksum": "6a260a189d853a0205703a6b9e5d8c351e5ebedb1007bbbbdb66a5fa45520a33"
+    },
+    {
+      "type": "phase",
+      "name": "apply",
+      "topic_key": "gsr/contracts/phases/apply",
+      "file": "router/contracts/phases/apply.md",
+      "checksum": "b474f133f19e4a91abd9e6a65e912bc36a338ba39635f947b56267268fcf2a15"
+    },
+    {
+      "type": "phase",
+      "name": "archive",
+      "topic_key": "gsr/contracts/phases/archive",
+      "file": "router/contracts/phases/archive.md",
+      "checksum": "eafce973007f727d2bfe3bb2e11ba93643af0c97b2cba6d4c5e0eaec021b5698"
+    },
+    {
+      "type": "phase",
+      "name": "debug",
+      "topic_key": "gsr/contracts/phases/debug",
+      "file": "router/contracts/phases/debug.md",
+      "checksum": "ae168f21047d529c37bcc1e275dcd286bed0f7cf69b7eefd53262203e3aac12b"
+    },
+    {
+      "type": "phase",
+      "name": "design",
+      "topic_key": "gsr/contracts/phases/design",
+      "file": "router/contracts/phases/design.md",
+      "checksum": "82614c71ddff739b0c3f3e3cec53465b42638b5c3c41cb3773d61bf7b35338fd"
+    },
+    {
+      "type": "phase",
+      "name": "explore",
+      "topic_key": "gsr/contracts/phases/explore",
+      "file": "router/contracts/phases/explore.md",
+      "checksum": "c8a8b4a93c7043b4ff4fdc1d1899b8a69536d9dbfd078cf8be62c72342b763b2"
+    },
+    {
+      "type": "phase",
+      "name": "orchestrator",
+      "topic_key": "gsr/contracts/phases/orchestrator",
+      "file": "router/contracts/phases/orchestrator.md",
+      "checksum": "bc07970b54da816461b1f06fbdb355d924ee3cbdc9b8d9de65b558eb5d5d1f1a"
+    },
+    {
+      "type": "phase",
+      "name": "propose",
+      "topic_key": "gsr/contracts/phases/propose",
+      "file": "router/contracts/phases/propose.md",
+      "checksum": "46d8f06592f5b1153f95c70f7011901af1f6c5bf3f093d1c8b776f8cf95dffce"
+    },
+    {
+      "type": "phase",
+      "name": "spec",
+      "topic_key": "gsr/contracts/phases/spec",
+      "file": "router/contracts/phases/spec.md",
+      "checksum": "59675c023231cdbe50816654bb9f987f7a39cafba15f9c3da3a66d974d2ee8d0"
+    },
+    {
+      "type": "phase",
+      "name": "tasks",
+      "topic_key": "gsr/contracts/phases/tasks",
+      "file": "router/contracts/phases/tasks.md",
+      "checksum": "bcc53320dddbbcc4bfa2d6d0ee6570b65d9962c7cbe6a4e730e5937427830dc1"
+    },
+    {
+      "type": "phase",
+      "name": "verify",
+      "topic_key": "gsr/contracts/phases/verify",
+      "file": "router/contracts/phases/verify.md",
+      "checksum": "16f7721429535038076f3eefa58efb3c1dedc70369fa0386b709e43883af99d2"
+    }
+  ]
+}

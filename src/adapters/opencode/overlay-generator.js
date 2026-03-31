@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, readdirSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { resolvePersona } from '../../core/controller.js';
@@ -73,7 +73,11 @@ export function generateOpenCodeOverlay(config) {
   const catalogs = config.catalogs ?? {};
   const persona = resolvePersona(config);
 
-  for (const [, catalog] of Object.entries(catalogs)) {
+  for (const [catalogName, catalog] of Object.entries(catalogs)) {
+    // Only include presets from enabled catalogs in the overlay
+    if (catalog.enabled === false) {
+      continue;
+    }
     const presets = catalog.presets ?? {};
 
     for (const [presetName, preset] of Object.entries(presets)) {
@@ -175,4 +179,124 @@ export function writeOpenCodeConfig(config, targetPath = OPENCODE_CONFIG_PATH) {
   return targetPath;
 }
 
-export { OPENCODE_CONFIG_PATH, GSR_AGENT_PREFIX };
+/**
+ * Remove all gsr-* agent entries from opencode.json.
+ * @param {string} [configPath] - Override path for testing
+ * @returns {{ removedCount: number, path: string }}
+ */
+export function removeOpenCodeOverlay(configPath = OPENCODE_CONFIG_PATH) {
+  if (!existsSync(configPath)) {
+    return { removedCount: 0, path: configPath };
+  }
+
+  let existing = {};
+  try {
+    existing = JSON.parse(readFileSync(configPath, 'utf8'));
+  } catch {
+    return { removedCount: 0, path: configPath };
+  }
+
+  if (!existing.agent || typeof existing.agent !== 'object') {
+    return { removedCount: 0, path: configPath };
+  }
+
+  const gsrKeys = Object.keys(existing.agent).filter((key) => key.startsWith(GSR_AGENT_PREFIX));
+
+  if (gsrKeys.length === 0) {
+    return { removedCount: 0, path: configPath };
+  }
+
+  const result = JSON.parse(JSON.stringify(existing));
+  for (const key of gsrKeys) {
+    delete result.agent[key];
+  }
+
+  const dir = dirname(configPath);
+  mkdirSync(dir, { recursive: true });
+  const json = JSON.stringify(result, null, 2) + '\n';
+  const tempPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tempPath, json, 'utf8');
+  renameSync(tempPath, configPath);
+
+  return { removedCount: gsrKeys.length, path: configPath };
+}
+
+const OPENCODE_COMMANDS_DIR = join(homedir(), '.config', 'opencode', 'commands');
+
+/**
+ * Find the gsr commands source directory.
+ * Commands are .md files shipped under router/commands/ in the package.
+ */
+function findCommandsSourceDir() {
+  const moduleDir = dirname(new URL(import.meta.url).pathname);
+  const commandsDir = join(moduleDir, '..', '..', '..', 'router', 'commands');
+  if (existsSync(commandsDir)) return commandsDir;
+  return null;
+}
+
+/**
+ * Deploy gsr-*.md command files to the OpenCode commands directory.
+ * These become /gsr-* slash commands inside the TUI.
+ *
+ * @param {{ commandsDir?: string }} options - Override target dir for testing
+ * @returns {{ written: number, skipped: number, files: string[], targetDir: string }}
+ */
+export function deployGsrCommands(options = {}) {
+  const sourceDir = findCommandsSourceDir();
+  if (!sourceDir) {
+    return { written: 0, skipped: 0, files: [], targetDir: '', error: 'Commands source directory not found.' };
+  }
+
+  const targetDir = options.commandsDir || OPENCODE_COMMANDS_DIR;
+  mkdirSync(targetDir, { recursive: true });
+
+  const sourceFiles = readdirSync(sourceDir).filter(f => f.endsWith('.md'));
+  const files = [];
+  let written = 0;
+  let skipped = 0;
+
+  for (const file of sourceFiles) {
+    const sourcePath = join(sourceDir, file);
+    const targetPath = join(targetDir, file);
+    const sourceContent = readFileSync(sourcePath, 'utf8');
+
+    // Skip if identical content already exists
+    if (existsSync(targetPath)) {
+      const existingContent = readFileSync(targetPath, 'utf8');
+      if (existingContent === sourceContent) {
+        skipped++;
+        continue;
+      }
+    }
+
+    // Atomic write
+    const tempPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
+    writeFileSync(tempPath, sourceContent, 'utf8');
+    renameSync(tempPath, targetPath);
+    files.push(file);
+    written++;
+  }
+
+  return { written, skipped, files, targetDir };
+}
+
+/**
+ * Remove all gsr-*.md command files from the OpenCode commands directory.
+ * @param {{ commandsDir?: string }} options
+ * @returns {{ removed: number, files: string[] }}
+ */
+export function removeGsrCommands(options = {}) {
+  const targetDir = options.commandsDir || OPENCODE_COMMANDS_DIR;
+  if (!existsSync(targetDir)) {
+    return { removed: 0, files: [] };
+  }
+
+  const gsrFiles = readdirSync(targetDir).filter(f => f.startsWith('gsr-') && f.endsWith('.md'));
+  for (const file of gsrFiles) {
+    unlinkSync(join(targetDir, file));
+  }
+
+  return { removed: gsrFiles.length, files: gsrFiles };
+}
+
+export { OPENCODE_CONFIG_PATH, OPENCODE_COMMANDS_DIR, GSR_AGENT_PREFIX };

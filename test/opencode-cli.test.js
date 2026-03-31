@@ -456,3 +456,290 @@ test('CLI apply opencode boundary: no provider execution', async () => {
     fs.rmSync(tempDir, { recursive: true });
   }
 });
+
+// ── runCli command coverage ───────────────────────────────────────────────────
+
+const v4MultivendorFixtureYaml = `version: 4
+active_preset: multivendor
+activation_state: active
+`;
+
+const multivendorProfileYaml = `name: multivendor
+availability: stable
+phases:
+  orchestrator:
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: orchestrator
+      role: primary
+`;
+
+function makeMultivendorV4TempDir() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-cli-mv-'));
+  fs.mkdirSync(path.join(tempDir, 'router', 'profiles'), { recursive: true });
+  fs.writeFileSync(path.join(tempDir, 'router', 'router.yaml'), v4MultivendorFixtureYaml, 'utf8');
+  fs.writeFileSync(
+    path.join(tempDir, 'router', 'profiles', 'multivendor.router.yaml'),
+    multivendorProfileYaml,
+    'utf8',
+  );
+  return tempDir;
+}
+
+async function captureRunCli(argv, tempDir) {
+  const originalCwd = process.cwd();
+  const chunks = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+
+  process.chdir(tempDir);
+  process.stdout.write = (chunk) => {
+    chunks.push(String(chunk));
+    return true;
+  };
+
+  try {
+    await runCli(argv);
+  } finally {
+    process.stdout.write = originalWrite;
+    process.chdir(originalCwd);
+  }
+
+  return chunks.join('');
+}
+
+test('gsr reload runs without error and produces output', async () => {
+  const tempDir = makeMultivendorV4TempDir();
+
+  try {
+    const output = await captureRunCli(['reload'], tempDir);
+    assert.match(output, /Resolved routes:/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true });
+  }
+});
+
+test('gsr list runs without error and shows profiles', async () => {
+  const tempDir = makeMultivendorV4TempDir();
+
+  try {
+    const output = await captureRunCli(['list'], tempDir);
+    assert.match(output, /Profiles:/);
+    assert.match(output, /multivendor/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true });
+  }
+});
+
+test('gsr update without --apply shows pending migrations or up-to-date message', async () => {
+  const tempDir = makeMultivendorV4TempDir();
+
+  try {
+    const output = await captureRunCli(['update'], tempDir);
+    assert.ok(
+      output.includes('up to date') || output.includes('Pending migrations'),
+      `Expected up-to-date or pending migrations in: ${output}`,
+    );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true });
+  }
+});
+
+test('gsr apply with no target throws informative error', async () => {
+  const tempDir = makeMultivendorV4TempDir();
+  const originalCwd = process.cwd();
+
+  process.chdir(tempDir);
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = () => true;
+
+  try {
+    await assert.rejects(
+      () => runCli(['apply']),
+      (err) => {
+        assert.ok(err instanceof Error);
+        assert.ok(err.message.includes('requires a target'), `Expected 'requires a target' in: ${err.message}`);
+        return true;
+      },
+    );
+  } finally {
+    process.stdout.write = originalWrite;
+    process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true });
+  }
+});
+
+test('gsr apply with unknown target throws informative error', async () => {
+  const tempDir = makeMultivendorV4TempDir();
+  const originalCwd = process.cwd();
+
+  process.chdir(tempDir);
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = () => true;
+
+  try {
+    await assert.rejects(
+      () => runCli(['apply', 'vscode']),
+      (err) => {
+        assert.ok(err instanceof Error);
+        assert.ok(err.message.includes('Unknown apply target'), `Expected 'Unknown apply target' in: ${err.message}`);
+        return true;
+      },
+    );
+  } finally {
+    process.stdout.write = originalWrite;
+    process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true });
+  }
+});
+
+// ── Pre-install guard tests ───────────────────────────────────────────────────
+
+function makeTempDirWithoutInstall() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-no-install-'));
+}
+
+test('gsr status without install passes through guard and shows status output', async () => {
+  const tempDir = makeTempDirWithoutInstall();
+  const originalCwd = process.cwd();
+  const chunks = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+
+  process.chdir(tempDir);
+  process.stdout.write = (chunk) => { chunks.push(String(chunk)); return true; };
+
+  try {
+    await runCli(['status']);
+    const output = chunks.join('');
+    // 'status' is whitelisted so the guard does NOT block it.
+    // runStatus handles missing config gracefully.
+    assert.ok(
+      !output.includes('is not installed'),
+      `Pre-install guard should not trigger for 'status' command`,
+    );
+    // status always outputs some status info
+    assert.ok(output.length > 0, 'Expected some output from status');
+  } finally {
+    process.stdout.write = originalWrite;
+    process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true });
+  }
+});
+
+test('gsr route use without install outputs not-installed message', async () => {
+  const tempDir = makeTempDirWithoutInstall();
+  const originalCwd = process.cwd();
+  const chunks = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+
+  process.chdir(tempDir);
+  process.stdout.write = (chunk) => { chunks.push(String(chunk)); return true; };
+
+  try {
+    await runCli(['route', 'use', 'someprofile']);
+    const output = chunks.join('');
+    assert.ok(
+      output.includes('not installed') || output.includes('is not installed'),
+      `Expected not-installed message in: ${output}`,
+    );
+  } finally {
+    process.stdout.write = originalWrite;
+    process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true });
+  }
+});
+
+test('gsr install without config does not trigger pre-install guard', async () => {
+  const tempDir = makeTempDirWithoutInstall();
+  const originalCwd = process.cwd();
+  const chunks = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+
+  process.chdir(tempDir);
+  process.stdout.write = (chunk) => { chunks.push(String(chunk)); return true; };
+
+  try {
+    await runCli(['install']);
+    const output = chunks.join('');
+    // Should NOT output the guard message; install is whitelisted
+    assert.ok(
+      !output.includes('is not installed'),
+      `Pre-install guard should not trigger for install command, but got: ${output}`,
+    );
+  } finally {
+    process.stdout.write = originalWrite;
+    process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true });
+  }
+});
+
+test('gsr help without install works normally', async () => {
+  const tempDir = makeTempDirWithoutInstall();
+  const originalCwd = process.cwd();
+  const chunks = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+
+  process.chdir(tempDir);
+  process.stdout.write = (chunk) => { chunks.push(String(chunk)); return true; };
+
+  try {
+    await runCli(['help']);
+    const output = chunks.join('');
+    assert.ok(output.includes('Usage:'), `Expected help output, got: ${output}`);
+    assert.ok(
+      !output.includes('is not installed'),
+      `Pre-install guard should not trigger for help command`,
+    );
+  } finally {
+    process.stdout.write = originalWrite;
+    process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true });
+  }
+});
+
+test('gsr version without install works normally', async () => {
+  const tempDir = makeTempDirWithoutInstall();
+  const originalCwd = process.cwd();
+  const chunks = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+
+  process.chdir(tempDir);
+  process.stdout.write = (chunk) => { chunks.push(String(chunk)); return true; };
+
+  try {
+    await runCli(['version']);
+    const output = chunks.join('');
+    assert.ok(output.includes('gsr v'), `Expected version output, got: ${output}`);
+    assert.ok(
+      !output.includes('is not installed'),
+      `Pre-install guard should not trigger for version command`,
+    );
+  } finally {
+    process.stdout.write = originalWrite;
+    process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true });
+  }
+});
+
+test('gsr setup install without config does not trigger pre-install guard', async () => {
+  const tempDir = makeTempDirWithoutInstall();
+  const originalCwd = process.cwd();
+  const chunks = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+
+  process.chdir(tempDir);
+  process.stdout.write = (chunk) => { chunks.push(String(chunk)); return true; };
+
+  try {
+    await runCli(['setup', 'install']);
+    const output = chunks.join('');
+    // Should NOT output the guard message; setup install is allowed through
+    assert.ok(
+      !output.includes('is not installed'),
+      `Pre-install guard should not trigger for 'setup install' command, but got: ${output}`,
+    );
+  } finally {
+    process.stdout.write = originalWrite;
+    process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true });
+  }
+});

@@ -46,5 +46,12 @@
   },
   "scripts": {
     "test": "node --test"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.1.0",
+    "@inkjs/ui": "^2.0.0",
+    "fullscreen-ink": "^0.1.0",
+    "ink": "^6.8.0",
+    "react": "^19.2.4"
   }
 }

@@ -3,6 +3,11 @@ active_catalog: default
 active_preset: multivendor
 activation_state: active
 persona: neutral
+catalogs:
+  default:
+    displayName: SDD-Orchestrator
+    enabled: true
+    active_preset: multivendor
 metadata:
   installation_contract:
     source_of_truth: router/router.yaml

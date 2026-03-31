@@ -8,6 +8,7 @@ phases:
       phase: orchestrator
       role: primary
       fallbacks: anthropic/claude-sonnet
+      contextWindow: 200000
     - target: openai/gpt-5
       kind: lane
       phase: orchestrator
@@ -19,6 +20,7 @@ phases:
       phase: explore
       role: primary
       fallbacks: google/gemini-flash
+      contextWindow: 2000000
     - target: anthropic/claude-sonnet
       kind: lane
       phase: explore
@@ -30,6 +32,7 @@ phases:
       phase: spec
       role: primary
       fallbacks: anthropic/claude-sonnet
+      contextWindow: 200000
     - target: openai/gpt-5
       kind: lane
       phase: spec
@@ -41,6 +44,7 @@ phases:
       phase: design
       role: primary
       fallbacks: anthropic/claude-sonnet
+      contextWindow: 200000
     - target: openai/gpt-5
       kind: lane
       phase: design
@@ -52,6 +56,7 @@ phases:
       phase: tasks
       role: primary
       fallbacks: anthropic/claude-haiku
+      contextWindow: 200000
     - target: openai/gpt
       kind: lane
       phase: tasks
@@ -63,17 +68,25 @@ phases:
       phase: apply
       role: primary
       fallbacks: anthropic/claude-haiku
+      contextWindow: 200000
     - target: openai/gpt-5
       kind: lane
       phase: apply
       role: secondary
       fallbacks: openai/gpt
   verify:
+    - target: anthropic/claude-sonnet
+      kind: lane
+      phase: verify
+      role: primary
+      fallbacks: anthropic/claude-haiku
+      contextWindow: 200000
     - target: openai/gpt-5
       kind: lane
       phase: verify
       role: judge
       fallbacks: openai/o3
+      contextWindow: 1000000
     - target: anthropic/claude-opus
       kind: lane
       phase: verify
@@ -85,6 +98,7 @@ phases:
       phase: archive
       role: primary
       fallbacks: google/gemini-flash
+      contextWindow: 1000000
     - target: anthropic/claude-haiku
       kind: lane
       phase: archive

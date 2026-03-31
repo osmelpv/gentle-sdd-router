@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import test from 'node:test';
+import { describe, test } from 'node:test';
 import {
   applyInstallIntent,
   describeInstallBootstrap,
   listProfiles,
   normalizeInstallIntent,
+  parseYaml,
   resolveActivationState,
   resolveRouterState,
   setActivationState,
   setActiveProfile,
+  stringifyYaml,
   validateRouterConfig,
 } from '../src/core/router.js';
 import { assembleV4Config } from '../src/core/router-v4-io.js';
@@ -268,4 +270,126 @@ test('setActiveProfile _v4Source coreConfig is updated with new active_preset', 
   // profileMap and routerDir must be preserved from the original source
   assert.ok(updated._v4Source.profileMap, 'profileMap is preserved');
   assert.strictEqual(updated._v4Source.routerDir, assembled._v4Source.routerDir, 'routerDir is preserved');
+});
+
+// ── parseYaml / stringifyYaml ─────────────────────────────────────────────────
+
+describe('parseYaml / stringifyYaml', () => {
+  test('parseYaml normalizes CRLF line endings', () => {
+    const yamlCrlf = 'version: 1\r\nactive_profile: default\r\n';
+    const yamlLf = 'version: 1\nactive_profile: default\n';
+
+    const fromCrlf = parseYaml(yamlCrlf);
+    const fromLf = parseYaml(yamlLf);
+
+    assert.deepEqual(fromCrlf, fromLf);
+    assert.equal(fromCrlf.version, 1);
+    assert.equal(fromCrlf.active_profile, 'default');
+  });
+
+  test('parseYaml handles deeply nested structures (4 levels)', () => {
+    const yaml = [
+      'level1:',
+      '  level2:',
+      '    level3:',
+      '      level4: deep',
+    ].join('\n');
+
+    const result = parseYaml(yaml);
+
+    assert.equal(result.level1.level2.level3.level4, 'deep');
+  });
+
+  test('parseYaml parses scalar edge cases: 0, true, false, null, quoted strings', () => {
+    const yaml = [
+      'zero: 0',
+      'flag_true: true',
+      'flag_false: false',
+      'nothing: null',
+      'quoted: "hello world"',
+    ].join('\n');
+
+    const result = parseYaml(yaml);
+
+    assert.strictEqual(result.zero, 0);
+    assert.strictEqual(result.flag_true, true);
+    assert.strictEqual(result.flag_false, false);
+    assert.strictEqual(result.nothing, null);
+    assert.strictEqual(result.quoted, 'hello world');
+  });
+
+  test('parseYaml rejects trailing content after document', () => {
+    // Extra non-comment, non-blank content at a lower indent level than expected
+    const yaml = 'version: 3\nactive_preset: balanced\n  orphan_key: bad';
+
+    assert.throws(
+      () => parseYaml(yaml),
+      /unexpected|indentation|malformed/i,
+    );
+  });
+
+  test('parseYaml rejects wrong indentation', () => {
+    // Indented key at wrong level — deeper than previous but not a child
+    const yaml = [
+      'catalog:',
+      '  presets:',
+      ' bad_indent: oops',
+    ].join('\n');
+
+    assert.throws(
+      () => parseYaml(yaml),
+      /unexpected|indentation|malformed/i,
+    );
+  });
+
+  test('stringifyYaml round-trips through parseYaml for simple objects', () => {
+    const original = {
+      version: 3,
+      active_preset: 'balanced',
+      activation_state: 'active',
+    };
+
+    const yaml = stringifyYaml(original);
+    const parsed = parseYaml(yaml);
+
+    assert.deepEqual(parsed, original);
+  });
+
+  test('stringifyYaml handles special characters in values (colon, hash)', () => {
+    const obj = {
+      with_colon: 'value: here',
+      with_hash: 'value # comment',
+    };
+
+    const yaml = stringifyYaml(obj);
+
+    // Values containing : or # should be quoted
+    assert.ok(yaml.includes('"value: here"') || yaml.includes("'value: here'"), 'colon value is quoted');
+    assert.ok(yaml.includes('"value # comment"') || yaml.includes("'value # comment'"), 'hash value is quoted');
+  });
+
+  test('stringifyYaml handles null and boolean values', () => {
+    const obj = {
+      nothing: null,
+      yes: true,
+      no: false,
+    };
+
+    const yaml = stringifyYaml(obj);
+
+    assert.ok(yaml.includes('nothing: null'), 'null is serialized as "null"');
+    assert.ok(yaml.includes('yes: true'), 'true is serialized as "true"');
+    assert.ok(yaml.includes('no: false'), 'false is serialized as "false"');
+  });
+
+  test('stringifyYaml handles empty objects and arrays', () => {
+    const emptyObj = stringifyYaml({});
+    const emptyArr = stringifyYaml([]);
+
+    // Empty object stringifies to empty string (no entries to emit)
+    assert.equal(emptyObj.trim(), '');
+
+    // Empty array stringifies to empty string (no items to emit)
+    assert.equal(emptyArr.trim(), '');
+  });
 });

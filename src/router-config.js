@@ -15,6 +15,9 @@ export {
   validateRouterConfig,
 } from './core/router.js';
 
+export { CANONICAL_PHASES as CANONICAL_PHASES_FULL, PHASE_METADATA } from './core/phases.js';
+export { syncContracts, findContractsDir, readContracts, generateSyncManifest } from './core/sync.js';
+
 export {
   loadV4Profiles,
   assembleV4Config,
@@ -33,6 +36,17 @@ export {
   encodeCompactString,
   decodeCompactString,
   COMPACT_PREFIX,
+  createProfile,
+  updateProfile,
+  deleteProfile,
+  renameProfile,
+  copyProfile,
+  moveProfile,
+  listCatalogs,
+  createCatalog,
+  deleteCatalog,
+  getCatalogDisplayName,
+  setCatalogEnabled,
 } from './core/preset-io.js';
 
 export {
@@ -43,6 +57,8 @@ export {
 
 export { resolveControllerLabel, resolveExecutionOwners, detectGentleAi, resolvePersona } from './core/controller.js';
 
+export { removeOpenCodeOverlay, deployGsrCommands, removeGsrCommands } from './adapters/opencode/overlay-generator.js';
+
 export {
   createAgentTeamsLiteIntegrationContract,
   compareOpenCodeSessionSnapshots,
@@ -52,6 +68,7 @@ export {
   createOpenCodeSessionSnapshot,
   createOpenCodeSessionSyncContract,
   createOpenCodeSlashCommandManifest,
+  createTokenBudgetHint,
   discoverConfigPath,
   detectOpenCodeRuntimeContext,
   activateOpenCodeCommand,

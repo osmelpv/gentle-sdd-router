@@ -54,14 +54,34 @@ Restricted read-only analysis profile. Designed for planning, debugging, and inv
 ## Switching Presets
 
 ```bash
-gsr use multivendor    # best of each provider
-gsr use ollama         # switch to local models
-gsr use heavyweight    # maximum depth for critical work
+gsr route use multivendor    # best of each provider
+gsr route use ollama         # switch to local models
+gsr route use heavyweight    # maximum depth for critical work
+
+# backward-compat aliases still work:
+gsr use multivendor
+gsr use ollama
 ```
 
 ## Creating Custom Presets
 
-### Copy and modify
+### Via the CLI (recommended)
+
+```bash
+# Create a new empty profile
+gsr profile create my-custom
+
+# Or clone an existing one as a starting point
+gsr profile copy multivendor my-custom
+```
+
+Then edit `router/profiles/my-custom.router.yaml` directly and activate it:
+
+```bash
+gsr route use my-custom
+```
+
+### Copy and modify manually
 
 ```bash
 cp router/profiles/multivendor.router.yaml router/profiles/my-custom.router.yaml
@@ -97,7 +117,7 @@ phases:
 Then activate it:
 
 ```bash
-gsr use my-custom
+gsr route use my-custom
 ```
 
 ### Multi-agent presets
@@ -122,13 +142,20 @@ phases:
 ## Sharing Presets
 
 Presets are plain YAML files. Share them by:
-1. Copying the file to another project's `router/profiles/` directory
+1. Using `gsr profile export` to get the YAML or a compact `gsr://` string
 2. Including them in version control
 3. Sharing the YAML content directly
 
+```bash
+gsr profile export multivendor                       # print to stdout
+gsr profile export multivendor --compact             # compact gsr:// string for chat/issues
+gsr profile import ./some-preset.router.yaml         # import from local file
+gsr profile import https://example.com/preset.yaml   # import from URL
+```
+
 No credentials or secrets are included — only model routing declarations.
 
-For CLI-based sharing and import flows, see the [Import/Export Guide](import-export.md).
+For full CLI-based sharing and import flows, see the [Import/Export Guide](import-export.md).
 
 ## The 8 Canonical Phases
 

@@ -8,45 +8,53 @@ phases:
       phase: orchestrator
       role: primary
       fallbacks: ollama/qwen3
+      contextWindow: 131072
   explore:
     - target: ollama/qwen3.5
       kind: lane
       phase: explore
       role: primary
       fallbacks: ollama/deepseek-r1
+      contextWindow: 131072
   spec:
     - target: ollama/qwen3.5
       kind: lane
       phase: spec
       role: primary
       fallbacks: ollama/qwen3
+      contextWindow: 131072
   design:
     - target: ollama/qwen3.5
       kind: lane
       phase: design
       role: primary
       fallbacks: ollama/qwq
+      contextWindow: 131072
   tasks:
     - target: ollama/qwen3
       kind: lane
       phase: tasks
       role: primary
       fallbacks: ollama/qwen3.5
+      contextWindow: 32768
   apply:
     - target: ollama/qwen3-coder
       kind: lane
       phase: apply
       role: primary
       fallbacks: ollama/devstral
+      contextWindow: 131072
   verify:
     - target: ollama/qwq
       kind: lane
       phase: verify
       role: judge
       fallbacks: ollama/deepseek-r1
+      contextWindow: 131072
   archive:
     - target: ollama/qwen3
       kind: lane
       phase: archive
       role: primary
       fallbacks: ollama/qwen3.5
+      contextWindow: 32768

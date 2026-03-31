@@ -75,6 +75,57 @@ export function validateProfileFile(profile, filePath) {
     throw new Error(`Profile file "${filePath}" has "hidden" but it must be a boolean.`);
   }
 
+  // Validate contextWindow on each lane if present
+  if (isObject(profile.phases)) {
+    for (const [phaseName, lanes] of Object.entries(profile.phases)) {
+      if (!Array.isArray(lanes)) continue;
+      for (const lane of lanes) {
+        if (!isObject(lane)) continue;
+        if (lane.contextWindow !== undefined) {
+          if (!Number.isInteger(lane.contextWindow) || lane.contextWindow <= 0) {
+            throw new Error(
+              `Profile file "${filePath}" phase "${phaseName}" has invalid "contextWindow". ` +
+              `Must be a positive integer.`
+            );
+          }
+        }
+      }
+    }
+  }
+
+  // Validate phase-level metadata (new optional fields for object-shaped entries)
+  if (isObject(profile.phases)) {
+    for (const [phaseName, phaseEntry] of Object.entries(profile.phases)) {
+      const phaseConfig = Array.isArray(phaseEntry) ? null : isObject(phaseEntry) ? phaseEntry : null;
+      if (!phaseConfig) continue; // Array format — no phase-level metadata
+
+      if (phaseConfig.execution !== undefined) {
+        if (!['parallel', 'sequential'].includes(phaseConfig.execution)) {
+          throw new Error(
+            `Profile file "${filePath}" phase "${phaseName}" has invalid "execution". ` +
+            `Must be "parallel" or "sequential".`
+          );
+        }
+      }
+      if (phaseConfig.trigger !== undefined) {
+        if (!['always', 'on-failure', 'manual'].includes(phaseConfig.trigger)) {
+          throw new Error(
+            `Profile file "${filePath}" phase "${phaseName}" has invalid "trigger". ` +
+            `Must be "always", "on-failure", or "manual".`
+          );
+        }
+      }
+      if (phaseConfig.depends_on !== undefined) {
+        if (typeof phaseConfig.depends_on !== 'string') {
+          throw new Error(
+            `Profile file "${filePath}" phase "${phaseName}" has invalid "depends_on". ` +
+            `Must be a string.`
+          );
+        }
+      }
+    }
+  }
+
   return profile;
 }
 
@@ -159,6 +210,9 @@ export function assembleV4Config(coreConfig, profiles) {
         availability: coreCatalogMeta?.availability ?? 'stable',
         ...(coreCatalogMeta?.complexity != null ? { complexity: coreCatalogMeta.complexity } : {}),
         ...(coreCatalogMeta?.guidance != null ? { guidance: coreCatalogMeta.guidance } : {}),
+        ...(coreCatalogMeta?.enabled != null ? { enabled: coreCatalogMeta.enabled } : { enabled: catalogName === 'default' }),
+        ...(coreCatalogMeta?.displayName != null ? { displayName: coreCatalogMeta.displayName } : {}),
+        ...(coreCatalogMeta?.active_preset != null ? { active_preset: coreCatalogMeta.active_preset } : {}),
         presets: {},
       };
     }

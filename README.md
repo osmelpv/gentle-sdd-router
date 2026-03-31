@@ -27,31 +27,127 @@
 
 ---
 
+Gentle SDD Router (gsr) is a declarative, non-executing router that assigns AI models to development phases. It tells your agent ecosystem which model to use when — with fallbacks, multi-agent judging, and cross-provider diversity. gsr reads YAML, resolves routes, reports metadata. It never calls models or runs providers.
+
+---
+
+## Installation
+
+### From npm (recommended)
+
+```bash
+npm install -g gentle-sdd-router
+```
+
+### From source
+
+```bash
+git clone https://github.com/osmelpv/gentle-sdd-router.git
+cd gentle-sdd-router
+npm install && npm link
+```
+
+### First setup
+
+```bash
+gsr                    # interactive wizard
+gsr setup install      # or direct install
+```
+
+---
+
 ## What It Does
 
-`gsr` is a **declarative, non-executing router** that assigns AI models to development phases. It doesn't run models -- it tells your agent ecosystem *which* model to use *when*, with fallbacks, multi-agent lanes, and cross-provider diversity built in.
+`gsr` is a **declarative, non-executing router** that assigns AI models to development phases. It doesn't run models -- it tells your agent ecosystem *which* model to use *when*, with what role, what contract, and what execution mode.
 
-### The Power of the Judge
+### The Octopus Pattern: Multi-Agent by Phase
 
-What makes `gsr` different from anything else out there is **multi-agent judging per phase**. In a multi-agent preset, each development phase runs multiple models simultaneously -- a primary, a secondary, a radar, and a **judge**:
+The octopus has many tentacles that work in parallel, and ONE brain that synthesizes. That's exactly how `gsr` routes multi-agent development:
 
-- **Primary + Secondary**: Two or more models work the same phase independently, each bringing a different perspective from a different provider
-- **Radar**: An additional model scans for blind spots, risks, and edge cases the others may miss
-- **Judge**: A high-reasoning model that collects ALL responses, cross-references them, confronts the different viewpoints, and produces a **refined final answer** -- the best synthesis of every perspective. If the judge has doubts, it can trigger a multi-agent brainstorm before deciding
+```
+    PREPARATION                  EXECUTION                VERIFICATION
+    (the tentacles)              (the brain)              (the sabuesos)
+    ─────────────                ─────────                ─────────────
+    N agents from                ONE agent                Specialized
+    different providers          writes code              testers in
+    explore the same             with full                parallel
+    prompt                       context                  verify
+         │                           │                         │
+         ▼                           ▼                         ▼
+    ┌─────────┐                ┌───────────┐            ┌───────────┐
+    │ Agent A │ GPT-5          │           │            │ Code Test │
+    │ Agent B │ Claude Opus    │  Apply    │            │ UI Test   │
+    │ Agent C │ Gemini Pro     │  (best    │            │ Risk Det. │
+    │ Radar   │ scans blinds   │   coder)  │            │ Security  │
+    │ Judge   │ synthesizes    │           │            │ Judge     │
+    └─────────┘                └───────────┘            └───────────┘
+```
 
-The judge doesn't just "validate" -- it **decides** which combination of ideas produces the strongest result. It's the difference between one model guessing and multiple models debating.
+**An army prepares context. ONE king executes. A team of sabuesos verifies.**
 
-**Before**: One model does everything. No specialization, no cross-checking, no second opinion.
+### The Judge: Debate Director, Not Reviewer
 
-**After**: Each phase has a team of models. The judge picks the best synthesis. The radar catches what everyone else missed. When tokens run out, switch to local models with a single keystroke.
+The Judge is NOT a simple reviewer that says "looks good." It is a **debate director** powered by a high-reasoning model (o3, GPT-5 Pro, Claude Opus):
+
+1. **Anonymous responses**: The judge receives agent outputs labeled Agent-1, Agent-2, Agent-3 -- never the provider name. It evaluates content quality, not brand.
+
+2. **Brainstorming**: When agents diverge, the judge opens a brainstorming session. It asks each agent targeted questions without revealing what the others said: *"How would you approach this angle?"* not *"Agent-2 suggested X, what do you think?"*
+
+3. **Indirect confrontation**: To validate claims, the judge asks agents indirectly. This prevents the elogio problem -- models tend to praise each other's ideas instead of thinking critically. The judge forces genuine independent thought.
+
+4. **Synthesis**: The judge fuses the best elements from every response, incorporates radar findings (blind spots, risks, edge cases), and produces ONE refined output with a confidence level and a dissent log of what was deliberately excluded.
+
+### The Radar: Independent Blind-Spot Scanner
+
+The Radar works the same prompt as the agents but with a fundamentally different objective. It is NOT trying to complete the task. It is trying to find what the task-focused agents will MISS:
+
+- Missing dependencies and cross-module impact
+- Edge cases nobody considered
+- Implicit assumptions that might be wrong
+- Pattern violations in the existing codebase
+- Security vulnerabilities
+
+Radar findings feed directly to the judge, giving it ammunition for better brainstorming questions and more informed synthesis.
+
+### 10 SDD Phases
+
+`gsr` routes models across 10 development phases. Each phase has an optimal composition:
+
+| Phase | Job | Composition | Execution |
+|-------|-----|-------------|-----------|
+| **orchestrator** | Coordinate the pipeline, delegate | 1 agent + optional judge | Sequential |
+| **explore** | Investigate codebase, map affected areas | 2+ agents + judge + radar | **Parallel** |
+| **propose** | Structure a formal proposal from exploration | 1 agent + optional judge | Sequential |
+| **spec** | Write requirements and behavioral scenarios | 2+ agents + judge + investigator | **Parallel** |
+| **design** | Produce architecture and key decisions | 2+ agents + judge + radar | **Parallel** |
+| **tasks** | Break design into task checklist + TDD tests | 1 agent (tasks first, TDD second) | Sequential |
+| **apply** | Implement: write code. **Always ONE agent.** | 1 agent only | Sequential |
+| **verify** | Validate implementation against spec | 2+ sabuesos + judge + radar | **Parallel** |
+| **debug** | Diagnose bugs found by verify | Full mini-SDD cycle | **Conditional** |
+| **archive** | Sync specs, archive change. **Always ONE agent.** | 1 agent only | Sequential |
+
+**Key insight**: `apply` and `archive` are ALWAYS mono. One agent writes the code so everything stays contextually consistent from start to finish. The army's job is to prepare such thorough context that the coder can't fail.
+
+### Specialized Agent Roles
+
+Beyond the core agents, judge, and radar, `gsr` defines specialized roles:
+
+| Role | Job | Used in |
+|------|-----|---------|
+| **Investigator** | Researches external prior art, API docs, industry patterns | spec |
+| **Risk Detector** | Scans for incompatibilities, orphaned code, regressions | explore, verify |
+| **Security Auditor** | Finds injection, auth bypass, data exposure, CVEs | explore, verify |
+| **Tester** | Writes TDD tests that FAIL (defines "done") | tasks |
+
+Each role has a contract (skill) that defines its input, output, and behavioral rules. Contracts are shipped with gsr and synced to Engram for persistent access across sessions.
 
 ### Catalogs: Switch Your Entire Setup Instantly
 
 Each catalog groups a complete routing configuration. In OpenCode, catalogs map to TAB-switchable modes:
 
-- **`multivendor`** -- Cloud models from every provider, full write access
+- **`multivendor`** -- Best model per phase across all providers
 - **`ollama`** -- 100% local models, zero cloud costs, works offline
-- **`safety`** -- Read-only analysis mode with multi-agent judge, no write permissions
+- **`safety`** -- Read-only analysis mode, no write permissions
 - **`claude`** / **`openai`** -- Single-provider setups
 
 One keystroke to go from cloud to local. One keystroke to enter analysis-only mode. No reconfiguration needed.
@@ -60,59 +156,107 @@ One keystroke to go from cloud to local. One keystroke to enter analysis-only mo
 
 | Feature | Description |
 |---------|-------------|
-| **Multi-agent judging** | Multiple models per phase with a judge that cross-references and refines all responses into the best answer |
-| **Phase-based routing** | Assign models to 8 SDD phases (orchestrator, explore, spec, design, tasks, apply, verify, archive) |
+| **Multi-agent by phase** | Army of agents from different providers + judge that synthesizes via debate |
+| **10 SDD phases** | orchestrator, explore, propose, spec, design, tasks, apply, verify, debug, archive |
+| **Judge debate protocol** | Anonymous responses, brainstorming, indirect confrontation, confidence levels |
+| **Specialized roles** | Investigator, risk detector, security auditor, tester -- each with defined contracts |
+| **Parallel + sequential** | Phases declare execution mode. Agents explore in parallel, judge synthesizes sequentially |
+| **Conditional phases** | Debug triggers only when verify fails. No wasted computation on clean runs |
+| **Dynamic model picker** | Fetches models from OpenRouter + Ollama in real time. Always fresh pricing and capabilities |
 | **Catalog switching** | Switch entire routing configurations instantly (cloud, local, hybrid, analysis-only) |
 | **8 built-in presets** | multivendor, claude, openai, multiagent, ollama, cheap, heavyweight, safety |
-| **Multi-file profiles** | Each preset is a separate YAML file -- easy to share, import, customize |
-| **Migration system** | Safe schema upgrades with backup, rollback, and version tracking |
-| **Interactive wizard** | Run `gsr` with no args for a guided setup experience |
-| **Standalone or integrated** | Works alone or alongside the [gentle-ai](https://github.com/Gentleman-Programming/gentle-ai) ecosystem |
+| **Agent contracts** | 9 role contracts + 10 phase compositions shipped as skills. `gsr sync` pushes to Engram |
+| **Interactive TUI** | Split-panel wizard for profile creation, editing, and comparison |
 | **Non-executing boundary** | Declares routing only -- never calls models or runs providers |
 
 ---
 
-## Quick Start
+## Commands
 
-### Install
+```
+gsr status                          Current state, routes, pricing
+gsr version                         Installed version
+gsr help [command]                  Help for any command
+
+gsr route use <preset>              Switch active preset
+gsr route show                      Show resolved routes
+gsr route activate                  gsr takes routing control
+gsr route deactivate                Host takes control back
+
+gsr profile list                    List profiles with catalog info
+gsr profile create <name>           Create empty profile
+gsr profile delete <name>           Delete profile
+gsr profile rename <old> <new>      Rename profile
+gsr profile copy <src> <dest>       Clone profile
+gsr profile export <name>           Export for sharing (--compact)
+gsr profile import <source>         Import from file/URL/gsr://
+
+gsr catalog list                    List catalogs with status
+gsr catalog create <name>           Create catalog (disabled by default)
+gsr catalog delete <name>           Delete empty catalog
+gsr catalog enable <name>           Show in TUI host (TAB cycling)
+gsr catalog disable <name>          Hide from TUI host
+
+gsr inspect browse [selector]       Multimodel metadata
+gsr inspect compare <a> <b>         Compare two presets
+gsr inspect render <target>         Host boundary preview
+
+gsr setup install                   Install router config
+gsr setup uninstall                 Remove gsr overlay
+gsr setup bootstrap                 Guided first-time setup
+gsr setup update [--apply]          Config migrations
+gsr setup apply <target> [--apply]  Generate TUI overlay
+
+gsr sync                            Push global contracts to Engram
+gsr catalog use <name> [preset]     Set active catalog and preset
+```
+
+Each category supports `help`: `gsr route help`, `gsr catalog help`, etc.
+
+Old flat commands (`gsr use`, `gsr list`, `gsr install`, `gsr reload`, `gsr activate`, `gsr deactivate`, `gsr browse`, `gsr compare`, `gsr render`, `gsr apply`, `gsr bootstrap`, `gsr update`, `gsr export`, `gsr import`) still work as backward-compat aliases.
+
+---
+
+## Catalog Visibility
+
+Catalogs control which presets appear in TUI host TAB cycling (e.g., OpenCode).
+
+- The **SDD-Orchestrator** (default) catalog is enabled by default
+- New catalogs start **disabled** — enable them when ready
+- Only **enabled** catalogs generate agents in the TUI overlay
+
+### router.yaml catalog metadata
+
+```yaml
+catalogs:
+  default:
+    displayName: SDD-Orchestrator
+    enabled: true
+  experimental:
+    enabled: false
+```
+
+### Managing visibility
 
 ```bash
-# Clone and link globally
-git clone https://github.com/osmelpv/gentle-sdd-router.git
-cd gentle-sdd-router
-npm install
-npm link
+gsr catalog enable experimental    # show in OpenCode TAB
+gsr catalog disable experimental   # hide from OpenCode TAB
 ```
 
-### First use
+---
 
-```bash
-# Interactive wizard (detects project state)
-gsr
+## Token Budget Hints
 
-# Or install directly in a project
-gsr install
-```
+Lanes can declare `contextWindow`, `inputPerMillion`, and `outputPerMillion` metadata. These are declarative hints — gsr never makes API calls, it only reports them.
 
-This creates a v4 multi-file layout:
+`gsr status` displays the context window alongside pricing for each phase:
 
 ```
-router/
-  router.yaml                    # core: version, active preset, metadata
-  profiles/
-    multivendor.router.yaml      # default: best model per phase, mixed providers
+- orchestrator: anthropic / claude-opus ($15/$75) [200K ctx]
+- explore:      google / gemini-pro    ($1.25/$5) [2M ctx]
 ```
 
-### Basic commands
-
-```bash
-gsr status                       # who's in control, active preset, resolved routes
-gsr list                         # available presets
-gsr use claude                   # switch to Claude-only preset
-gsr update                       # check for config migrations (dry-run)
-gsr update --apply               # apply pending migrations
-gsr help                         # all commands
-```
+TUI hosts can use the `tokenBudgetHint` field in the session sync contract to render context window bars and session cost estimators. See [Host Adoption (EN)](docs/host-adoption.en.md) for the full contract shape.
 
 ---
 
@@ -134,9 +278,13 @@ gsr help                         # all commands
 ### Switching presets
 
 ```bash
-gsr use multivendor              # production: best of each provider
-gsr use ollama                   # ran out of tokens? go local
-gsr use heavyweight              # critical decisions: full multi-agent
+gsr route use multivendor            # production: best of each provider
+gsr route use ollama                 # ran out of tokens? go local
+gsr route use heavyweight            # critical decisions: full multi-agent
+
+# backward-compat aliases still work:
+gsr use multivendor
+gsr use ollama
 ```
 
 ---
@@ -171,6 +319,10 @@ metadata:
   installation_contract:
     source_of_truth: router/router.yaml
     runtime_execution: false
+catalogs:
+  default:
+    displayName: SDD-Orchestrator
+    enabled: true
 ```
 
 ### Profile file example (`router/profiles/multivendor.router.yaml`)
@@ -209,31 +361,73 @@ phases:
 
 ### Creating your own preset
 
-Copy any profile, rename it, and customize:
+Use the CLI or copy directly:
 
 ```bash
+# CLI approach (recommended)
+gsr profile create my-custom
+gsr profile copy multivendor my-custom
+
+# Or copy manually and edit
 cp router/profiles/multivendor.router.yaml router/profiles/custom.router.yaml
-# Edit the file with your preferred models
-gsr use custom
+gsr route use custom
 ```
 
 ### Sharing presets
 
-Share a profile file with your team by copying it into their `router/profiles/` directory. No credentials or secrets -- just model routing declarations.
+```bash
+gsr profile export multivendor                      # print preset YAML to stdout
+gsr profile export multivendor --compact            # compact gsr:// string for chat/issues
 
-### Import and export
+gsr profile import ./some-preset.router.yaml        # import from local file
+gsr profile import https://example.com/preset.yaml  # import from HTTPS URL
+gsr profile import --compact 'gsr://...'            # import compact shared string
+
+# backward-compat aliases still work:
+gsr export multivendor
+gsr import ./some-preset.router.yaml
+```
+
+---
+
+## Agent Contracts
+
+`gsr` ships with 19 contracts that define how each role behaves in each phase:
+
+```
+router/contracts/
+  roles/                          # 9 role contracts
+    agent.md                      # Generic sub-agent
+    judge.md                      # Debate director (anonymous synthesis)
+    radar.md                      # Blind-spot scanner
+    tester.md                     # TDD test writer (tests must FAIL first)
+    risk-detector.md              # Incompatibility/regression scanner
+    security-auditor.md           # Security vulnerability detector
+    investigator.md               # External research (APIs, prior art)
+    judge-debate-protocol.md      # Master debate protocol
+    radar-context-protocol.md     # How radar feeds the judge
+  phases/                         # 10 phase compositions
+    orchestrator.md ... archive.md
+```
+
+### Syncing contracts to Engram
+
+Contracts are pushed to Engram for persistent access across sessions:
 
 ```bash
-gsr export multivendor                      # print preset YAML to stdout
-gsr export multivendor --compact            # compact gsr:// string for chat/issues
-gsr export multivendor --out /tmp/p.yaml    # write to a file
-gsr export --all                            # export all presets
-
-gsr import ./some-preset.router.yaml        # import from local file
-gsr import https://example.com/preset.yaml  # import from HTTPS URL
-gsr import --compact 'gsr://...'            # import compact shared string
-gsr import ./preset.yaml --catalog local    # place preset under router/profiles/local/
+gsr sync                          # push all 19 contracts to Engram (idempotent)
 ```
+
+This runs automatically on `npm install -g` via postinstall. Use `gsr sync` manually during development (npm link) or as a repair command if Engram data is lost.
+
+### Global vs Project data
+
+| Data | Scope | Created by | Cleaned by |
+|------|-------|-----------|------------|
+| Role contracts, phase compositions | **Global** | `npm install -g` / `gsr sync` | `npm uninstall -g` |
+| Custom profiles, project agents | **Project** | `gsr install` / TUI wizard | `gsr setup uninstall` |
+
+`gsr setup uninstall` NEVER touches global contracts. It only cleans project-specific data.
 
 ---
 
@@ -265,8 +459,11 @@ Supported personas:
 When the router schema evolves, `gsr` migrates your config safely:
 
 ```bash
-gsr update                       # preview pending migrations (dry-run)
-gsr update --apply               # apply with automatic backup
+gsr setup update                 # preview pending migrations (dry-run)
+gsr setup update --apply         # apply with automatic backup
+
+# backward-compat alias still works:
+gsr update --apply
 ```
 
 The migration system:
@@ -274,31 +471,6 @@ The migration system:
 - Rolls back automatically on failure
 - Tracks applied migrations in `router/.migrations.yaml`
 - Preserves user data and unknown YAML keys
-
----
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `gsr` | Interactive wizard (TTY) or help (non-TTY) |
-| `gsr status` | Show controller, active preset, and resolved routes |
-| `gsr list` | List available presets |
-| `gsr use <preset>` | Switch the active preset |
-| `gsr reload` | Reload config and print resolved routes |
-| `gsr install` | Set up gsr in the current project |
-| `gsr update [--apply]` | Check for and apply config migrations |
-| `gsr activate` | Take control of routing |
-| `gsr deactivate` | Hand control back to the host controller |
-| `gsr browse [selector]` | Inspect multimodel metadata |
-| `gsr compare <left> <right>` | Compare two preset projections |
-| `gsr bootstrap [--intent]` | Step-by-step adoption path |
-| `gsr render opencode` | Preview OpenCode boundary report |
-| `gsr apply opencode [--apply]` | Preview or write OpenCode TAB-switching overlay entries |
-| `gsr export <preset>` | Export a preset to stdout, file, or compact string |
-| `gsr import <source>` | Import a preset from file, URL, or compact string |
-| `gsr version` | Show installed version |
-| `gsr help [command]` | Show help |
 
 ---
 
@@ -394,7 +566,7 @@ profiles:
 
 ## Contributing
 
-This project follows [Spec-Driven Development](https://github.com/Gentleman-Programming/gentle-ai) (SDD). Changes go through: explore → propose → spec → design → tasks → implement → verify → archive.
+This project follows [Spec-Driven Development](https://github.com/Gentleman-Programming/gentle-ai) (SDD). Changes go through: explore → propose → spec → design → tasks → apply → verify → (debug if needed) → archive.
 
 ---
 

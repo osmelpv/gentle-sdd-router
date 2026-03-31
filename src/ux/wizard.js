@@ -89,7 +89,7 @@ export async function wizardOutdatedConfig(context, prompts = p) {
     options: [
       { value: 'update', label: 'Update', hint: 'Migrate config to the latest version' },
       { value: 'status', label: 'Status', hint: 'Show current router state' },
-      { value: 'manage', label: 'Manage', hint: 'Configure profiles and presets' },
+      { value: 'list', label: 'List presets', hint: 'Show available profiles' },
       { value: 'exit', label: 'Exit' },
     ],
   });
@@ -118,6 +118,9 @@ export async function wizardCurrentConfig(context, prompts = p) {
       { value: 'status', label: 'Status', hint: 'Show detailed router state' },
       { value: 'reload', label: 'View routes', hint: 'Show resolved routes for current preset' },
       { value: 'list', label: 'List presets', hint: 'Show all available presets' },
+      { value: 'browse', label: 'Browse metadata', hint: 'Inspect multimodel metadata for a preset' },
+      { value: 'compare', label: 'Compare presets', hint: 'Compare two presets side by side' },
+      { value: 'profiles', label: 'Manage profiles', hint: 'Create, delete, rename, or copy profiles' },
       { value: 'export', label: 'Export preset', hint: 'Export a preset for sharing' },
       { value: 'import', label: 'Import preset', hint: 'Import a preset from file or URL' },
       { value: 'update', label: 'Check updates', hint: 'Check for config migrations' },
@@ -130,11 +133,13 @@ export async function wizardCurrentConfig(context, prompts = p) {
     return null;
   }
 
-  // Special flow for "use" — need to pick a preset
-  if (action === 'use') {
-    return await wizardSwitchPreset(context, prompts);
-  }
+  if (action === 'use') return await wizardSwitchPreset(context, prompts);
+  if (action === 'export') return await wizardExport(context, prompts);
+  if (action === 'import') return await wizardImport(context, prompts);
+  if (action === 'profiles') return await wizardManageProfiles(context, prompts);
+  if (action === 'compare') return await wizardCompare(context, prompts);
 
+  // browse, status, reload, list, update go straight to CLI
   return action;
 }
 
@@ -169,4 +174,163 @@ export async function wizardSwitchPreset(context, prompts = p) {
   }
 
   return { command: 'use', preset: selected };
+}
+
+export async function wizardExport(context, prompts = p) {
+  // Build preset list from config
+  const presets = [];
+  const catalogs = context.config?.catalogs || {};
+  for (const [, catalog] of Object.entries(catalogs)) {
+    for (const [presetName] of Object.entries(catalog?.presets || {})) {
+      presets.push({ value: presetName, label: presetName });
+    }
+  }
+
+  if (presets.length === 0) {
+    prompts.log.warn('No presets found to export.');
+    return null;
+  }
+
+  const selected = await prompts.select({
+    message: 'Select a preset to export:',
+    options: presets,
+  });
+
+  if (prompts.isCancel(selected)) return null;
+
+  const format = await prompts.select({
+    message: 'Export format:',
+    options: [
+      { value: 'yaml', label: 'YAML', hint: 'Human-readable YAML output' },
+      { value: 'compact', label: 'Compact', hint: 'gsr:// string for easy sharing' },
+    ],
+  });
+
+  if (prompts.isCancel(format)) return null;
+
+  return { command: 'export', preset: selected, compact: format === 'compact' };
+}
+
+export async function wizardImport(context, prompts = p) {
+  const source = await prompts.text({
+    message: 'Enter import source (file path, https:// URL, or gsr:// string):',
+    validate(value) {
+      if (!value || !value.trim()) return 'Source is required.';
+    },
+  });
+
+  if (prompts.isCancel(source)) return null;
+
+  return { command: 'import', source: source.trim() };
+}
+
+export async function wizardManageProfiles(context, prompts = p) {
+  const action = await prompts.select({
+    message: 'Profile management:',
+    options: [
+      { value: 'profile-create', label: 'Create profile', hint: 'Create a new empty profile' },
+      { value: 'profile-delete', label: 'Delete profile', hint: 'Delete an existing profile' },
+      { value: 'profile-rename', label: 'Rename profile', hint: 'Rename an existing profile' },
+      { value: 'profile-copy', label: 'Copy profile', hint: 'Clone an existing profile' },
+    ],
+  });
+
+  if (prompts.isCancel(action)) return null;
+
+  if (action === 'profile-create') {
+    const name = await prompts.text({
+      message: 'New profile name:',
+      validate(value) { if (!value || !value.trim()) return 'Name is required.'; },
+    });
+    if (prompts.isCancel(name)) return null;
+    return { command: 'profile', subcommand: 'create', name: name.trim() };
+  }
+
+  if (action === 'profile-delete') {
+    const presets = [];
+    const catalogs = context.config?.catalogs || {};
+    for (const [, catalog] of Object.entries(catalogs)) {
+      for (const [presetName] of Object.entries(catalog?.presets || {})) {
+        presets.push({ value: presetName, label: presetName });
+      }
+    }
+    if (presets.length === 0) {
+      prompts.log.warn('No profiles found.');
+      return null;
+    }
+    const selected = await prompts.select({ message: 'Select profile to delete:', options: presets });
+    if (prompts.isCancel(selected)) return null;
+    return { command: 'profile', subcommand: 'delete', name: selected };
+  }
+
+  if (action === 'profile-rename') {
+    const presets = [];
+    const catalogs = context.config?.catalogs || {};
+    for (const [, catalog] of Object.entries(catalogs)) {
+      for (const [presetName] of Object.entries(catalog?.presets || {})) {
+        presets.push({ value: presetName, label: presetName });
+      }
+    }
+    if (presets.length === 0) {
+      prompts.log.warn('No profiles found.');
+      return null;
+    }
+    const selected = await prompts.select({ message: 'Select profile to rename:', options: presets });
+    if (prompts.isCancel(selected)) return null;
+    const newName = await prompts.text({
+      message: 'New name:',
+      validate(value) { if (!value || !value.trim()) return 'Name is required.'; },
+    });
+    if (prompts.isCancel(newName)) return null;
+    return { command: 'profile', subcommand: 'rename', oldName: selected, newName: newName.trim() };
+  }
+
+  if (action === 'profile-copy') {
+    const presets = [];
+    const catalogs = context.config?.catalogs || {};
+    for (const [, catalog] of Object.entries(catalogs)) {
+      for (const [presetName] of Object.entries(catalog?.presets || {})) {
+        presets.push({ value: presetName, label: presetName });
+      }
+    }
+    if (presets.length === 0) {
+      prompts.log.warn('No profiles found.');
+      return null;
+    }
+    const selected = await prompts.select({ message: 'Select profile to copy:', options: presets });
+    if (prompts.isCancel(selected)) return null;
+    const destName = await prompts.text({
+      message: 'Name for the copy:',
+      validate(value) { if (!value || !value.trim()) return 'Name is required.'; },
+    });
+    if (prompts.isCancel(destName)) return null;
+    return { command: 'profile', subcommand: 'copy', sourceName: selected, destName: destName.trim() };
+  }
+
+  return null;
+}
+
+export async function wizardCompare(context, prompts = p) {
+  const presets = [];
+  const catalogs = context.config?.catalogs || {};
+  for (const [, catalog] of Object.entries(catalogs)) {
+    for (const [presetName] of Object.entries(catalog?.presets || {})) {
+      presets.push({ value: presetName, label: presetName });
+    }
+  }
+  if (presets.length < 2) {
+    prompts.log.warn('Need at least 2 presets to compare.');
+    return null;
+  }
+
+  const left = await prompts.select({ message: 'Select first preset:', options: presets });
+  if (prompts.isCancel(left)) return null;
+
+  const right = await prompts.select({
+    message: 'Select second preset:',
+    options: presets.filter((pr) => pr.value !== left),
+  });
+  if (prompts.isCancel(right)) return null;
+
+  return { command: 'compare', left, right };
 }

@@ -8,45 +8,53 @@ phases:
       phase: orchestrator
       role: primary
       fallbacks: anthropic/claude-sonnet
+      contextWindow: 200000
   explore:
     - target: anthropic/claude-sonnet
       kind: lane
       phase: explore
       role: primary
       fallbacks: anthropic/claude-haiku
+      contextWindow: 200000
   spec:
     - target: anthropic/claude-opus
       kind: lane
       phase: spec
       role: primary
       fallbacks: anthropic/claude-sonnet
+      contextWindow: 200000
   design:
     - target: anthropic/claude-opus
       kind: lane
       phase: design
       role: primary
       fallbacks: anthropic/claude-sonnet
+      contextWindow: 200000
   tasks:
     - target: anthropic/claude-sonnet
       kind: lane
       phase: tasks
       role: primary
       fallbacks: anthropic/claude-haiku
+      contextWindow: 200000
   apply:
     - target: anthropic/claude-sonnet
       kind: lane
       phase: apply
       role: primary
       fallbacks: anthropic/claude-haiku
+      contextWindow: 200000
   verify:
     - target: anthropic/claude-opus
       kind: lane
       phase: verify
       role: judge
       fallbacks: anthropic/claude-sonnet
+      contextWindow: 200000
   archive:
     - target: anthropic/claude-haiku
       kind: lane
       phase: archive
       role: primary
       fallbacks: anthropic/claude-sonnet
+      contextWindow: 200000

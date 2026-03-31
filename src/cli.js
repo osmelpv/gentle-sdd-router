@@ -20,22 +20,57 @@ import {
   loadRouterConfig,
   deactivateOpenCodeCommand,
   installOpenCodeCommand,
+  parseYaml,
   planMigrations,
   renderOpenCodeCommand,
   resolveRouterState,
   runMigrations,
   saveRouterConfig,
   setActiveProfile,
+  stringifyYaml,
   tryGetConfigPath,
+  createProfile,
+  deleteProfile,
+  renameProfile,
+  copyProfile,
+  moveProfile,
+  listCatalogs,
+  createCatalog,
+  deleteCatalog,
+  getCatalogDisplayName,
+  setCatalogEnabled,
+  removeOpenCodeOverlay,
+  deployGsrCommands,
+  removeGsrCommands,
 } from './router-config.js';
 import { resolveControllerLabel, resolvePersona } from './core/controller.js';
 
 const CURRENT_SCHEMA_VERSION = 4;
 let wizardEntrypointForTesting = null;
 
+const COMMANDS_ALLOWED_WITHOUT_INSTALL = new Set([
+  'install', 'bootstrap', 'help', '--help', '-h', 'version', '--version', '-v',
+  // 'status' handles missing config gracefully and is always useful
+  'status',
+  'sync',
+]);
+
 function safeDiscoverConfigPath() {
   try {
     return discoverConfigPath();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Discover config path using only process.cwd() — not the module dir.
+ * Used for pre-install guard so the module's own router.yaml does not
+ * shadow a missing user-project config.
+ */
+function safeDiscoverConfigPathFromCwd() {
+  try {
+    return discoverConfigPath([process.cwd()]);
   } catch {
     return null;
   }
@@ -46,9 +81,27 @@ export async function runCli(argv) {
 
   // Interactive wizard: no command + TTY
   if (!command && process.stdout.isTTY) {
+    // Try new TUI first
+    if (!wizardEntrypointForTesting) {
+      try {
+        const { startTui } = await import('./ux/tui/app.js');
+        const configPath = safeDiscoverConfigPathFromCwd();
+        let config = null;
+        if (configPath) {
+          try {
+            config = loadRouterConfig(configPath);
+          } catch { /* fresh install flow */ }
+        }
+        await startTui(configPath, config);
+        return;
+      } catch {
+        // Fall back to clack wizard
+      }
+    }
+
     const runWizard = wizardEntrypointForTesting
       ?? (await import('./ux/wizard.js')).runWizard;
-    const configPath = safeDiscoverConfigPath();
+    const configPath = safeDiscoverConfigPathFromCwd();
     let config = null;
     let version = 0;
     if (configPath) {
@@ -61,9 +114,39 @@ export async function runCli(argv) {
     }
     const action = await runWizard({ configPath, config, version });
     if (!action) return;
-    const cmd = typeof action === 'object' ? action.command : action;
-    const cmdArgs = typeof action === 'object' && action.preset ? [action.preset] : [];
-    return runCli([cmd, ...cmdArgs]);
+
+    if (typeof action === 'string') {
+      return runCli([action]);
+    }
+
+    // Object actions from wizard sub-flows
+    if (action.command === 'use' && action.preset) {
+      return runCli(['use', action.preset]);
+    }
+
+    if (action.command === 'export') {
+      const args = [action.preset];
+      if (action.compact) args.push('--compact');
+      return runCli(['export', ...args]);
+    }
+
+    if (action.command === 'import' && action.source) {
+      return runCli(['import', action.source]);
+    }
+
+    if (action.command === 'compare') {
+      return runCli(['compare', action.left, action.right]);
+    }
+
+    if (action.command === 'profile') {
+      if (action.subcommand === 'create') return runCli(['profile', 'create', action.name]);
+      if (action.subcommand === 'delete') return runCli(['profile', 'delete', action.name]);
+      if (action.subcommand === 'rename') return runCli(['profile', 'rename', action.oldName, action.newName]);
+      if (action.subcommand === 'copy') return runCli(['profile', 'copy', action.sourceName, action.destName]);
+    }
+
+    // Fallback — shouldn't reach here
+    return runCli([action.command]);
   }
 
   if (command === '--help' || command === '-h' || command === 'help' || !command) {
@@ -74,13 +157,47 @@ export async function runCli(argv) {
     return runVersion();
   }
 
+  // Pre-install guard: block commands that need config when none is found.
+  // Uses cwd-only discovery so the module's own router.yaml does not shadow
+  // a missing user-project config.
+  if (command && !COMMANDS_ALLOWED_WITHOUT_INSTALL.has(command)) {
+    const configPath = safeDiscoverConfigPathFromCwd();
+    if (!configPath) {
+      // Allow 'setup' only for install/bootstrap subcommands
+      if (command === 'setup' && (rest[0] === 'install' || rest[0] === 'bootstrap')) {
+        // Allow through — setup install/bootstrap create the config
+      } else {
+        process.stdout.write(
+          'Gentle SDD Router is not installed in this project.\n' +
+          'Run `gsr install` or `gsr` to start the interactive setup.\n',
+        );
+        return;
+      }
+    }
+  }
+
   switch (command) {
+    // === Category dispatchers (new tree) ===
+    case 'route':
+      return runRoute(rest);
+    case 'profile':
+      return runProfile(rest);
+    case 'catalog':
+      return runCatalog(rest);
+    case 'inspect':
+      return runInspect(rest);
+    case 'setup':
+      return runSetup(rest);
+
+    // === Top-level (stay at root) ===
+    case 'status':
+      return runStatus();
+
+    // === Backward-compat aliases (old flat commands still work) ===
     case 'use':
       return runUse(rest);
     case 'reload':
       return runReload();
-    case 'status':
-      return runStatus();
     case 'list':
       return runList();
     case 'browse':
@@ -105,6 +222,10 @@ export async function runCli(argv) {
       return runExport(rest);
     case 'import':
       return await runImport(rest);
+    case 'uninstall':
+      return runUninstall(rest);
+    case 'sync':
+      return await runSync();
     default:
       printUsage();
       if (command) {
@@ -197,15 +318,27 @@ function runStatus() {
 
 function runList() {
   maybeWarnOutdatedConfig();
-  const config = loadRouterConfig(getConfigPath());
+  const configPath = getConfigPath();
+  const config = loadRouterConfig(configPath);
   const profiles = listProfiles(config);
+
+  // Build a map: presetName -> catalogName
+  const presetCatalogMap = {};
+  for (const [catalogName, catalog] of Object.entries(config.catalogs ?? {})) {
+    for (const presetName of Object.keys(catalog.presets ?? {})) {
+      presetCatalogMap[presetName] = catalogName;
+    }
+  }
 
   process.stdout.write('Profiles:\n');
   for (const profile of profiles) {
     const marker = profile.active ? '*' : ' ';
     const tags = buildProfileTags(config, profile.name);
     const tagSuffix = tags.length > 0 ? ` ${tags.map((t) => `[${t}]`).join(' ')}` : '';
-    process.stdout.write(`${marker} ${profile.name} (${profile.phases.length} phases)${tagSuffix}\n`);
+    const catalogName = presetCatalogMap[profile.name] ?? 'default';
+    const catalogMeta = config.catalogs?.[catalogName];
+    const catalogLabel = getCatalogDisplayName(catalogName, catalogMeta);
+    process.stdout.write(`${marker} ${profile.name} (${profile.phases.length} phases) — ${catalogLabel}${tagSuffix}\n`);
   }
 }
 
@@ -395,6 +528,19 @@ function runApply(args) {
 
   process.stdout.write('\n');
   process.stdout.write(`Written to: ${report.writtenPath}\n`);
+
+  // Also deploy /gsr-* slash command files
+  try {
+    const cmdResult = deployGsrCommands();
+    if (cmdResult.written > 0) {
+      process.stdout.write(`Deployed ${cmdResult.written} /gsr command(s) to ${cmdResult.targetDir}\n`);
+    }
+    if (cmdResult.skipped > 0) {
+      process.stdout.write(`${cmdResult.skipped} command(s) already up to date.\n`);
+    }
+  } catch {
+    // Non-blocking: overlay is the priority
+  }
 }
 
 function runExport(args) {
@@ -437,6 +583,18 @@ function runExport(args) {
     process.stdout.write(`Exported preset '${presetName}' to: ${outPath}\n`);
   } else {
     process.stdout.write(output);
+  }
+}
+
+async function runSync() {
+  const { syncContracts } = await import('./core/sync.js');
+  try {
+    const result = syncContracts();
+    process.stdout.write(`Synced ${result.roles} role contracts + ${result.phases} phase compositions.\n`);
+    process.stdout.write(`Manifest: ${result.manifestPath}\n`);
+    process.stdout.write(`Total: ${result.total} contracts.\n`);
+  } catch (err) {
+    process.stdout.write(`Sync failed: ${err.message}\n`);
   }
 }
 
@@ -544,6 +702,47 @@ function buildProfileTags(config, profileName) {
 }
 
 /**
+ * Look up the context window (max tokens) for a phase's primary lane
+ * from the raw assembled config (v3/v4 assembled).
+ * Returns null if no contextWindow data is available.
+ */
+function lookupLaneContextWindow(config, activeCatalogName, activePresetName, phaseName) {
+  if (!config?.catalogs) return null;
+
+  const catalog = config.catalogs[activeCatalogName];
+  if (!catalog) return null;
+
+  const preset = catalog.presets?.[activePresetName];
+  if (!preset) return null;
+
+  const lanes = preset.phases?.[phaseName];
+  if (!Array.isArray(lanes) || lanes.length === 0) return null;
+
+  const lane = lanes[0];
+  const contextWindow = lane?.contextWindow;
+
+  if (!Number.isInteger(contextWindow) || contextWindow <= 0) return null;
+
+  return contextWindow;
+}
+
+/**
+ * Format a context window value as a human-readable string (e.g. "200K", "1M").
+ */
+function formatContextWindow(contextWindow) {
+  if (!contextWindow) return null;
+  if (contextWindow >= 1_000_000) {
+    const m = contextWindow / 1_000_000;
+    return m === Math.floor(m) ? `${m}M` : `${m.toFixed(1)}M`;
+  }
+  if (contextWindow >= 1_000) {
+    const k = contextWindow / 1_000;
+    return k === Math.floor(k) ? `${k}K` : `${k.toFixed(1)}K`;
+  }
+  return String(contextWindow);
+}
+
+/**
  * Look up pricing fields (inputPerMillion, outputPerMillion) for a phase
  * from the raw assembled config (v3/v4 assembled).
  * Returns null if no pricing data is available.
@@ -647,8 +846,10 @@ function renderStatus(state, configPath, config = null) {
 
   for (const [phaseName, route] of Object.entries(state.resolvedPhases)) {
     const pricing = lookupLanePricing(config, activeCatalogName, activePresetName, phaseName);
+    const contextWindow = lookupLaneContextWindow(config, activeCatalogName, activePresetName, phaseName);
     const pricingStr = pricing ? ` (${formatPricing(pricing)})` : '';
-    lines.push(`- ${phaseName}: ${formatRoute(route.active)}${pricingStr}`);
+    const ctxStr = contextWindow ? ` [${formatContextWindow(contextWindow)} ctx]` : '';
+    lines.push(`- ${phaseName}: ${formatRoute(route.active)}${pricingStr}${ctxStr}`);
   }
 
   return `${lines.join('\n')}\n`;
@@ -683,6 +884,410 @@ function renderInvalidStatus(configPath, error) {
   ].join('\n') + '\n';
 }
 
+async function runProfile(args) {
+  const [subcommand, ...rest] = args;
+  switch (subcommand) {
+    case 'list':
+      return runList();
+    case 'show':
+      return runReload();
+    case 'create':
+      return runProfileCreate(rest);
+    case 'delete':
+      return runProfileDelete(rest);
+    case 'rename':
+      return runProfileRename(rest);
+    case 'copy':
+      return runProfileCopy(rest);
+    case 'export':
+      return runExport(rest);
+    case 'import':
+      return await runImport(rest);
+    default:
+      if (subcommand === 'help' || subcommand === '--help' || !subcommand) {
+        process.stdout.write(renderCommandHelp('profile') ?? '');
+        return;
+      }
+      printUsage();
+      throw new Error(subcommand ? `Unknown profile command: ${subcommand}` : 'gsr profile requires a subcommand.');
+  }
+}
+
+function runCatalog(args) {
+  const [subcommand, ...rest] = args;
+  switch (subcommand) {
+    case 'list':
+      return runCatalogList(rest);
+    case 'create':
+      return runCatalogCreate(rest);
+    case 'delete':
+      return runCatalogDelete(rest);
+    case 'enable':
+      return runCatalogEnable(rest);
+    case 'disable':
+      return runCatalogDisable(rest);
+    case 'move':
+      return runCatalogMove(rest);
+    case 'use':
+      return runCatalogUse(rest);
+    default:
+      if (subcommand === 'help' || subcommand === '--help' || !subcommand) {
+        process.stdout.write(renderCommandHelp('catalog') ?? '');
+        return;
+      }
+      printUsage();
+      throw new Error(subcommand ? `Unknown catalog command: ${subcommand}` : 'gsr catalog requires a subcommand.');
+  }
+}
+
+function runProfileCreate(args) {
+  const name = args.find((a) => !a.startsWith('--'));
+  if (!name) {
+    printUsage();
+    throw new Error('gsr profile create requires a profile name.');
+  }
+
+  const catalogIndex = args.indexOf('--catalog');
+  const catalog = catalogIndex !== -1 ? args[catalogIndex + 1] : undefined;
+  const targetIndex = args.indexOf('--target');
+  const target = targetIndex !== -1 ? args[targetIndex + 1] : undefined;
+
+  const configPath = discoverConfigPath();
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr install` first.\n');
+    return;
+  }
+
+  const routerDir = path.dirname(configPath);
+  const result = createProfile(name, routerDir, { catalog, target });
+  const catalogLabel = result.catalog !== 'default' ? ` (catalog: ${result.catalog})` : '';
+  process.stdout.write(`Created profile '${result.presetName}'${catalogLabel} → ${result.path}\n`);
+}
+
+function runProfileDelete(args) {
+  const name = args.find((a) => !a.startsWith('--'));
+  if (!name) {
+    printUsage();
+    throw new Error('gsr profile delete requires a profile name.');
+  }
+
+  const catalogIndex = args.indexOf('--catalog');
+  const catalog = catalogIndex !== -1 ? args[catalogIndex + 1] : undefined;
+
+  const configPath = discoverConfigPath();
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr install` first.\n');
+    return;
+  }
+
+  const routerDir = path.dirname(configPath);
+  const result = deleteProfile(name, routerDir, { catalog });
+  process.stdout.write(`Deleted profile '${result.presetName}' from ${result.path}\n`);
+}
+
+function runProfileRename(args) {
+  const positional = args.filter((a) => !a.startsWith('--'));
+  const oldName = positional[0];
+  const newName = positional[1];
+
+  if (!oldName || !newName) {
+    printUsage();
+    throw new Error('gsr profile rename requires <old-name> <new-name>.');
+  }
+
+  const catalogIndex = args.indexOf('--catalog');
+  const catalog = catalogIndex !== -1 ? args[catalogIndex + 1] : undefined;
+
+  const configPath = discoverConfigPath();
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr install` first.\n');
+    return;
+  }
+
+  const routerDir = path.dirname(configPath);
+  const result = renameProfile(oldName, newName, routerDir, { catalog });
+  process.stdout.write(`Renamed profile '${result.oldName}' → '${result.newName}' (${result.path})\n`);
+}
+
+function runProfileCopy(args) {
+  const positional = args.filter((a) => !a.startsWith('--'));
+  const sourceName = positional[0];
+  const destName = positional[1];
+
+  if (!sourceName || !destName) {
+    printUsage();
+    throw new Error('gsr profile copy requires <source> <dest>.');
+  }
+
+  const catalogIndex = args.indexOf('--catalog');
+  const catalog = catalogIndex !== -1 ? args[catalogIndex + 1] : undefined;
+
+  const configPath = discoverConfigPath();
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr install` first.\n');
+    return;
+  }
+
+  const routerDir = path.dirname(configPath);
+  const result = copyProfile(sourceName, destName, routerDir, { catalog });
+  process.stdout.write(`Copied profile '${result.sourceName}' → '${result.destName}' (${result.path})\n`);
+}
+
+function runCatalogList(_args) {
+  const configPath = discoverConfigPath();
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr install` first.\n');
+    return;
+  }
+
+  const routerDir = path.dirname(configPath);
+  const config = loadRouterConfig(configPath);
+  const catalogs = listCatalogs(routerDir);
+
+  process.stdout.write('Catalogs:\n');
+  for (const cat of catalogs) {
+    const meta = config.catalogs?.[cat.name];
+    const displayLabel = getCatalogDisplayName(cat.name, meta);
+    const enabledFlag = meta?.enabled === false ? ' [disabled]' : ' [enabled]';
+    process.stdout.write(`  ${displayLabel}${enabledFlag} (${cat.profileCount} profile(s))\n`);
+  }
+}
+
+function runCatalogCreate(args) {
+  const name = args.find((a) => !a.startsWith('--'));
+  if (!name) {
+    printUsage();
+    throw new Error('gsr catalog create requires a catalog name.');
+  }
+
+  const configPath = discoverConfigPath();
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr install` first.\n');
+    return;
+  }
+
+  const routerDir = path.dirname(configPath);
+  const result = createCatalog(name, routerDir);
+  process.stdout.write(`Created catalog '${result.name}' at ${result.path}\n`);
+}
+
+function runCatalogDelete(args) {
+  const name = args.find((a) => !a.startsWith('--'));
+  if (!name) {
+    printUsage();
+    throw new Error('gsr catalog delete requires a catalog name.');
+  }
+
+  const configPath = discoverConfigPath();
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr install` first.\n');
+    return;
+  }
+
+  const routerDir = path.dirname(configPath);
+  const result = deleteCatalog(name, routerDir);
+  process.stdout.write(`Deleted catalog '${result.name}' from ${result.path}\n`);
+}
+
+function runCatalogEnable(args) {
+  const name = args.find((a) => !a.startsWith('--'));
+  if (!name) {
+    printUsage();
+    throw new Error('gsr catalog enable requires a catalog name.');
+  }
+  const configPath = discoverConfigPath();
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr setup install` first.\n');
+    return;
+  }
+  const routerDir = path.dirname(configPath);
+  setCatalogEnabled(name, true, routerDir);
+  process.stdout.write(`Catalog '${name}' enabled. Its presets will appear in TUI host.\n`);
+  process.stdout.write('Tip: Run `gsr setup apply opencode --apply` to update OpenCode agents.\n');
+}
+
+function runCatalogDisable(args) {
+  const name = args.find((a) => !a.startsWith('--'));
+  if (!name) {
+    printUsage();
+    throw new Error('gsr catalog disable requires a catalog name.');
+  }
+  const configPath = discoverConfigPath();
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr setup install` first.\n');
+    return;
+  }
+  const routerDir = path.dirname(configPath);
+  setCatalogEnabled(name, false, routerDir);
+  process.stdout.write(`Catalog '${name}' disabled. Its presets will be hidden from TUI host.\n`);
+  process.stdout.write('Tip: Run `gsr setup apply opencode --apply` to update OpenCode agents.\n');
+}
+
+function runCatalogMove(args) {
+  const positional = args.filter((a) => !a.startsWith('--'));
+  const name = positional[0];
+  const targetCatalog = positional[1];
+
+  if (!name || !targetCatalog) {
+    printUsage();
+    throw new Error('gsr catalog move requires: gsr catalog move <profile> <target-catalog>');
+  }
+
+  const fromIndex = args.indexOf('--from');
+  const sourceCatalog = fromIndex !== -1 ? args[fromIndex + 1] : undefined;
+
+  const configPath = discoverConfigPath();
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr install` first.\n');
+    return;
+  }
+  const routerDir = path.dirname(configPath);
+  const result = moveProfile(name, targetCatalog, routerDir, { sourceCatalog });
+  process.stdout.write(`Moved profile '${result.name}' from '${result.from}' to '${result.to}'\n`);
+}
+
+function runCatalogUse(args) {
+  const catalogName = args[0];
+  const presetOverride = args[1]; // optional
+  if (!catalogName) {
+    printUsage();
+    throw new Error('gsr catalog use requires a catalog name.');
+  }
+  const configPath = discoverConfigPath();
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr install` first.\n');
+    return;
+  }
+
+  const config = loadRouterConfig(configPath);
+
+  // Verify catalog exists
+  if (!config.catalogs?.[catalogName]) {
+    throw new Error(`Catalog '${catalogName}' not found.`);
+  }
+
+  // Determine which preset to activate
+  const preset = presetOverride
+    ?? config.catalogs[catalogName]?.active_preset
+    ?? Object.keys(config.catalogs[catalogName]?.presets ?? {})[0]
+    ?? null;
+
+  if (!preset) {
+    throw new Error(`Catalog '${catalogName}' has no profiles.`);
+  }
+
+  // Update router.yaml
+  const raw = fs.readFileSync(configPath, 'utf8');
+  const parsed = parseYaml(raw);
+  parsed.active_catalog = catalogName;
+  parsed.active_preset = preset;
+  const yaml = stringifyYaml(parsed);
+  const tempPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tempPath, yaml, 'utf8');
+  fs.renameSync(tempPath, configPath);
+
+  process.stdout.write(`Active catalog: ${catalogName}\nActive preset: ${preset}\n`);
+}
+
+// === CATEGORY DISPATCHERS ===
+
+function runRoute(args) {
+  const [sub, ...rest] = args;
+  switch (sub) {
+    case 'use': return runUse(rest);
+    case 'show': return runReload();
+    case 'activate': return runToggleActivation('active', rest);
+    case 'deactivate': return runToggleActivation('inactive', rest);
+    default:
+      if (sub === 'help' || sub === '--help' || !sub) {
+        process.stdout.write(renderCommandHelp('route') ?? '');
+        return;
+      }
+      printUsage();
+      throw new Error(sub ? `Unknown route command: ${sub}` : 'gsr route requires a subcommand.');
+  }
+}
+
+function runInspect(args) {
+  const [sub, ...rest] = args;
+  switch (sub) {
+    case 'browse': return runBrowse(rest);
+    case 'compare': return runCompare(rest);
+    case 'render': return runRender(rest);
+    default:
+      if (sub === 'help' || sub === '--help' || !sub) {
+        process.stdout.write(renderCommandHelp('inspect') ?? '');
+        return;
+      }
+      printUsage();
+      throw new Error(sub ? `Unknown inspect command: ${sub}` : 'gsr inspect requires a subcommand.');
+  }
+}
+
+function runSetup(args) {
+  const [sub, ...rest] = args;
+  switch (sub) {
+    case 'install': return runInstall(rest);
+    case 'uninstall': return runUninstall(rest);
+    case 'bootstrap': return runBootstrap(rest);
+    case 'update': return runUpdate(rest);
+    case 'apply': return runApply(rest);
+    default:
+      if (sub === 'help' || sub === '--help' || !sub) {
+        process.stdout.write(renderCommandHelp('setup') ?? '');
+        return;
+      }
+      printUsage();
+      throw new Error(sub ? `Unknown setup command: ${sub}` : 'gsr setup requires a subcommand.');
+  }
+}
+
+function runUninstall(args) {
+  const confirm = args.includes('--confirm');
+  const configPath = safeDiscoverConfigPathFromCwd();
+
+  // Step 1: Remove overlay + slash commands
+  const overlayResult = removeOpenCodeOverlay();
+  if (overlayResult.removedCount > 0) {
+    process.stdout.write(`Removed ${overlayResult.removedCount} gsr-* agent(s) from ${overlayResult.path}\n`);
+  } else {
+    process.stdout.write('No gsr-* entries found in opencode.json.\n');
+  }
+
+  try {
+    const cmdResult = removeGsrCommands();
+    if (cmdResult.removed > 0) {
+      process.stdout.write(`Removed ${cmdResult.removed} /gsr command(s).\n`);
+    }
+  } catch {
+    // Non-blocking
+  }
+
+  // Step 2: Remove router/ directory from the project
+  if (!configPath) {
+    process.stdout.write('No router config found in this project — nothing else to remove.\n');
+    return;
+  }
+
+  const routerDir = path.dirname(configPath);
+  if (!confirm) {
+    process.stdout.write(`\nThis will delete: ${routerDir}/\n`);
+    process.stdout.write('All profiles, backups, and migration state will be lost.\n');
+    process.stdout.write('Run again with --confirm to proceed:\n');
+    process.stdout.write('  gsr setup uninstall --confirm\n');
+    return;
+  }
+
+  // Backup before deleting
+  const backupDir = path.join(path.dirname(routerDir), '.router-backup-' + Date.now());
+  fs.cpSync(routerDir, backupDir, { recursive: true });
+  process.stdout.write(`Backup created: ${backupDir}\n`);
+
+  fs.rmSync(routerDir, { recursive: true, force: true });
+  process.stdout.write(`Removed: ${routerDir}/\n`);
+  process.stdout.write('gsr has been fully uninstalled from this project.\n');
+}
+
 function printUsage() {
   process.stdout.write(renderGeneralHelp());
 }
@@ -698,24 +1303,67 @@ function renderGeneralHelp() {
     'Compatibility: router.yaml versions 1, 3, and 4 are supported; v3 powers multimodel browse/compare and v4 is the current multi-file format.',
     'Quickstart: run gsr status, then gsr bootstrap if router/router.yaml is missing.',
     '',
+    'Quick start:',
+    '  gsr status                See current state.',
+    '  gsr route use <preset>    Switch model routing.',
+    '  gsr setup install         First-time setup.',
+    '',
     'Commands:',
-    '  use <profile>      Select the active profile in router/router.yaml without changing who is in control.',
-    '  reload             Reload the current config and print resolved routes.',
-    '  status             Show who is in control, how to toggle it, the active profile, and resolved routes.',
-    '  list               List available profiles and mark the active one.',
-    '  browse [selector]  Inspect shareable multimodel metadata projected from schema v3 without recommending or executing anything.',
-    '  compare <left> <right> Compare two shareable multimodel projections without recommending or executing anything.',
-    '  install            Inspect or apply a YAML-first install intent to router/router.yaml.',
-    '  bootstrap          Show or apply a step-by-step bootstrap path for adoption.',
-    '  activate           Take control of routing without changing the active profile.',
-    `  deactivate         Hand control back to ${controllerLabel} without changing the active profile.`,
-    '  render opencode    Preview the OpenCode provider-execution, host-session sync, handoff, schema metadata, and multimodel orchestration manager boundaries without implying execution.',
-    '  update             Show pending config migrations. Use --apply to apply them.',
-    '  apply <target>     Generate and apply configuration overlay for a TUI target (e.g., opencode).',
-    '  export <preset>    Export a preset to stdout, file, or compact string.',
-    '  import <source>    Import a preset from file, URL, or compact string.',
-    '  version            Show the installed gsr version.',
-    '  help [command]     Show help for all commands or one command.',
+    '  status                    Show who is in control, how to toggle it, the active profile, and resolved routes.',
+    '  version                   Installed gsr version.',
+    '  help [command]            Help for a command or subcommand.',
+    '  sync                      Push global contracts to Engram (dev/repair).',
+    '',
+    '  route                     Control which models serve each phase.',
+    '    use <preset>            Select the active profile in router/router.yaml without changing who is in control.',
+    '    show                    Show resolved routes for current preset.',
+    '    activate                gsr takes control of routing.',
+    `    deactivate              Hand control back to ${controllerLabel} without changing the active profile.`,
+    '',
+    '  profile                   Manage routing profiles.',
+    '    list                    List available profiles and mark the active one.',
+    '    create <name>           Create an empty profile.',
+    '    delete <name>           Delete a profile.',
+    '    rename <old> <new>      Rename a profile.',
+    '    copy <src> <dest>       Clone a profile.',
+    '    export <name>           Export for sharing (--compact for gsr:// string).',
+    '    import <source>         Import from file, URL, or gsr:// string.',
+    '',
+    '  catalog                   Manage profile catalogs and TUI visibility.',
+    '    list                    List catalogs with status.',
+    '    create <name>           Create a catalog (disabled by default).',
+    '    delete <name>           Delete an empty catalog.',
+    '    enable <name>           Enable catalog in TUI host (TAB cycling).',
+    '    disable <name>          Disable catalog from TUI host.',
+    '    move <name> <catalog>   Move a profile to another catalog.',
+    '    use <name> [preset]     Set active catalog (and optionally preset).',
+    '',
+    '  inspect                   Read-only views of metadata and boundaries.',
+    '    browse [selector]       Inspect shareable multimodel metadata projected from schema v3 without recommending or executing anything.',
+    '    compare <a> <b>         Side-by-side preset comparison.',
+    '    render <target>         Preview the OpenCode provider-execution, host-session sync, handoff, schema metadata, and multimodel orchestration manager boundaries without implying execution.',
+    '',
+    '  setup                     Install, configure, and maintain gsr.',
+    '    install                 Inspect or apply a YAML-first install intent to router/router.yaml.',
+    '    uninstall               Remove gsr from this project (overlay + router/ with backup).',
+    '    bootstrap               Show or apply a step-by-step bootstrap path for adoption.',
+    '    update                  Show/apply config migrations (--apply).',
+    '    apply <target>          Generate TUI overlay (--apply to write).',
+    '',
+    'Backward-compat aliases (old commands still work at root):',
+    '    use <profile>       Select the active profile in router/router.yaml without changing who is in control.',
+    '    list                List available profiles and mark the active one.',
+    '    browse [selector]   Inspect shareable multimodel metadata projected from schema v3 without recommending or executing anything.',
+    '    compare <left> <right>  Compare two shareable multimodel projections without recommending or executing anything.',
+    '    render opencode     Preview the OpenCode provider-execution, host-session sync, handoff, schema metadata, and multimodel orchestration manager boundaries without implying execution.',
+    '    export <preset>     Export a preset for sharing.',
+    '    import <source>     Import a preset from file, URL, or string.',
+    '    install             Inspect or apply a YAML-first install intent to router/router.yaml.',
+    '    bootstrap           Show or apply a step-by-step bootstrap path for adoption.',
+    '    activate            Take control of routing without changing the active profile.',
+    `    deactivate          Hand control back to ${controllerLabel} without changing the active profile.`,
+    '    update              Show/apply config migrations.',
+    '    apply <target>      Generate and apply TUI overlay.',
   ].join('\n') + '\n';
 }
 
@@ -852,6 +1500,189 @@ function renderCommandHelp(topic, subtopic) {
       '  --compact <str>  Import from a compact gsr:// string.',
       '  --catalog <name> Place the imported preset in a named catalog subdirectory.',
       '  --force          Overwrite an existing preset with the same name.',
+    ].join('\n') + '\n';
+  }
+
+  if (normalized === 'profile') {
+    const sub = subtopic?.toLowerCase();
+    if (!sub) {
+      return [
+        'Usage: gsr profile <subcommand> [args]',
+        'Manage routing profiles.',
+        '',
+        '  list                    List available profiles.',
+        '  create <name>           Create a new empty profile.',
+        '  delete <name>           Delete a profile.',
+        '  rename <old> <new>      Rename a profile.',
+        '  copy <src> <dst>        Copy/clone a profile.',
+        '  export <name> [--compact] [--out <path>]  Export a preset for sharing.',
+        '  import <source> [--catalog <name>] [--force]  Import a preset.',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'create') {
+      return [
+        'Usage: gsr profile create <name> [--catalog <catalog>] [--target <model>]',
+        'Create a new empty profile with a single orchestrator phase.',
+        '  <name>           Profile name.',
+        '  --catalog <name> Place in a named catalog subdirectory.',
+        '  --target <model> Model target (default: anthropic/claude-sonnet).',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'delete') {
+      return [
+        'Usage: gsr profile delete <name> [--catalog <catalog>]',
+        'Delete a profile file.',
+        '  <name>           Profile name.',
+        '  --catalog <name> Look in a specific catalog.',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'rename') {
+      return [
+        'Usage: gsr profile rename <old> <new> [--catalog <catalog>]',
+        'Rename a profile (updates the file and the name field).',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'copy') {
+      return [
+        'Usage: gsr profile copy <source> <dest> [--catalog <catalog>]',
+        'Copy/clone a profile to a new name.',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'list') {
+      return [
+        'Usage: gsr profile list',
+        'List available profiles and mark the active one.',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'show') {
+      return [
+        'Usage: gsr profile show',
+        'Show resolved routes for the active profile.',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'export') {
+      return renderCommandHelp('export');
+    }
+    if (sub === 'import') {
+      return renderCommandHelp('import');
+    }
+    return null;
+  }
+
+  if (normalized === 'catalog') {
+    const sub = subtopic?.toLowerCase();
+    if (!sub) {
+      return [
+        'Usage: gsr catalog <subcommand> [args]',
+        'Manage profile catalogs and TUI visibility.',
+        '',
+        '  list               List catalogs with enable/disable status.',
+        '  create <name>      Create a catalog (disabled by default).',
+        '  delete <name>      Delete an empty catalog.',
+        '  enable <name>      Enable catalog — its presets appear in TUI host.',
+        '  disable <name>     Disable catalog — its presets are hidden from TUI host.',
+        '  move <name> <catalog>  Move a profile to another catalog.',
+        '  use <name> [preset]  Set active catalog (and optionally preset).',
+        '',
+        'Note: Only enabled catalogs generate agents in the TUI host (e.g., OpenCode TAB cycling).',
+        'The SDD-Orchestrator (default) catalog is enabled by default. New catalogs start disabled.',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'list') {
+      return [
+        'Usage: gsr catalog list',
+        'List all catalogs (directories under profiles/ + default).',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'create') {
+      return [
+        'Usage: gsr catalog create <name>',
+        'Create a new catalog directory under profiles/.',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'delete') {
+      return [
+        'Usage: gsr catalog delete <name>',
+        'Delete an empty catalog. Fails if the catalog contains profiles.',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'enable') {
+      return 'Usage: gsr catalog enable <name>\nEnable a catalog so its presets appear in TUI host TAB cycling.\n';
+    }
+    if (sub === 'disable') {
+      return 'Usage: gsr catalog disable <name>\nDisable a catalog so its presets are hidden from TUI host.\n';
+    }
+    if (sub === 'move') {
+      return [
+        'Usage: gsr catalog move <profile> <target-catalog> [--from <source-catalog>]',
+        'Move a profile to another catalog.',
+        '  <profile>         Profile name.',
+        '  <target-catalog>  Destination catalog name.',
+        '  --from <catalog>  Specify the source catalog explicitly (optional).',
+      ].join('\n') + '\n';
+    }
+    return null;
+  }
+
+  if (normalized === 'route') {
+    const sub = subtopic?.toLowerCase();
+    if (sub === 'use') {
+      return 'Usage: gsr route use <preset>\nSwitch the active routing preset.\n';
+    }
+    if (sub === 'show') {
+      return 'Usage: gsr route show\nShow resolved routes for the current preset.\n';
+    }
+    return [
+      'Usage: gsr route <subcommand> [args]',
+      'Control which models serve each development phase.',
+      '',
+      '  use <preset>       Switch the active routing preset.',
+      '  show               Show resolved routes for the current preset.',
+      '  activate           gsr takes control of routing.',
+      '  deactivate         Host takes control back.',
+    ].join('\n') + '\n';
+  }
+
+  if (normalized === 'inspect') {
+    return [
+      'Usage: gsr inspect <subcommand> [args]',
+      'Read-only views of multimodel metadata and host boundaries.',
+      '',
+      '  browse [selector]  Inspect shareable multimodel metadata projected from schema v3 without recommending or executing anything.',
+      '  compare <a> <b>    Compare two shareable multimodel projections without recommending or executing anything.',
+      '  render <target>    Preview the OpenCode provider-execution, host-session sync, handoff, schema metadata, and multimodel orchestration manager boundaries without implying execution.',
+    ].join('\n') + '\n';
+  }
+
+  if (normalized === 'setup') {
+    const sub = subtopic?.toLowerCase();
+    if (sub === 'install') return renderCommandHelp('install');
+    if (sub === 'uninstall') return renderCommandHelp('uninstall');
+    if (sub === 'bootstrap') return renderCommandHelp('bootstrap');
+    if (sub === 'update') return renderCommandHelp('update');
+    if (sub === 'apply') return renderCommandHelp('apply');
+    return [
+      'Usage: gsr setup <subcommand> [args]',
+      'Install, configure, and maintain gsr.',
+      '',
+      '  install            Inspect or apply a YAML-first install intent to router/router.yaml.',
+      '  uninstall          Remove gsr from this project (overlay + router/ with backup).',
+      '  bootstrap          Show or apply a step-by-step bootstrap path for adoption.',
+      '  update             Show/apply config migrations (--apply).',
+      '  apply <target>     Generate TUI overlay (--apply to write).',
+    ].join('\n') + '\n';
+  }
+
+  if (normalized === 'uninstall') {
+    return [
+      'Usage: gsr setup uninstall [--confirm]',
+      'Fully uninstall gsr from this project:',
+      '  1. Removes gsr-* agent entries from ~/.config/opencode/opencode.json',
+      '  2. Creates a backup of router/ at .router-backup-<timestamp>',
+      '  3. Deletes the router/ directory',
+      '',
+      'Without --confirm, shows a preview of what will be deleted.',
+      'With --confirm, executes the uninstall.',
     ].join('\n') + '\n';
   }
 

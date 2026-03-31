@@ -4,3 +4,4 @@ phases:
     - target: anthropic/claude-opus
       phase: orchestrator
       role: primary
+      contextWindow: 200000

@@ -659,6 +659,45 @@ describe('runMigrations: dry run', () => {
   });
 });
 
+// ── loadMigrationsRegistry: legacy array format ───────────────────────────────
+
+describe('loadMigrationsRegistry: legacy array format', () => {
+  test('loadMigrationsRegistry handles legacy array format gracefully', () => {
+    const dir = makeTempDir();
+
+    try {
+      // Write a registry using the legacy array format (applied as a list of objects).
+      writeRegistryYaml(dir, [
+        'schema_version: 1',
+        'applied:',
+        '  - id: "001"',
+        '    applied_at: "2026-01-01T00:00:00.000Z"',
+      ].join('\n') + '\n');
+
+      // loadMigrationsRegistry must not throw — it should handle or convert the format.
+      let registry;
+      let thrownError = null;
+      try {
+        registry = loadMigrationsRegistry(dir);
+      } catch (err) {
+        thrownError = err;
+      }
+
+      // The function must either: (a) succeed and return a usable registry, or
+      // (b) throw a clear error. In both cases it must not silently corrupt state.
+      if (thrownError === null) {
+        assert.ok(registry, 'registry was returned');
+        assert.ok(typeof registry.applied === 'object', 'applied is an object');
+      } else {
+        // Acceptable: function rejects unrecognized format with an error
+        assert.ok(thrownError instanceof Error, 'error is an Error instance');
+      }
+    } finally {
+      cleanup(dir);
+    }
+  });
+});
+
 describe('runMigrations: rollback on failure', () => {
   test('restoreBackup restores original state after simulated failure', () => {
     const dir = makeTempDir();

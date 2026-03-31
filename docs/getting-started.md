@@ -7,7 +7,13 @@
 
 ## Installation
 
-### From source (current method)
+### From npm (recommended)
+
+```bash
+npm install -g gentle-sdd-router
+```
+
+### From source
 
 ```bash
 git clone https://github.com/osmelpv/gentle-sdd-router.git
@@ -46,8 +52,10 @@ The wizard detects your project state and offers options:
 
 ```bash
 cd your-project
-gsr install
+gsr setup install
 ```
+
+> **Note**: The old `gsr install` command still works as a backward-compat alias.
 
 This creates the v4 multi-file layout:
 
@@ -66,18 +74,20 @@ your-project/
 gsr status
 
 # List available presets
-gsr list
+gsr profile list
 
 # Switch to a different preset
-gsr use claude
+gsr route use claude
 
 # View resolved routes
-gsr reload
+gsr route show
 
 # Import or export presets
-gsr export multivendor --compact
-gsr import ./shared.router.yaml --catalog local
+gsr profile export multivendor --compact
+gsr profile import ./shared.router.yaml
 ```
+
+> **Backward-compat aliases**: The old commands `gsr list`, `gsr use claude`, `gsr reload`, and `gsr install` still work. The new tree (`gsr profile list`, `gsr route use`, etc.) is the recommended form going forward.
 
 ## Next Steps
 

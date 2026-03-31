@@ -7,6 +7,8 @@ import {
   generateOpenCodeOverlay,
   mapPermissions,
   mergeOverlayWithExisting,
+  mergeOverlayWithFile,
+  writeOpenCodeConfig,
 } from '../src/adapters/opencode/overlay-generator.js';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -381,5 +383,81 @@ describe('mergeOverlayWithExisting', () => {
     assert.ok(result.agent['gsr-balanced']);
     assert.ok(result.agent['gsr-safety']);
     assert.ok(result.agent['sdd-explorer']);
+  });
+});
+
+// ── mergeOverlayWithFile / writeOpenCodeConfig (fs paths) ────────────────────
+
+describe('mergeOverlayWithFile', () => {
+  test('returns clean overlay when config file does not exist', () => {
+    const nonExistentPath = path.join(os.tmpdir(), `gsr-nonexistent-${Date.now()}.json`);
+    const overlay = { agent: { 'gsr-test': { mode: 'primary' } } };
+
+    const result = mergeOverlayWithFile(overlay, nonExistentPath);
+
+    assert.ok(result.agent['gsr-test'], 'gsr-test agent present');
+    assert.equal(Object.keys(result.agent).length, 1, 'only the overlay agent is present');
+  });
+
+  test('mergeOverlayWithFile handles corrupt JSON file gracefully', () => {
+    const tempPath = path.join(os.tmpdir(), `gsr-corrupt-${Date.now()}.json`);
+    fs.writeFileSync(tempPath, '{ this is not valid json :::}', 'utf8');
+
+    const overlay = { agent: { 'gsr-test': { mode: 'primary' } } };
+
+    try {
+      const result = mergeOverlayWithFile(overlay, tempPath);
+
+      // Falls back to empty config; only overlay agent survives
+      assert.ok(result.agent['gsr-test'], 'gsr-test agent present after corrupt file fallback');
+    } finally {
+      fs.rmSync(tempPath, { force: true });
+    }
+  });
+});
+
+describe('writeOpenCodeConfig', () => {
+  test('creates parent directories and writes valid JSON', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-write-cfg-'));
+    const nestedPath = path.join(tempDir, 'deeply', 'nested', 'opencode.json');
+
+    try {
+      const config = { agent: { 'gsr-balanced': { mode: 'primary' } } };
+      const writtenPath = writeOpenCodeConfig(config, nestedPath);
+
+      assert.equal(writtenPath, nestedPath, 'returns the written path');
+      assert.ok(fs.existsSync(nestedPath), 'file was created');
+
+      const raw = fs.readFileSync(nestedPath, 'utf8');
+      // Must be valid JSON
+      const parsed = JSON.parse(raw);
+      assert.ok(parsed.agent, 'parsed JSON has agent key');
+    } finally {
+      fs.rmSync(tempDir, { recursive: true });
+    }
+  });
+
+  test('writeOpenCodeConfig output can be read back as identical JSON', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-write-rt-'));
+    const targetPath = path.join(tempDir, 'opencode.json');
+
+    try {
+      const config = {
+        agent: {
+          'gsr-fast': { mode: 'primary', model: 'anthropic/claude-sonnet' },
+          'gsr-safety': { mode: 'primary', model: 'openai/gpt', tools: { write: false } },
+        },
+        theme: 'dark',
+      };
+
+      writeOpenCodeConfig(config, targetPath);
+
+      const raw = fs.readFileSync(targetPath, 'utf8');
+      const readBack = JSON.parse(raw);
+
+      assert.deepEqual(readBack, config, 'read-back matches original config');
+    } finally {
+      fs.rmSync(tempDir, { recursive: true });
+    }
   });
 });

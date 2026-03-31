@@ -11,6 +11,7 @@ phases:
       fallbacks: openai/gpt-5
       inputPerMillion: 15
       outputPerMillion: 75
+      contextWindow: 200000
   explore:
     - target: google/gemini-pro
       kind: lane
@@ -19,6 +20,7 @@ phases:
       fallbacks: anthropic/claude-sonnet
       inputPerMillion: 1.25
       outputPerMillion: 5
+      contextWindow: 2000000
   spec:
     - target: anthropic/claude-opus
       kind: lane
@@ -27,6 +29,7 @@ phases:
       fallbacks: openai/gpt-5
       inputPerMillion: 15
       outputPerMillion: 75
+      contextWindow: 200000
   design:
     - target: anthropic/claude-opus
       kind: lane
@@ -35,6 +38,7 @@ phases:
       fallbacks: openai/gpt-5
       inputPerMillion: 15
       outputPerMillion: 75
+      contextWindow: 200000
   tasks:
     - target: anthropic/claude-sonnet
       kind: lane
@@ -43,6 +47,7 @@ phases:
       fallbacks: openai/gpt
       inputPerMillion: 3
       outputPerMillion: 15
+      contextWindow: 200000
   apply:
     - target: anthropic/claude-sonnet
       kind: lane
@@ -51,6 +56,7 @@ phases:
       fallbacks: openai/gpt-5
       inputPerMillion: 3
       outputPerMillion: 15
+      contextWindow: 200000
   verify:
     - target: openai/gpt-5
       kind: lane
@@ -59,6 +65,7 @@ phases:
       fallbacks: anthropic/claude-opus
       inputPerMillion: 10
       outputPerMillion: 30
+      contextWindow: 1000000
   archive:
     - target: google/gemini-flash
       kind: lane
@@ -67,3 +74,4 @@ phases:
       fallbacks: anthropic/claude-haiku
       inputPerMillion: 0.075
       outputPerMillion: 0.30
+      contextWindow: 1000000

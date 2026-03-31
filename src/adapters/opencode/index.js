@@ -313,6 +313,7 @@ function saveV4Config(config, configPath, previousConfig) {
 }
 
 export const OPENCODE_SESSION_SYNC_CONTRACT_VERSION = '1';
+export const TOKEN_BUDGET_HINT_VERSION = '1';
 
 export function createOpenCodeSlashCommandManifest(state = {}, configPath = null) {
   const schemaVersion = state.schemaVersion ?? state.version ?? null;
@@ -331,9 +332,51 @@ export function createOpenCodeSlashCommandManifest(state = {}, configPath = null
     activePresetName: state.selectedPresetName ?? null,
     activeProfileName: state.activeProfileName ?? null,
     commands: [
+      // Root
+      createSlashCommand('status', 'Current router state, routes, and pricing.', '/gsr status', ['config', 'profile', 'catalog']),
+      createSlashCommand('version', 'Show installed gsr version.', '/gsr version', []),
+      createSlashCommand('help', 'Help for commands.', '/gsr help [command]', []),
+      createSlashCommand('sync', 'Push global contracts to Engram.', '/gsr sync', ['config']),
+
+      // Route
+      createSlashCommand('route-use', 'Switch the active preset.', '/gsr route use <preset>', ['profile']),
+      createSlashCommand('route-show', 'Show resolved routes for current preset.', '/gsr route show', ['config']),
+      createSlashCommand('route-activate', 'gsr takes control of routing.', '/gsr route activate', ['config', 'activation']),
+      createSlashCommand('route-deactivate', `Host takes control back.`, '/gsr route deactivate', ['config', 'activation']),
+
+      // Profile
+      createSlashCommand('profile-list', 'List profiles.', '/gsr profile list', ['profile']),
+      createSlashCommand('profile-create', 'Create an empty profile.', '/gsr profile create <name>', ['profile']),
+      createSlashCommand('profile-delete', 'Delete a profile.', '/gsr profile delete <name>', ['profile']),
+      createSlashCommand('profile-rename', 'Rename a profile.', '/gsr profile rename <old> <new>', ['profile']),
+      createSlashCommand('profile-copy', 'Clone a profile.', '/gsr profile copy <src> <dest>', ['profile']),
+      createSlashCommand('export', 'Export a preset for sharing.', '/gsr profile export <name> [--compact]', ['preset']),
+      createSlashCommand('import', 'Import a preset.', '/gsr profile import <source>', ['preset', 'profile']),
+
+      // Catalog
+      createSlashCommand('catalog-list', 'List catalogs with status.', '/gsr catalog list', ['catalog']),
+      createSlashCommand('catalog-create', 'Create a catalog (disabled by default).', '/gsr catalog create <name>', ['catalog']),
+      createSlashCommand('catalog-delete', 'Delete an empty catalog.', '/gsr catalog delete <name>', ['catalog']),
+      createSlashCommand('catalog-enable', 'Enable catalog in TUI host.', '/gsr catalog enable <name>', ['catalog']),
+      createSlashCommand('catalog-disable', 'Disable catalog from TUI host.', '/gsr catalog disable <name>', ['catalog']),
+      createSlashCommand('catalog-move', 'Move a profile to another catalog.', '/gsr catalog move <name> <catalog>', ['catalog', 'profile']),
+      createSlashCommand('catalog-use', 'Set active catalog and preset.', '/gsr catalog use <catalog> [preset]', ['catalog']),
+
+      // Inspect
+      createSlashCommand('inspect-browse', 'Multimodel metadata for a preset.', '/gsr inspect browse [selector]', ['catalog', 'preset']),
+      createSlashCommand('inspect-compare', 'Side-by-side preset comparison.', '/gsr inspect compare <a> <b>', ['catalog', 'preset']),
+      createSlashCommand('inspect-render', 'Preview host boundary report.', '/gsr inspect render <target>', ['config', 'catalog', 'profile']),
+
+      // Setup
+      createSlashCommand('setup-install', 'Install router config.', '/gsr setup install [--intent ...]', ['config']),
+      createSlashCommand('setup-uninstall', 'Remove gsr overlay from host config.', '/gsr setup uninstall', ['config']),
+      createSlashCommand('setup-bootstrap', 'Guided first-time setup.', '/gsr setup bootstrap [--intent ...]', ['config']),
+      createSlashCommand('setup-update', 'Check/apply config migrations.', '/gsr setup update [--apply]', ['config']),
+      createSlashCommand('setup-apply', 'Generate TUI overlay.', '/gsr setup apply <target> [--apply]', ['config']),
+
+      // Backward-compat aliases (kept for existing integrations)
       createSlashCommand('use', 'Select the active profile in router/router.yaml.', '/gsr use <profile>', ['profile']),
       createSlashCommand('reload', 'Reload the current config and print the resolved routes.', '/gsr reload', ['config']),
-      createSlashCommand('status', 'Show who is in control and the resolved routes.', '/gsr status', ['config', 'profile', 'catalog']),
       createSlashCommand('list', 'List available profiles and mark the active one.', '/gsr list', ['config', 'profile']),
       createSlashCommand('browse', 'Inspect shareable multimodel metadata projected from schema v3.', '/gsr browse [selector]', ['catalog', 'preset']),
       createSlashCommand('compare', 'Compare two shareable multimodel projections.', '/gsr compare <left> <right>', ['catalog', 'preset']),
@@ -342,7 +385,10 @@ export function createOpenCodeSlashCommandManifest(state = {}, configPath = null
       createSlashCommand('activate', 'Take control of routing without changing the active profile.', '/gsr activate', ['config', 'activation']),
       createSlashCommand('deactivate', `Hand control back to ${resolveControllerLabel()} without changing the active profile.`, '/gsr deactivate', ['config', 'activation']),
       createSlashCommand('render-opencode', 'Preview the OpenCode boundary report.', '/gsr render opencode', ['config', 'catalog', 'profile']),
-      createSlashCommand('help', 'Show help for all commands or one command.', '/gsr help [command]', ['config', 'catalog', 'profile']),
+      createSlashCommand('update', 'Show pending config migrations.', '/gsr update [--apply]', ['config']),
+      createSlashCommand('apply-opencode', 'Generate and apply OpenCode overlay.', '/gsr apply opencode [--apply]', ['config']),
+      createSlashCommand('uninstall', 'Remove gsr overlay from host config.', '/gsr uninstall', ['config']),
+      createSlashCommand('profile-show', 'Show routes for a profile.', '/gsr profile show <name>', ['profile']),
     ],
     syncTriggers: ['config', 'catalog', 'preset', 'profile'],
   };
@@ -445,6 +491,7 @@ export function createOpenCodeSessionSyncContract(source = {}) {
     commandManifest: source.commandManifest,
   });
   const diff = compareOpenCodeSessionSnapshots(previousSnapshot, currentSnapshot);
+  const tokenBudgetHint = createTokenBudgetHint(source.config ?? null, state);
 
   return {
     kind: 'opencode-session-sync-contract',
@@ -470,7 +517,79 @@ export function createOpenCodeSessionSyncContract(source = {}) {
     preservedSnapshot: false,
     syncTriggers: currentSnapshot.commandManifest.syncTriggers,
     exposure: currentSnapshot.commandManifest,
+    tokenBudgetHint,
   };
+}
+
+/**
+ * Build a token budget hint from the active preset's lane metadata.
+ * The hint is a declarative metadata contract — gsr does NOT track runtime
+ * consumption. The TUI host uses these denominators to render budget bars.
+ *
+ * @param {object} config - Loaded (assembled) router config
+ * @param {object} state - Resolved router state
+ * @returns {object|null} Token budget hint contract, or null when data is unavailable
+ */
+export function createTokenBudgetHint(config, state) {
+  if (!config?.catalogs || !state) return null;
+
+  const catalogName = state.selectedCatalogName ?? null;
+  const presetName = state.selectedPresetName ?? state.activeProfileName ?? null;
+  if (!catalogName || !presetName) return null;
+
+  const catalog = config.catalogs[catalogName];
+  if (!catalog) return null;
+
+  const preset = catalog.presets?.[presetName];
+  if (!preset?.phases) return null;
+
+  const phases = {};
+  let hasAnyBudgetData = false;
+
+  for (const [phaseName, lanes] of Object.entries(preset.phases)) {
+    if (!Array.isArray(lanes) || lanes.length === 0) continue;
+    const lane = lanes[0]; // Primary lane
+    if (!lane || typeof lane !== 'object') continue;
+
+    const contextWindow = isPositiveInt(lane.contextWindow) ? lane.contextWindow : null;
+    const inputCostPerMillion = isNumeric(lane.inputPerMillion) ? Number(lane.inputPerMillion) : null;
+    const outputCostPerMillion = isNumeric(lane.outputPerMillion) ? Number(lane.outputPerMillion) : null;
+    const target = typeof lane.target === 'string' ? lane.target : null;
+
+    if (contextWindow !== null || inputCostPerMillion !== null || outputCostPerMillion !== null) {
+      hasAnyBudgetData = true;
+    }
+
+    phases[phaseName] = {
+      target,
+      contextWindow,
+      inputCostPerMillion,
+      outputCostPerMillion,
+    };
+  }
+
+  if (!hasAnyBudgetData) return null;
+
+  return {
+    kind: 'token-budget-hint',
+    contractVersion: TOKEN_BUDGET_HINT_VERSION,
+    catalogName,
+    presetName,
+    phases,
+    policy: {
+      nonExecuting: true,
+      informationalOnly: true,
+      hostAccumulates: true,
+    },
+  };
+}
+
+function isPositiveInt(v) {
+  return Number.isInteger(v) && v > 0;
+}
+
+function isNumeric(v) {
+  return v !== null && v !== undefined && Number.isFinite(Number(v));
 }
 
 function createSlashCommand(id, summary, command, syncTriggers = []) {
@@ -1015,14 +1134,14 @@ function createFreshInstallStarterProfile() {
     aliases: 'latest',
     complexity: 'high',
     phases: {
-      orchestrator: [{ target: 'anthropic/claude-opus', kind: 'lane', phase: 'orchestrator', role: 'primary', fallbacks: 'openai/gpt-5' }],
-      explore: [{ target: 'google/gemini-pro', kind: 'lane', phase: 'explore', role: 'primary', fallbacks: 'anthropic/claude-sonnet' }],
-      spec: [{ target: 'anthropic/claude-opus', kind: 'lane', phase: 'spec', role: 'primary', fallbacks: 'openai/gpt-5' }],
-      design: [{ target: 'anthropic/claude-opus', kind: 'lane', phase: 'design', role: 'primary', fallbacks: 'openai/gpt-5' }],
-      tasks: [{ target: 'anthropic/claude-sonnet', kind: 'lane', phase: 'tasks', role: 'primary', fallbacks: 'openai/gpt' }],
-      apply: [{ target: 'anthropic/claude-sonnet', kind: 'lane', phase: 'apply', role: 'primary', fallbacks: 'openai/gpt-5' }],
-      verify: [{ target: 'openai/gpt-5', kind: 'lane', phase: 'verify', role: 'judge', fallbacks: 'anthropic/claude-opus' }],
-      archive: [{ target: 'google/gemini-flash', kind: 'lane', phase: 'archive', role: 'primary', fallbacks: 'anthropic/claude-haiku' }],
+      orchestrator: [{ target: 'anthropic/claude-opus', kind: 'lane', phase: 'orchestrator', role: 'primary', fallbacks: 'openai/gpt-5', contextWindow: 200000 }],
+      explore: [{ target: 'google/gemini-pro', kind: 'lane', phase: 'explore', role: 'primary', fallbacks: 'anthropic/claude-sonnet', contextWindow: 2000000 }],
+      spec: [{ target: 'anthropic/claude-opus', kind: 'lane', phase: 'spec', role: 'primary', fallbacks: 'openai/gpt-5', contextWindow: 200000 }],
+      design: [{ target: 'anthropic/claude-opus', kind: 'lane', phase: 'design', role: 'primary', fallbacks: 'openai/gpt-5', contextWindow: 200000 }],
+      tasks: [{ target: 'anthropic/claude-sonnet', kind: 'lane', phase: 'tasks', role: 'primary', fallbacks: 'openai/gpt', contextWindow: 200000 }],
+      apply: [{ target: 'anthropic/claude-sonnet', kind: 'lane', phase: 'apply', role: 'primary', fallbacks: 'openai/gpt-5', contextWindow: 200000 }],
+      verify: [{ target: 'openai/gpt-5', kind: 'lane', phase: 'verify', role: 'judge', fallbacks: 'anthropic/claude-opus', contextWindow: 1000000 }],
+      archive: [{ target: 'google/gemini-flash', kind: 'lane', phase: 'archive', role: 'primary', fallbacks: 'anthropic/claude-haiku', contextWindow: 1000000 }],
     },
   };
 }

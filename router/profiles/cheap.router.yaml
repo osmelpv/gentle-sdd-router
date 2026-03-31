@@ -8,45 +8,53 @@ phases:
       phase: orchestrator
       role: primary
       fallbacks: google/gemma-3-27b
+      contextWindow: 128000
   explore:
     - target: google/gemini-flash
       kind: lane
       phase: explore
       role: primary
       fallbacks: openai/gpt-mini
+      contextWindow: 1000000
   spec:
     - target: openai/gpt-oss-120b
       kind: lane
       phase: spec
       role: primary
       fallbacks: openai/gpt-oss-20b
+      contextWindow: 128000
   design:
     - target: openai/gpt-oss-120b
       kind: lane
       phase: design
       role: primary
       fallbacks: openai/gpt-oss-20b
+      contextWindow: 128000
   tasks:
     - target: openai/gpt-mini
       kind: lane
       phase: tasks
       role: primary
       fallbacks: openai/gpt-oss-20b
+      contextWindow: 128000
   apply:
     - target: openai/gpt-oss-120b
       kind: lane
       phase: apply
       role: primary
       fallbacks: openai/gpt-oss-20b
+      contextWindow: 128000
   verify:
     - target: openai/gpt-oss-20b
       kind: lane
       phase: verify
-      role: judge
+      role: primary
       fallbacks: openai/gpt-oss-120b
+      contextWindow: 128000
   archive:
     - target: openai/gpt-mini
       kind: lane
       phase: archive
       role: primary
       fallbacks: google/gemini-flash
+      contextWindow: 128000

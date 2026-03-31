@@ -2,8 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   runWizard,
+  wizardCompare,
   wizardCurrentConfig,
+  wizardExport,
   wizardFreshProject,
+  wizardImport,
+  wizardManageProfiles,
+  wizardOutdatedConfig,
   wizardSwitchPreset,
 } from '../src/ux/wizard.js';
 import {
@@ -12,13 +17,14 @@ import {
   setWizardEntrypointForTesting,
 } from '../src/cli.js';
 
-function createPromptStub({ selectResult } = {}) {
+function createPromptStub({ selectResult, textResult } = {}) {
   const calls = {
     intro: [],
     note: [],
     outro: [],
     warn: [],
     select: [],
+    text: [],
   };
 
   return {
@@ -35,6 +41,10 @@ function createPromptStub({ selectResult } = {}) {
     async select(payload) {
       calls.select.push(payload);
       return typeof selectResult === 'function' ? selectResult(payload) : selectResult;
+    },
+    async text(payload) {
+      calls.text.push(payload);
+      return typeof textResult === 'function' ? textResult(payload) : textResult;
     },
     isCancel(value) {
       return value === Symbol.for('cancel');
@@ -159,7 +169,7 @@ test('wizardCurrentConfig delegates preset switching and marks the active preset
   assert.equal(prompts.calls.select.length, 2);
   assert.deepEqual(
     prompts.calls.select[0].options.map((option) => option.value),
-    ['use', 'status', 'reload', 'list', 'export', 'import', 'update', 'exit'],
+    ['use', 'status', 'reload', 'list', 'browse', 'compare', 'profiles', 'export', 'import', 'update', 'exit'],
   );
   assert.deepEqual(
     prompts.calls.select[1].options.map((option) => option.label),
@@ -255,18 +265,308 @@ test('wizardCurrentConfig import option has a label and hint', async () => {
   assert.ok(importOption.hint, 'import option has a hint');
 });
 
-test('wizardCurrentConfig returns export action directly when selected', async () => {
-  const prompts = createPromptStub({ selectResult: 'export' });
+test('wizardCurrentConfig export action triggers sub-flow and returns command object', async () => {
+  let selectCallCount = 0;
+  const prompts = createPromptStub({
+    selectResult(payload) {
+      selectCallCount++;
+      if (selectCallCount === 1) return 'export';
+      if (selectCallCount === 2) return 'balanced';
+      return 'yaml';
+    },
+  });
 
   const result = await wizardCurrentConfig(createCurrentContext(), prompts);
 
-  assert.equal(result, 'export');
+  assert.deepEqual(result, { command: 'export', preset: 'balanced', compact: false });
 });
 
-test('wizardCurrentConfig returns import action directly when selected', async () => {
-  const prompts = createPromptStub({ selectResult: 'import' });
+test('wizardCurrentConfig import action triggers sub-flow and returns command object', async () => {
+  const prompts = createPromptStub({
+    selectResult: 'import',
+    textResult: '/path/to/preset.yaml',
+  });
 
   const result = await wizardCurrentConfig(createCurrentContext(), prompts);
 
-  assert.equal(result, 'import');
+  assert.deepEqual(result, { command: 'import', source: '/path/to/preset.yaml' });
+});
+
+// ── wizardOutdatedConfig ───────────────────────────────────────────────────────
+
+test('wizardOutdatedConfig returns selected action and shows version note', async () => {
+  const prompts = createPromptStub({ selectResult: 'update' });
+  const context = createCurrentContext({ version: 3 });
+
+  const result = await wizardOutdatedConfig(context, prompts);
+
+  assert.equal(result, 'update');
+  assert.equal(prompts.calls.note.length, 1);
+  assert.ok(prompts.calls.note[0].message.includes('3'), 'note includes current version');
+  assert.ok(prompts.calls.note[0].message.includes('4'), 'note includes latest version');
+});
+
+test('wizardOutdatedConfig exits cleanly on exit', async () => {
+  const prompts = createPromptStub({ selectResult: 'exit' });
+  const context = createCurrentContext({ version: 3 });
+
+  const result = await wizardOutdatedConfig(context, prompts);
+
+  assert.equal(result, null);
+  assert.deepEqual(prompts.calls.outro, ['Bye!']);
+});
+
+test('wizardOutdatedConfig exits cleanly on cancel (Ctrl+C)', async () => {
+  const prompts = createPromptStub({ selectResult: Symbol.for('cancel') });
+  const context = createCurrentContext({ version: 3 });
+
+  const result = await wizardOutdatedConfig(context, prompts);
+
+  assert.equal(result, null);
+  assert.deepEqual(prompts.calls.outro, ['Bye!']);
+});
+
+test('wizardOutdatedConfig shows correct menu options', async () => {
+  const prompts = createPromptStub({ selectResult: 'status' });
+  const context = createCurrentContext({ version: 3 });
+
+  await wizardOutdatedConfig(context, prompts);
+
+  const values = prompts.calls.select[0].options.map((o) => o.value);
+  assert.deepEqual(values, ['update', 'status', 'list', 'exit']);
+});
+
+test('runWizard routes outdated configs (version < 4) into outdated flow', async () => {
+  const prompts = createPromptStub({ selectResult: 'status' });
+  const context = createCurrentContext({ version: 3 });
+
+  const result = await runWizard(context, prompts);
+
+  assert.equal(result, 'status');
+  assert.equal(prompts.calls.note.length, 1);
+  assert.ok(prompts.calls.note[0].message.includes('3'), 'outdated note shows current version');
+});
+
+test('wizardFreshProject exits cleanly on cancel (Ctrl+C)', async () => {
+  const prompts = createPromptStub({ selectResult: Symbol.for('cancel') });
+
+  const result = await wizardFreshProject({}, prompts);
+
+  assert.equal(result, null);
+  assert.deepEqual(prompts.calls.outro, ['Bye!']);
+});
+
+test('wizardCurrentConfig exits cleanly on cancel (Ctrl+C)', async () => {
+  const prompts = createPromptStub({ selectResult: Symbol.for('cancel') });
+
+  const result = await wizardCurrentConfig(createCurrentContext(), prompts);
+
+  assert.equal(result, null);
+  assert.deepEqual(prompts.calls.outro, ['Bye!']);
+});
+
+test('wizardSwitchPreset returns null on cancel (Ctrl+C)', async () => {
+  const prompts = createPromptStub({ selectResult: Symbol.for('cancel') });
+
+  const result = await wizardSwitchPreset(createCurrentContext(), prompts);
+
+  assert.equal(result, null);
+  // wizardSwitchPreset does NOT call outro on cancel — only null is returned
+  assert.deepEqual(prompts.calls.outro, []);
+});
+
+// ── Bug fix tests ─────────────────────────────────────────────────────────────
+
+test('wizardOutdatedConfig does not offer manage action (replaced with list)', async () => {
+  const prompts = createPromptStub({ selectResult: 'status' });
+  const context = createCurrentContext({ version: 3 });
+
+  await wizardOutdatedConfig(context, prompts);
+
+  const values = prompts.calls.select[0].options.map((o) => o.value);
+  assert.ok(!values.includes('manage'), 'manage option must not be present');
+});
+
+test('wizardOutdatedConfig offers list action', async () => {
+  const prompts = createPromptStub({ selectResult: 'status' });
+  const context = createCurrentContext({ version: 3 });
+
+  await wizardOutdatedConfig(context, prompts);
+
+  const values = prompts.calls.select[0].options.map((o) => o.value);
+  assert.ok(values.includes('list'), 'list option must be present');
+});
+
+test('wizardCurrentConfig export action returns object with preset and format', async () => {
+  let selectCallCount = 0;
+  const prompts = createPromptStub({
+    selectResult(payload) {
+      selectCallCount++;
+      if (selectCallCount === 1) return 'export';
+      if (selectCallCount === 2) return 'balanced';
+      if (selectCallCount === 3) return 'compact';
+      return 'exit';
+    },
+  });
+  const result = await wizardCurrentConfig(createCurrentContext(), prompts);
+  assert.deepEqual(result, { command: 'export', preset: 'balanced', compact: true });
+});
+
+test('wizardCurrentConfig export cancel returns null', async () => {
+  let selectCallCount = 0;
+  const prompts = createPromptStub({
+    selectResult(payload) {
+      selectCallCount++;
+      if (selectCallCount === 1) return 'export';
+      return Symbol.for('cancel');
+    },
+  });
+  const result = await wizardCurrentConfig(createCurrentContext(), prompts);
+  assert.equal(result, null);
+});
+
+test('wizardCurrentConfig import action returns object with source', async () => {
+  const prompts = createPromptStub({
+    selectResult: 'import',
+    textResult: 'https://example.com/preset.yaml',
+  });
+  const result = await wizardCurrentConfig(createCurrentContext(), prompts);
+  assert.deepEqual(result, { command: 'import', source: 'https://example.com/preset.yaml' });
+});
+
+test('wizardCurrentConfig import cancel returns null', async () => {
+  const prompts = createPromptStub({
+    selectResult: 'import',
+    textResult: Symbol.for('cancel'),
+  });
+  const result = await wizardCurrentConfig(createCurrentContext(), prompts);
+  assert.equal(result, null);
+});
+
+// ── New feature tests ─────────────────────────────────────────────────────────
+
+test('wizardCurrentConfig offers browse option', async () => {
+  const prompts = createPromptStub({ selectResult: 'status' });
+
+  await wizardCurrentConfig(createCurrentContext(), prompts);
+
+  const values = prompts.calls.select[0].options.map((o) => o.value);
+  assert.ok(values.includes('browse'), 'browse option must be present');
+});
+
+test('wizardCurrentConfig offers compare option', async () => {
+  const prompts = createPromptStub({ selectResult: 'status' });
+
+  await wizardCurrentConfig(createCurrentContext(), prompts);
+
+  const values = prompts.calls.select[0].options.map((o) => o.value);
+  assert.ok(values.includes('compare'), 'compare option must be present');
+});
+
+test('wizardCurrentConfig offers profiles management option', async () => {
+  const prompts = createPromptStub({ selectResult: 'status' });
+
+  await wizardCurrentConfig(createCurrentContext(), prompts);
+
+  const values = prompts.calls.select[0].options.map((o) => o.value);
+  assert.ok(values.includes('profiles'), 'profiles option must be present');
+});
+
+test('wizardCurrentConfig browse returns direct string action', async () => {
+  const prompts = createPromptStub({ selectResult: 'browse' });
+
+  const result = await wizardCurrentConfig(createCurrentContext(), prompts);
+
+  assert.equal(result, 'browse');
+});
+
+test('wizardCompare returns command object with left and right', async () => {
+  let selectCallCount = 0;
+  const prompts = createPromptStub({
+    selectResult(payload) {
+      selectCallCount++;
+      if (selectCallCount === 1) return 'balanced';
+      return 'turbo';
+    },
+  });
+  const result = await wizardCompare(createCurrentContext(), prompts);
+  assert.deepEqual(result, { command: 'compare', left: 'balanced', right: 'turbo' });
+});
+
+test('wizardCompare warns when less than 2 presets', async () => {
+  const prompts = createPromptStub({ selectResult: 'balanced' });
+  const context = createCurrentContext({
+    config: {
+      active_preset: 'balanced',
+      catalogs: {
+        default: {
+          presets: {
+            balanced: { availability: 'stable' },
+          },
+        },
+      },
+    },
+  });
+  const result = await wizardCompare(context, prompts);
+  assert.equal(result, null);
+  assert.ok(prompts.calls.warn.length > 0, 'should warn about not enough presets');
+  assert.ok(prompts.calls.warn[0].includes('2'), 'warning mentions needing 2 presets');
+});
+
+test('wizardManageProfiles create returns command object', async () => {
+  const prompts = createPromptStub({
+    selectResult: 'profile-create',
+    textResult: 'my-new-profile',
+  });
+  const result = await wizardManageProfiles(createCurrentContext(), prompts);
+  assert.deepEqual(result, { command: 'profile', subcommand: 'create', name: 'my-new-profile' });
+});
+
+test('wizardManageProfiles delete returns command object', async () => {
+  const prompts = createPromptStub({
+    selectResult(payload) {
+      if (payload.message === 'Profile management:') return 'profile-delete';
+      return 'balanced';
+    },
+  });
+  const result = await wizardManageProfiles(createCurrentContext(), prompts);
+  assert.deepEqual(result, { command: 'profile', subcommand: 'delete', name: 'balanced' });
+});
+
+test('wizardManageProfiles rename returns command object', async () => {
+  let selectCallCount = 0;
+  const prompts = createPromptStub({
+    selectResult(payload) {
+      selectCallCount++;
+      if (selectCallCount === 1) return 'profile-rename';
+      return 'balanced';
+    },
+    textResult: 'balanced-v2',
+  });
+  const result = await wizardManageProfiles(createCurrentContext(), prompts);
+  assert.deepEqual(result, {
+    command: 'profile',
+    subcommand: 'rename',
+    oldName: 'balanced',
+    newName: 'balanced-v2',
+  });
+});
+
+test('wizardManageProfiles copy returns command object', async () => {
+  let selectCallCount = 0;
+  const prompts = createPromptStub({
+    selectResult(payload) {
+      selectCallCount++;
+      if (selectCallCount === 1) return 'profile-copy';
+      return 'balanced';
+    },
+    textResult: 'balanced-copy',
+  });
+  const result = await wizardManageProfiles(createCurrentContext(), prompts);
+  assert.deepEqual(result, {
+    command: 'profile',
+    subcommand: 'copy',
+    sourceName: 'balanced',
+    destName: 'balanced-copy',
+  });
 });
