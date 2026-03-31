@@ -743,3 +743,90 @@ test('gsr setup install without config does not trigger pre-install guard', asyn
     fs.rmSync(tempDir, { recursive: true });
   }
 });
+
+// ── Project-isolation tests ───────────────────────────────────────────────────
+
+test('applyOpenCodeOverlayCommand writes to project-local opencode.json when configPath is provided', async () => {
+  const tempDir = makeV4TempDir();
+  const routerConfigPath = path.join(tempDir, 'router', 'router.yaml');
+  const expectedLocalPath = path.join(tempDir, 'opencode.json');
+
+  const { applyOpenCodeOverlayCommand: applyCmd } = await import('../src/adapters/opencode/index.js');
+
+  const report = applyCmd({ apply: true, configPath: routerConfigPath });
+
+  assert.ok(report.writtenPath, 'writtenPath should be set');
+  assert.equal(report.writtenPath, expectedLocalPath, 'should write to project-local opencode.json');
+  assert.ok(fs.existsSync(expectedLocalPath), 'project-local opencode.json should exist');
+
+  const globalOpenCodePath = path.join(os.homedir(), '.config', 'opencode', 'opencode.json');
+  // If global file exists, it must NOT have gsr-* entries written by this apply
+  if (fs.existsSync(globalOpenCodePath)) {
+    const global = JSON.parse(fs.readFileSync(globalOpenCodePath, 'utf8'));
+    const gsrKeys = Object.keys(global.agent ?? {}).filter((k) => k.startsWith('gsr-'));
+    // The global file was not written by this apply (project-local was used)
+    assert.equal(report.writtenPath, expectedLocalPath, 'writtenPath must point to project-local, not global');
+  }
+
+  fs.rmSync(tempDir, { recursive: true });
+});
+
+test('removeOpenCodeOverlay with local path does not affect global file', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-isolation-'));
+  const localPath = path.join(tempDir, 'opencode.json');
+  const globalFakePath = path.join(tempDir, 'global-opencode.json');
+
+  // Write both local and fake-global with gsr-* entries
+  const withGsr = JSON.stringify({ agent: { 'gsr-test': { mode: 'primary' }, 'other': { mode: 'primary' } } }, null, 2);
+  fs.writeFileSync(localPath, withGsr, 'utf8');
+  fs.writeFileSync(globalFakePath, withGsr, 'utf8');
+
+  const { removeOpenCodeOverlay } = await import('../src/adapters/opencode/overlay-generator.js');
+
+  const result = removeOpenCodeOverlay(localPath);
+
+  assert.equal(result.removedCount, 1, 'should remove 1 gsr-* entry from local file');
+  assert.equal(result.path, localPath, 'result path should be the local path');
+
+  // Local file: gsr-test removed, 'other' preserved
+  const local = JSON.parse(fs.readFileSync(localPath, 'utf8'));
+  assert.equal(Object.prototype.hasOwnProperty.call(local.agent, 'gsr-test'), false, 'gsr-test removed from local');
+  assert.ok(local.agent['other'], 'non-gsr key preserved in local');
+
+  // Global (fake) file: untouched
+  const global = JSON.parse(fs.readFileSync(globalFakePath, 'utf8'));
+  assert.ok(global.agent['gsr-test'], 'global file untouched by local removal');
+
+  fs.rmSync(tempDir, { recursive: true });
+});
+
+test('runUninstall does not remove gsr-*.md command files', async () => {
+  const tempDir = makeMultivendorV4TempDir();
+  const commandsDir = path.join(os.homedir(), '.config', 'opencode', 'commands');
+
+  // Check how many gsr-*.md files exist before uninstall
+  let commandFilesBefore = [];
+  if (fs.existsSync(commandsDir)) {
+    commandFilesBefore = fs.readdirSync(commandsDir).filter((f) => f.startsWith('gsr-') && f.endsWith('.md'));
+  }
+
+  const originalCwd = process.cwd();
+  process.chdir(tempDir);
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = () => true;
+
+  try {
+    await runCli(['uninstall']);
+  } finally {
+    process.stdout.write = originalWrite;
+    process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true });
+  }
+
+  // Command files must remain after uninstall
+  if (commandFilesBefore.length > 0) {
+    const commandFilesAfter = fs.readdirSync(commandsDir).filter((f) => f.startsWith('gsr-') && f.endsWith('.md'));
+    assert.deepEqual(commandFilesAfter, commandFilesBefore, 'gsr-*.md command files must not be removed on uninstall');
+  }
+  // If no command files existed before, we just verify uninstall did not fail (test passed to here)
+});

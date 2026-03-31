@@ -57,7 +57,7 @@ export {
 
 export { resolveControllerLabel, resolveExecutionOwners, detectGentleAi, resolvePersona } from './core/controller.js';
 
-export { removeOpenCodeOverlay, deployGsrCommands, removeGsrCommands } from './adapters/opencode/overlay-generator.js';
+export { removeOpenCodeOverlay, deployGsrCommands, removeGsrCommands, cleanStaleGlobalOverlay } from './adapters/opencode/overlay-generator.js';
 
 export {
   createAgentTeamsLiteIntegrationContract,

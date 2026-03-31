@@ -299,4 +299,14 @@ export function removeGsrCommands(options = {}) {
   return { removed: gsrFiles.length, files: gsrFiles };
 }
 
+/**
+ * Remove stale gsr-* entries from the GLOBAL opencode.json.
+ * Called during apply to migrate from old behavior (global) to new (project-local).
+ *
+ * @returns {{ removedCount: number, path: string }}
+ */
+export function cleanStaleGlobalOverlay() {
+  return removeOpenCodeOverlay(OPENCODE_CONFIG_PATH);
+}
+
 export { OPENCODE_CONFIG_PATH, OPENCODE_COMMANDS_DIR, GSR_AGENT_PREFIX };

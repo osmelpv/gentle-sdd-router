@@ -42,6 +42,7 @@ import {
   removeOpenCodeOverlay,
   deployGsrCommands,
   removeGsrCommands,
+  cleanStaleGlobalOverlay,
 } from './router-config.js';
 import { resolveControllerLabel, resolvePersona } from './core/controller.js';
 
@@ -522,9 +523,14 @@ function runApply(args) {
 
   if (!applyFlag) {
     process.stdout.write('\n');
-    process.stdout.write('Run `gsr apply opencode --apply` to write to ~/.config/opencode/opencode.json\n');
+    const projectRoot = configPath ? path.dirname(path.dirname(configPath)) : process.cwd();
+    const localOpenCodePath = path.join(projectRoot, 'opencode.json');
+    process.stdout.write(`Run \`gsr apply opencode --apply\` to write to ${localOpenCodePath}\n`);
     return;
   }
+
+  // Clean stale gsr-* entries from global opencode.json (migration from pre-project-isolation behavior)
+  try { cleanStaleGlobalOverlay(); } catch { /* non-blocking */ }
 
   process.stdout.write('\n');
   process.stdout.write(`Written to: ${report.writtenPath}\n`);
@@ -1246,21 +1252,21 @@ function runUninstall(args) {
   const confirm = args.includes('--confirm');
   const configPath = safeDiscoverConfigPathFromCwd();
 
-  // Step 1: Remove overlay + slash commands
-  const overlayResult = removeOpenCodeOverlay();
-  if (overlayResult.removedCount > 0) {
-    process.stdout.write(`Removed ${overlayResult.removedCount} gsr-* agent(s) from ${overlayResult.path}\n`);
+  // Step 1: Remove project-local overlay (project-isolation: each project owns its opencode.json)
+  // Commands (/gsr-*.md) are global npm package files and must NOT be removed on project uninstall.
+  if (configPath) {
+    const projectRoot = path.dirname(path.dirname(configPath));
+    const localOpenCodePath = path.join(projectRoot, 'opencode.json');
+    const overlayResult = removeOpenCodeOverlay(localOpenCodePath);
+    if (overlayResult.removedCount > 0) {
+      process.stdout.write(`Removed ${overlayResult.removedCount} gsr-* agent(s) from ${overlayResult.path}\n`);
+    } else {
+      process.stdout.write('No gsr-* entries found in opencode.json.\n');
+    }
+    // Also clean stale entries from global opencode.json (migration cleanup)
+    try { cleanStaleGlobalOverlay(); } catch { /* non-blocking */ }
   } else {
     process.stdout.write('No gsr-* entries found in opencode.json.\n');
-  }
-
-  try {
-    const cmdResult = removeGsrCommands();
-    if (cmdResult.removed > 0) {
-      process.stdout.write(`Removed ${cmdResult.removed} /gsr command(s).\n`);
-    }
-  } catch {
-    // Non-blocking
   }
 
   // Step 2: Remove router/ directory from the project

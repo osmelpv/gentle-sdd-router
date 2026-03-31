@@ -63,6 +63,7 @@ import {
   writeOpenCodeConfig as _writeOpenCodeConfig,
   OPENCODE_CONFIG_PATH as _OPENCODE_CONFIG_PATH,
   GSR_AGENT_PREFIX as _GSR_AGENT_PREFIX,
+  cleanStaleGlobalOverlay as _cleanStaleGlobalOverlay,
 } from './overlay-generator.js';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -1440,12 +1441,20 @@ export const mergeOverlayWithFile = _mergeOverlayWithFile;
 export const writeOpenCodeConfig = _writeOpenCodeConfig;
 export const OPENCODE_CONFIG_PATH = _OPENCODE_CONFIG_PATH;
 export const GSR_AGENT_PREFIX = _GSR_AGENT_PREFIX;
+export const cleanStaleGlobalOverlay = _cleanStaleGlobalOverlay;
 
 /**
  * Facade for the `gsr apply opencode [--apply]` CLI command.
  * Returns a structured report; the CLI is responsible for printing and writing.
  *
+ * When configPath is provided (which is always the case when called from runApply),
+ * the overlay is written to {projectRoot}/opencode.json (project-local) instead of
+ * the global ~/.config/opencode/opencode.json. This ensures project A's gsr-* agents
+ * do not appear in project B.
+ *
  * @param {{ apply?: boolean, configPath?: string, targetPath?: string }} options
+ *   - configPath: path to router.yaml (e.g. /path/to/project/router/router.yaml)
+ *   - targetPath: explicit override for the output opencode.json path (used in tests)
  * @returns {{ agents: Record<string, object>, warnings: string[], writtenPath?: string }}
  */
 export function applyOpenCodeOverlayCommand(options = {}) {
@@ -1456,8 +1465,18 @@ export function applyOpenCodeOverlayCommand(options = {}) {
     return { agents: overlay.agent, warnings: overlay.warnings };
   }
 
-  const merged = _mergeOverlayWithFile(overlay, options.targetPath);
-  const writtenPath = _writeOpenCodeConfig(merged, options.targetPath);
+  // Derive project-local opencode.json path when configPath is available.
+  // configPath is e.g. /path/to/project/router/router.yaml
+  // projectRoot = /path/to/project
+  // localOpenCodePath = /path/to/project/opencode.json
+  let targetPath = options.targetPath;
+  if (!targetPath && options.configPath) {
+    const projectRoot = path.dirname(path.dirname(options.configPath));
+    targetPath = path.join(projectRoot, 'opencode.json');
+  }
+
+  const merged = _mergeOverlayWithFile(overlay, targetPath);
+  const writtenPath = _writeOpenCodeConfig(merged, targetPath);
 
   return { agents: overlay.agent, warnings: overlay.warnings, writtenPath };
 }
