@@ -1,5 +1,5 @@
 ---
-description: Show resolved routes for current preset
+description: "[Route] Show resolved routes for current preset"
 ---
 
 Run `gsr route show` and display the resolved routes to the user.

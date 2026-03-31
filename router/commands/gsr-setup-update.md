@@ -1,5 +1,5 @@
 ---
-description: Check and apply config migrations
+description: "[Setup] Check and apply config migrations"
 ---
 
 Run `gsr setup update` to check for pending config migrations.

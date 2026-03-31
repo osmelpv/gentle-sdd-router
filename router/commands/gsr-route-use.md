@@ -1,5 +1,5 @@
 ---
-description: Switch the active routing preset
+description: "[Route] Switch the active routing preset"
 ---
 
 Run `gsr route use $ARGUMENTS` to switch the active routing preset.

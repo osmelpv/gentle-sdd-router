@@ -1,5 +1,5 @@
 ---
-description: List all routing profiles with catalog info
+description: "[Profile] List all routing profiles with catalog info"
 ---
 
 Run `gsr profile list` and display all available profiles to the user.

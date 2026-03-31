@@ -1,5 +1,5 @@
 ---
-description: List all catalogs with enable/disable status
+description: "[Catalog] List all catalogs with enable/disable status"
 ---
 
 Run `gsr catalog list` to show all catalogs.

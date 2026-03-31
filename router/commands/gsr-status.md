@@ -1,5 +1,5 @@
 ---
-description: Show current router state, active preset, resolved routes with pricing and context window
+description: "[System] Show router state, active preset, and resolved routes"
 ---
 
 Run `gsr status` and display the output to the user.

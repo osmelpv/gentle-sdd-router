@@ -1,5 +1,5 @@
 ---
-description: Disable a catalog — hide its presets from TUI TAB cycling
+description: "[Catalog] Disable a catalog from TUI TAB cycling"
 ---
 
 Run `gsr catalog disable $ARGUMENTS` to hide a catalog's presets from TAB cycling in the TUI host.

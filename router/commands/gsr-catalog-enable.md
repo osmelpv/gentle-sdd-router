@@ -1,5 +1,5 @@
 ---
-description: Enable a catalog so its presets appear in TUI TAB cycling
+description: "[Catalog] Enable a catalog for TUI TAB cycling"
 ---
 
 Run `gsr catalog enable $ARGUMENTS` to make a catalog's presets visible when cycling with TAB in the TUI host.

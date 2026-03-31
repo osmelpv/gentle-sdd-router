@@ -1,5 +1,5 @@
 ---
-description: Hand routing control back to the host
+description: "[Route] Hand routing control back to the host"
 ---
 
 Run `gsr route deactivate` to hand routing control back to the host TUI.

@@ -1,5 +1,5 @@
 ---
-description: Create a new empty routing profile
+description: "[Profile] Create a new empty routing profile"
 ---
 
 Run `gsr profile create $ARGUMENTS` to create a new routing profile.

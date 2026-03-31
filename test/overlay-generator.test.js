@@ -4,10 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, test } from 'node:test';
 import {
+  deployGsrCommands,
   generateOpenCodeOverlay,
   mapPermissions,
   mergeOverlayWithExisting,
   mergeOverlayWithFile,
+  removeGsrCommands,
   writeOpenCodeConfig,
 } from '../src/adapters/opencode/overlay-generator.js';
 
@@ -456,6 +458,91 @@ describe('writeOpenCodeConfig', () => {
       const readBack = JSON.parse(raw);
 
       assert.deepEqual(readBack, config, 'read-back matches original config');
+    } finally {
+      fs.rmSync(tempDir, { recursive: true });
+    }
+  });
+});
+
+// ── deployGsrCommands / removeGsrCommands ────────────────────────────────────
+
+describe('deployGsrCommands', () => {
+  test('deploys 18 markdown files including gsr.md', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-deploy-'));
+
+    try {
+      const result = deployGsrCommands({ commandsDir: tempDir });
+
+      // No error from source-dir lookup
+      assert.equal(result.error, undefined, 'no error finding source directory');
+
+      // 17 gsr-*.md + 1 gsr.md = 18 total files in target dir
+      const deployed = fs.readdirSync(tempDir).filter(f => f.endsWith('.md'));
+      assert.equal(deployed.length, 18, `expected 18 .md files, got ${deployed.length}: ${deployed.join(', ')}`);
+
+      // gsr.md specifically must be present
+      assert.ok(deployed.includes('gsr.md'), 'gsr.md dispatcher was deployed');
+
+      // All written count matches
+      assert.equal(result.written, 18, 'deployGsrCommands reports 18 written files');
+    } finally {
+      fs.rmSync(tempDir, { recursive: true });
+    }
+  });
+
+  test('skips identical files on re-deploy', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-redeploy-'));
+
+    try {
+      // First deploy — all 18 written
+      const first = deployGsrCommands({ commandsDir: tempDir });
+      assert.equal(first.written, 18, 'first deploy writes all 18 files');
+
+      // Second deploy — all 18 skipped (identical content)
+      const second = deployGsrCommands({ commandsDir: tempDir });
+      assert.equal(second.written, 0, 'second deploy writes 0 files (all identical)');
+      assert.equal(second.skipped, 18, 'second deploy skips all 18 identical files');
+    } finally {
+      fs.rmSync(tempDir, { recursive: true });
+    }
+  });
+});
+
+describe('removeGsrCommands', () => {
+  test('removes only gsr-*.md files — gsr.md survives uninstall (accepted behavior)', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-remove-'));
+
+    try {
+      // Deploy all 18 files first
+      deployGsrCommands({ commandsDir: tempDir });
+
+      const beforeRemove = fs.readdirSync(tempDir).filter(f => f.endsWith('.md'));
+      assert.equal(beforeRemove.length, 18, 'precondition: 18 files deployed');
+
+      // Remove gsr-*.md files
+      const result = removeGsrCommands({ commandsDir: tempDir });
+
+      // 17 gsr-*.md files should be removed
+      assert.equal(result.removed, 17, 'removeGsrCommands removes 17 gsr-*.md files');
+
+      const afterRemove = fs.readdirSync(tempDir).filter(f => f.endsWith('.md'));
+
+      // gsr.md (no hyphen after gsr) is NOT matched by gsr-* glob — it survives
+      // This is documented, accepted behavior: the dispatcher is a harmless no-op
+      assert.equal(afterRemove.length, 1, 'exactly 1 .md file survives (gsr.md)');
+      assert.ok(afterRemove.includes('gsr.md'), 'gsr.md dispatcher survives removeGsrCommands');
+    } finally {
+      fs.rmSync(tempDir, { recursive: true });
+    }
+  });
+
+  test('removeGsrCommands on empty dir returns zero removed', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-empty-'));
+
+    try {
+      const result = removeGsrCommands({ commandsDir: tempDir });
+      assert.equal(result.removed, 0, 'nothing to remove from empty dir');
+      assert.deepEqual(result.files, [], 'files list is empty');
     } finally {
       fs.rmSync(tempDir, { recursive: true });
     }

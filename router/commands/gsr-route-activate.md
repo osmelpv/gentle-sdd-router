@@ -1,5 +1,5 @@
 ---
-description: gsr takes control of routing
+description: "[Route] Activate gsr routing control"
 ---
 
 Run `gsr route activate` so gsr takes control of model routing decisions.

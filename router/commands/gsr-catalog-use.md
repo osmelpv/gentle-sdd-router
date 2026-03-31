@@ -1,5 +1,5 @@
 ---
-description: Set the active catalog and preset
+description: "[Catalog] Set the active catalog and preset"
 ---
 
 Run `gsr catalog use $ARGUMENTS` to switch the active catalog.

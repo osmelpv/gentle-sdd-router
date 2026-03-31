@@ -1,5 +1,5 @@
 ---
-description: Compare two presets side by side
+description: "[Inspect] Compare two presets side by side"
 ---
 
 Run `gsr inspect compare $ARGUMENTS` to compare two routing presets.

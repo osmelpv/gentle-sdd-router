@@ -1,5 +1,5 @@
 ---
-description: Remove gsr from this project (overlay + router/ with backup)
+description: "[Setup] Remove gsr from this project (overlay + router/ with backup)"
 ---
 
 Run `gsr setup uninstall` to see what would be removed.

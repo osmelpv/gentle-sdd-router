@@ -1,5 +1,5 @@
 ---
-description: Inspect multimodel metadata for a preset
+description: "[Inspect] Browse multimodel metadata for a preset"
 ---
 
 Run `gsr inspect browse $ARGUMENTS` and display the multimodel metadata.
