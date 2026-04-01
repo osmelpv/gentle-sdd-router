@@ -68,6 +68,8 @@ export {
 
 export { resolveControllerLabel, resolveExecutionOwners, detectGentleAi, resolvePersona } from './core/controller.js';
 
+export { resolveIdentity, readAgentsMd, resetIdentityCache, NEUTRAL_FALLBACK_PROMPT } from './core/agent-identity.js';
+
 export { removeOpenCodeOverlay, deployGsrCommands, removeGsrCommands, cleanStaleGlobalOverlay } from './adapters/opencode/overlay-generator.js';
 
 export {

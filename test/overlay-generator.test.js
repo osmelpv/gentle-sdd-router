@@ -317,14 +317,16 @@ describe('mergeOverlayWithExisting', () => {
     assert.ok(result.agent['gsr-balanced'], 'gsr-balanced added');
   });
 
-  test('removes stale gsr-* entries', () => {
+  test('removes stale gsr-* entries that have _gsr_generated: true', () => {
+    // Entries with _gsr_generated: true are GSR-managed and safe to remove.
+    // Entries without the marker are treated as user-owned and preserved.
     const overlay = {
-      agent: { 'gsr-balanced': { mode: 'primary' } },
+      agent: { 'gsr-balanced': { mode: 'primary', _gsr_generated: true } },
     };
     const existing = {
       agent: {
-        'gsr-old-preset': { mode: 'primary' },
-        'gsr-another-stale': { mode: 'primary' },
+        'gsr-old-preset': { mode: 'primary', _gsr_generated: true },
+        'gsr-another-stale': { mode: 'primary', _gsr_generated: true },
       },
     };
 
@@ -508,6 +510,177 @@ describe('deployGsrCommands', () => {
   });
 });
 
+// ── Agent Identity: prompt field and _gsr_generated marker (T7–T10) ───────────
+
+describe('generateOpenCodeOverlay — identity: prompt field and _gsr_generated marker', () => {
+  test('T7: generated entry has prompt field (string)', () => {
+    const config = makeConfig({ multivendor: MULTIVENDOR_PRESET });
+    const { agent } = generateOpenCodeOverlay(config);
+
+    assert.ok('prompt' in agent['gsr-multivendor'], 'generated entry must have prompt field');
+    assert.equal(typeof agent['gsr-multivendor'].prompt, 'string', 'prompt must be a string');
+  });
+
+  test('T7: generated entry has _gsr_generated: true', () => {
+    const config = makeConfig({ multivendor: MULTIVENDOR_PRESET });
+    const { agent } = generateOpenCodeOverlay(config);
+
+    assert.equal(agent['gsr-multivendor']._gsr_generated, true, '_gsr_generated must be true');
+  });
+
+  test('T7: all generated entries have both prompt and _gsr_generated', () => {
+    const config = makeConfig({
+      multivendor: MULTIVENDOR_PRESET,
+      safety: SAFETY_PRESET,
+    });
+    const { agent } = generateOpenCodeOverlay(config);
+
+    for (const [name, entry] of Object.entries(agent)) {
+      assert.ok('prompt' in entry, `${name} must have prompt`);
+      assert.equal(entry._gsr_generated, true, `${name} must have _gsr_generated: true`);
+    }
+  });
+
+  test('T7: prompt is non-empty string', () => {
+    const config = makeConfig({ multivendor: MULTIVENDOR_PRESET });
+    const { agent } = generateOpenCodeOverlay(config);
+
+    assert.ok(agent['gsr-multivendor'].prompt.length > 0, 'prompt must not be empty');
+  });
+
+  test('T9: existing entry with _gsr_generated: true is replaced on merge', () => {
+    const overlay = {
+      agent: {
+        'gsr-multivendor': { mode: 'primary', prompt: 'New prompt', _gsr_generated: true },
+      },
+    };
+    const existing = {
+      agent: {
+        'gsr-multivendor': { mode: 'primary', prompt: 'Old prompt', _gsr_generated: true },
+      },
+    };
+
+    const result = mergeOverlayWithExisting(overlay, existing);
+
+    assert.equal(result.agent['gsr-multivendor'].prompt, 'New prompt', 'marked entry must be replaced');
+  });
+
+  test('T8: existing entry without _gsr_generated is preserved (not overwritten)', () => {
+    const overlay = {
+      agent: {
+        'gsr-multivendor': { mode: 'primary', prompt: 'New prompt', _gsr_generated: true },
+      },
+    };
+    const existing = {
+      agent: {
+        'gsr-multivendor': { mode: 'primary', prompt: 'User custom prompt' }, // no _gsr_generated
+      },
+    };
+
+    const result = mergeOverlayWithExisting(overlay, existing);
+
+    assert.equal(
+      result.agent['gsr-multivendor'].prompt,
+      'User custom prompt',
+      'user entry without marker must be preserved'
+    );
+  });
+
+  test('T8: existing entry with _gsr_generated: false is preserved', () => {
+    const overlay = {
+      agent: {
+        'gsr-multivendor': { mode: 'primary', prompt: 'New prompt', _gsr_generated: true },
+      },
+    };
+    const existing = {
+      agent: {
+        'gsr-multivendor': { mode: 'primary', prompt: 'User override', _gsr_generated: false },
+      },
+    };
+
+    const result = mergeOverlayWithExisting(overlay, existing);
+
+    assert.equal(result.agent['gsr-multivendor'].prompt, 'User override', 'entry with _gsr_generated: false must be preserved');
+  });
+
+  test('T8: warnings are emitted for preserved user entries', () => {
+    const overlay = {
+      agent: {
+        'gsr-multivendor': { mode: 'primary', prompt: 'New prompt', _gsr_generated: true },
+      },
+      warnings: [],
+    };
+    const existing = {
+      agent: {
+        'gsr-multivendor': { mode: 'primary', prompt: 'User prompt' }, // unmarked
+      },
+    };
+
+    const result = mergeOverlayWithExisting(overlay, existing);
+
+    assert.ok(
+      Array.isArray(result.warnings),
+      'result must have warnings array'
+    );
+    assert.ok(
+      result.warnings.some(w => w.includes('gsr-multivendor')),
+      `warnings must mention preserved entry "gsr-multivendor", got: ${JSON.stringify(result.warnings)}`
+    );
+  });
+
+  test('T10: new gsr-* entries (not in existing) are always added', () => {
+    const overlay = {
+      agent: {
+        'gsr-new-preset': { mode: 'primary', prompt: 'New entry', _gsr_generated: true },
+      },
+    };
+    const existing = {
+      agent: {},
+    };
+
+    const result = mergeOverlayWithExisting(overlay, existing);
+
+    assert.ok(result.agent['gsr-new-preset'], 'new entry not in existing must be added');
+    assert.equal(result.agent['gsr-new-preset'].prompt, 'New entry');
+  });
+
+  test('T10: stale gsr-* entries with marker are removed when not in new overlay', () => {
+    const overlay = {
+      agent: {
+        'gsr-current': { mode: 'primary', prompt: 'Current', _gsr_generated: true },
+      },
+    };
+    const existing = {
+      agent: {
+        'gsr-current': { mode: 'primary', prompt: 'Old current', _gsr_generated: true },
+        'gsr-stale': { mode: 'primary', prompt: 'Stale entry', _gsr_generated: true },
+      },
+    };
+
+    const result = mergeOverlayWithExisting(overlay, existing);
+
+    assert.ok(!result.agent['gsr-stale'], 'stale marked entry must be removed');
+    assert.ok(result.agent['gsr-current'], 'current entry must remain');
+  });
+
+  test('T10: stale gsr-* without marker are preserved (user override)', () => {
+    const overlay = {
+      agent: {
+        'gsr-current': { mode: 'primary', prompt: 'Current', _gsr_generated: true },
+      },
+    };
+    const existing = {
+      agent: {
+        'gsr-user-custom': { mode: 'primary', prompt: 'User added this' }, // no marker
+      },
+    };
+
+    const result = mergeOverlayWithExisting(overlay, existing);
+
+    assert.ok(result.agent['gsr-user-custom'], 'user-created gsr-* entry without marker must be preserved');
+  });
+});
+
 describe('removeGsrCommands', () => {
   test('removes only gsr-*.md files — gsr.md survives uninstall (accepted behavior)', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-remove-'));
@@ -546,5 +719,137 @@ describe('removeGsrCommands', () => {
     } finally {
       fs.rmSync(tempDir, { recursive: true });
     }
+  });
+});
+
+// ── T10b: router-level identity.overrides ─────────────────────────────────────
+// Spec: identity.overrides in router config → applied after inheritance → wins
+
+describe('identity.overrides — router-level overrides win over resolved identity', () => {
+  test('override prompt replaces resolved identity prompt for the target agent', () => {
+    const config = makeConfig({
+      multivendor: {
+        ...MULTIVENDOR_PRESET,
+        identity: {
+          context: 'Original context',
+          inherit_agents_md: false,
+        },
+      },
+    });
+
+    // Add router-level overrides
+    config.identity = {
+      overrides: {
+        'gsr-multivendor': {
+          prompt: 'Router-level override prompt',
+        },
+      },
+    };
+
+    const { agent, warnings } = generateOpenCodeOverlay(config, { cwd: os.tmpdir() });
+
+    assert.ok(agent['gsr-multivendor'], 'gsr-multivendor entry must be generated');
+    assert.equal(
+      agent['gsr-multivendor'].prompt,
+      'Router-level override prompt',
+      'router override prompt must win over resolved identity'
+    );
+    assert.equal(agent['gsr-multivendor']._gsr_generated, true, 'entry must still have _gsr_generated marker');
+    assert.ok(Array.isArray(warnings), 'warnings must be an array');
+  });
+
+  test('override for one agent does not affect other agents', () => {
+    const config = makeConfig({
+      multivendor: { ...MULTIVENDOR_PRESET },
+      safety: {
+        ...SAFETY_PRESET,
+        availability: 'stable',
+        phases: {
+          orchestrator: [{ target: 'openai/gpt', kind: 'lane', phase: 'orchestrator', role: 'primary' }],
+        },
+      },
+    });
+
+    config.identity = {
+      overrides: {
+        'gsr-multivendor': {
+          prompt: 'Only multivendor override',
+        },
+      },
+    };
+
+    // safety catalog is enabled by default in makeConfig (single default catalog)
+    const { agent } = generateOpenCodeOverlay(config, { cwd: os.tmpdir() });
+
+    assert.equal(agent['gsr-multivendor'].prompt, 'Only multivendor override', 'multivendor has override');
+    // gsr-safety must have its own resolved identity (not the override)
+    assert.ok(agent['gsr-safety'], 'gsr-safety entry must be generated');
+    assert.notEqual(
+      agent['gsr-safety'].prompt,
+      'Only multivendor override',
+      'gsr-safety must not receive multivendor override'
+    );
+  });
+
+  test('no identity.overrides in config → normal identity resolution is used', () => {
+    const config = makeConfig({
+      multivendor: {
+        ...MULTIVENDOR_PRESET,
+        identity: {
+          context: 'Base context',
+          inherit_agents_md: false,
+        },
+      },
+    });
+    // No config.identity.overrides at all
+
+    const { agent } = generateOpenCodeOverlay(config, { cwd: os.tmpdir() });
+
+    assert.ok(agent['gsr-multivendor'], 'gsr-multivendor must still be generated');
+    assert.ok(
+      agent['gsr-multivendor'].prompt.includes('Base context'),
+      `prompt must include base context when no override, got: "${agent['gsr-multivendor'].prompt}"`
+    );
+  });
+
+  test('override with empty overrides object → normal resolution (empty object is no-op)', () => {
+    const config = makeConfig({
+      multivendor: {
+        ...MULTIVENDOR_PRESET,
+        identity: {
+          context: 'My context',
+          inherit_agents_md: false,
+        },
+      },
+    });
+    config.identity = { overrides: {} }; // explicit empty overrides
+
+    const { agent } = generateOpenCodeOverlay(config, { cwd: os.tmpdir() });
+
+    assert.ok(
+      agent['gsr-multivendor'].prompt.includes('My context'),
+      'empty overrides must not change resolved prompt'
+    );
+  });
+
+  test('override survives regeneration — _gsr_generated stays true on overridden entries', () => {
+    // Spec: override wins AND entry stays GSR-managed (so next regen also applies override)
+    const config = makeConfig({
+      multivendor: { ...MULTIVENDOR_PRESET },
+    });
+    config.identity = {
+      overrides: {
+        'gsr-multivendor': { prompt: 'Persistent override' },
+      },
+    };
+
+    // Simulate two consecutive generations
+    const first = generateOpenCodeOverlay(config, { cwd: os.tmpdir() });
+    const second = generateOpenCodeOverlay(config, { cwd: os.tmpdir() });
+
+    assert.equal(first.agent['gsr-multivendor'].prompt, 'Persistent override', 'first generation uses override');
+    assert.equal(second.agent['gsr-multivendor'].prompt, 'Persistent override', 'second generation still uses override');
+    assert.equal(first.agent['gsr-multivendor']._gsr_generated, true, '_gsr_generated stays true');
+    assert.equal(second.agent['gsr-multivendor']._gsr_generated, true, '_gsr_generated stays true on regen');
   });
 });

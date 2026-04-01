@@ -19,6 +19,7 @@ import { SddDetailScreen } from './screens/sdd-detail.js';
 import { SddCreateWizard } from './screens/sdd-create-wizard.js';
 import { SddPhaseEditor } from './screens/sdd-phase-editor.js';
 import { SddRoleEditor } from './screens/sdd-role-editor.js';
+import { AgentIdentityEditor } from './screens/agent-identity-editor.js';
 
 const h = React.createElement;
 
@@ -35,7 +36,7 @@ function App({ initialConfig, initialConfigPath }) {
 
   // Global quit (only when not in text input screens)
   useInput((input, key) => {
-    const textScreens = ['create-profile', 'edit-profile', 'sdd-create-wizard', 'sdd-list', 'sdd-detail', 'sdd-phase-editor', 'sdd-role-editor'];
+    const textScreens = ['create-profile', 'edit-profile', 'sdd-create-wizard', 'sdd-list', 'sdd-detail', 'sdd-phase-editor', 'sdd-role-editor', 'agent-identity-editor'];
     if (input === 'q' && !textScreens.includes(router.current) && router.current !== 'result') {
       exit();
     }
@@ -88,6 +89,7 @@ function App({ initialConfig, initialConfigPath }) {
     'sdd-create-wizard': h(SddCreateWizard, ctx),
     'sdd-phase-editor': h(SddPhaseEditor, ctx),
     'sdd-role-editor': h(SddRoleEditor, ctx),
+    'agent-identity-editor': h(AgentIdentityEditor, ctx),
     'result': h(ResultScreen, { text: result, onBack: () => router.pop() }),
   };
 

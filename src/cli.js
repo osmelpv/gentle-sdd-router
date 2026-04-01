@@ -51,6 +51,7 @@ import {
   cleanStaleGlobalOverlay,
 } from './router-config.js';
 import { resolveControllerLabel, resolvePersona } from './core/controller.js';
+import { resolveIdentity, resetIdentityCache } from './core/agent-identity.js';
 
 const CURRENT_SCHEMA_VERSION = 4;
 let wizardEntrypointForTesting = null;
@@ -187,6 +188,8 @@ export async function runCli(argv) {
     // === Category dispatchers (new tree) ===
     case 'route':
       return runRoute(rest);
+    case 'identity':
+      return runIdentityCommand(rest);
     case 'profile':
       return runProfile(rest);
     case 'catalog':
@@ -2634,3 +2637,104 @@ export function runPhaseCreate(args, catalogsDir) {
 
   process.stdout.write(`Created phase contract '${name}' at ${phasePath}\n`);
 }
+
+// ── identity command ──────────────────────────────────────────────────────────
+
+/**
+ * Internal dispatcher for `gsr identity <subcommand>`.
+ * @param {string[]} args
+ */
+function runIdentityCommand(args) {
+  const [sub, ...rest] = args;
+  switch (sub) {
+    case 'show':
+      return runIdentityShow(rest);
+    default:
+      if (sub === 'help' || sub === '--help' || !sub) {
+        process.stdout.write(
+          'Usage: gsr identity show [--preset <name>]\n' +
+          '\nSubcommands:\n' +
+          '  show    Resolve and display agent identity for a preset or all enabled presets\n'
+        );
+        return;
+      }
+      printUsage();
+      throw new Error(sub ? `Unknown identity command: ${sub}` : 'gsr identity requires a subcommand.');
+  }
+}
+
+/**
+ * Show resolved agent identity for a preset or all enabled presets.
+ *
+ * @param {string[]} args - CLI args after 'identity show'
+ * @param {object} [options] - Override { configPath, cwd } for testing
+ */
+export async function runIdentityShow(args, options = {}) {
+  const presetFlag = args.indexOf('--preset');
+  const targetPreset = presetFlag !== -1 ? args[presetFlag + 1] : null;
+
+  const configPath = options.configPath ?? tryGetConfigPath();
+  const cwd = options.cwd ?? process.cwd();
+
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr install` first.\n');
+    return;
+  }
+
+  let config;
+  try {
+    config = loadRouterConfig(configPath);
+  } catch (err) {
+    process.stdout.write(`Error loading router config: ${err.message}\n`);
+    return;
+  }
+
+  const catalogs = config.catalogs ?? {};
+  const presetsToShow = [];
+
+  // Collect all presets across enabled catalogs
+  for (const [, catalog] of Object.entries(catalogs)) {
+    if (catalog.enabled === false) continue;
+    for (const [presetName, preset] of Object.entries(catalog.presets ?? {})) {
+      presetsToShow.push({ presetName, preset });
+    }
+  }
+
+  if (presetsToShow.length === 0) {
+    process.stdout.write('No enabled presets found.\n');
+    return;
+  }
+
+  // Filter by preset name if specified
+  if (targetPreset) {
+    const found = presetsToShow.find(p => p.presetName === targetPreset);
+    if (!found) {
+      process.stdout.write(`Preset '${targetPreset}' not found in enabled catalogs.\n`);
+      return;
+    }
+    _printIdentityForPreset(found.presetName, found.preset, cwd);
+    return;
+  }
+
+  // Show all enabled presets
+  for (const { presetName, preset } of presetsToShow) {
+    _printIdentityForPreset(presetName, preset, cwd);
+    process.stdout.write('\n');
+  }
+}
+
+/**
+ * Print the resolved identity for a single preset to stdout.
+ * @param {string} presetName
+ * @param {object} preset
+ * @param {string} cwd
+ */
+function _printIdentityForPreset(presetName, preset, cwd) {
+  const identity = resolveIdentity(preset, { cwd });
+
+  process.stdout.write(`=== ${presetName} ===\n`);
+  process.stdout.write(`Sources: ${identity.sources.join(', ')}\n`);
+  process.stdout.write(`Prompt:\n${identity.prompt}\n`);
+}
+
+export { resetIdentityCache };

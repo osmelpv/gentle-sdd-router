@@ -16,6 +16,8 @@ const EXECUTION_HINT_FIELDS = new Set([
   'steps',
 ]);
 
+const ALLOWED_IDENTITY_KEYS = new Set(['context', 'prompt', 'inherit_agents_md', 'persona']);
+
 const ALLOWED_PERMISSION_KEYS = new Set(['read', 'write', 'edit', 'bash', 'delegate']);
 
 function isObject(value) {
@@ -26,6 +28,39 @@ function checkExecutionHints(value, context) {
   for (const key of Object.keys(value)) {
     if (EXECUTION_HINT_FIELDS.has(key)) {
       throw new Error(`${context} must not include execution-oriented field "${key}".`);
+    }
+  }
+}
+
+function validateIdentity(identity, filePath) {
+  if (!isObject(identity)) {
+    throw new Error(`Profile file "${filePath}" has "identity" but it must be an object.`);
+  }
+
+  for (const [key, value] of Object.entries(identity)) {
+    if (!ALLOWED_IDENTITY_KEYS.has(key)) {
+      throw new Error(
+        `Profile file "${filePath}" has unknown identity field "${key}". ` +
+        `Allowed identity fields: ${[...ALLOWED_IDENTITY_KEYS].join(', ')}.`
+      );
+    }
+
+    if (key === 'inherit_agents_md' && typeof value !== 'boolean') {
+      throw new Error(
+        `Profile file "${filePath}" has identity.inherit_agents_md but it must be a boolean.`
+      );
+    }
+
+    if (key === 'context' && value !== null && typeof value !== 'string') {
+      throw new Error(
+        `Profile file "${filePath}" has identity.context but it must be a string or null.`
+      );
+    }
+
+    if (key === 'prompt' && value !== null && typeof value !== 'string') {
+      throw new Error(
+        `Profile file "${filePath}" has identity.prompt but it must be a string or null.`
+      );
     }
   }
 }
@@ -73,6 +108,10 @@ export function validateProfileFile(profile, filePath) {
 
   if (profile.hidden !== undefined && typeof profile.hidden !== 'boolean') {
     throw new Error(`Profile file "${filePath}" has "hidden" but it must be a boolean.`);
+  }
+
+  if (profile.identity !== undefined) {
+    validateIdentity(profile.identity, filePath);
   }
 
   // Validate contextWindow on each lane if present
@@ -230,6 +269,7 @@ export function assembleV4Config(coreConfig, profiles) {
     metadata: coreConfig.metadata,
     catalogs: catalogsMap,
     ...(coreConfig.persona !== undefined ? { persona: coreConfig.persona } : {}),
+    ...(coreConfig.identity !== undefined ? { identity: coreConfig.identity } : {}),
   };
 
   const profileMap = new Map(

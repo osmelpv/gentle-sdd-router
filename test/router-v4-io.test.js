@@ -756,3 +756,182 @@ phases:
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
+
+// ── identity section validation (Task 1.5) ────────────────────────────────────
+
+describe('validateProfileFile — identity section', () => {
+  const BASE_PHASES = {
+    orchestrator: [{ phase: 'orchestrator', role: 'primary', target: 'model/x' }],
+  };
+
+  test('profile with valid identity section passes validation', () => {
+    const profile = {
+      name: 'identity-test',
+      phases: BASE_PHASES,
+      identity: {
+        context: 'Custom context',
+        prompt: '',
+        inherit_agents_md: true,
+        persona: 'gentleman',
+      },
+    };
+    assert.doesNotThrow(() => validateProfileFile(profile, '/fake/identity-test.router.yaml'));
+  });
+
+  test('profile with only inherit_agents_md in identity passes', () => {
+    const profile = {
+      name: 'identity-test',
+      phases: BASE_PHASES,
+      identity: { inherit_agents_md: false },
+    };
+    assert.doesNotThrow(() => validateProfileFile(profile, '/fake/identity-test.router.yaml'));
+  });
+
+  test('profile with only context in identity passes', () => {
+    const profile = {
+      name: 'identity-test',
+      phases: BASE_PHASES,
+      identity: { context: 'Hello' },
+    };
+    assert.doesNotThrow(() => validateProfileFile(profile, '/fake/identity-test.router.yaml'));
+  });
+
+  test('profile with empty identity object passes', () => {
+    const profile = {
+      name: 'identity-test',
+      phases: BASE_PHASES,
+      identity: {},
+    };
+    assert.doesNotThrow(() => validateProfileFile(profile, '/fake/identity-test.router.yaml'));
+  });
+
+  test('identity.inherit_agents_md must be boolean — throws for non-boolean', () => {
+    const profile = {
+      name: 'identity-test',
+      phases: BASE_PHASES,
+      identity: { inherit_agents_md: 'yes' },
+    };
+    assert.throws(
+      () => validateProfileFile(profile, '/fake/identity-test.router.yaml'),
+      /identity.*inherit_agents_md.*boolean/i
+    );
+  });
+
+  test('identity.context must be string or null — throws for non-string', () => {
+    const profile = {
+      name: 'identity-test',
+      phases: BASE_PHASES,
+      identity: { context: 42 },
+    };
+    assert.throws(
+      () => validateProfileFile(profile, '/fake/identity-test.router.yaml'),
+      /identity.*context.*string/i
+    );
+  });
+
+  test('identity.prompt must be string or null — throws for non-string', () => {
+    const profile = {
+      name: 'identity-test',
+      phases: BASE_PHASES,
+      identity: { prompt: true },
+    };
+    assert.throws(
+      () => validateProfileFile(profile, '/fake/identity-test.router.yaml'),
+      /identity.*prompt.*string/i
+    );
+  });
+
+  test('unknown identity field throws', () => {
+    const profile = {
+      name: 'identity-test',
+      phases: BASE_PHASES,
+      identity: { unknownField: 'value' },
+    };
+    assert.throws(
+      () => validateProfileFile(profile, '/fake/identity-test.router.yaml'),
+      /identity.*unknown.*field|unknown.*identity/i
+    );
+  });
+
+  test('identity must be an object — throws for array', () => {
+    const profile = {
+      name: 'identity-test',
+      phases: BASE_PHASES,
+      identity: ['context'],
+    };
+    assert.throws(
+      () => validateProfileFile(profile, '/fake/identity-test.router.yaml'),
+      /identity.*object/i
+    );
+  });
+
+  test('identity execution hints are rejected', () => {
+    // 'instructions' is an execution hint — must not be in identity
+    const profile = {
+      name: 'identity-test',
+      phases: BASE_PHASES,
+      identity: { instructions: 'do this' },
+    };
+    assert.throws(
+      () => validateProfileFile(profile, '/fake/identity-test.router.yaml'),
+      /identity.*unknown.*field|unknown.*identity|execution-oriented/i
+    );
+  });
+});
+
+// ── identity.overrides forwarding through assembleV4Config ────────────────────
+// Spec: identity.overrides in router.yaml (coreConfig) must appear in assembled config
+
+describe('assembleV4Config — identity.overrides forwarding', () => {
+  const MINIMAL_PROFILE = {
+    filePath: '/fake/balanced.router.yaml',
+    fileName: 'balanced.router.yaml',
+    catalogName: 'default',
+    content: {
+      name: 'balanced',
+      phases: {
+        orchestrator: [{ target: 'anthropic/claude-sonnet', phase: 'orchestrator', role: 'primary' }],
+      },
+    },
+  };
+
+  test('identity.overrides from coreConfig is forwarded to assembled config', () => {
+    const coreConfig = {
+      version: 4,
+      active_catalog: 'default',
+      active_preset: 'balanced',
+      identity: {
+        overrides: {
+          'gsr-balanced': { prompt: 'Router-level prompt for balanced' },
+        },
+      },
+    };
+
+    const assembled = assembleV4Config(coreConfig, [MINIMAL_PROFILE]);
+
+    assert.ok(assembled.identity, 'assembled config must have identity field');
+    assert.ok(assembled.identity.overrides, 'assembled config must have identity.overrides');
+    assert.equal(
+      assembled.identity.overrides['gsr-balanced'].prompt,
+      'Router-level prompt for balanced',
+      'override prompt must be forwarded from coreConfig'
+    );
+  });
+
+  test('assembled config without identity in coreConfig has no identity field', () => {
+    const coreConfig = {
+      version: 4,
+      active_catalog: 'default',
+      active_preset: 'balanced',
+      // No identity field
+    };
+
+    const assembled = assembleV4Config(coreConfig, [MINIMAL_PROFILE]);
+
+    // identity field should be absent (not null, not {}) to maintain backward compat
+    assert.ok(
+      assembled.identity === undefined || !assembled.identity?.overrides,
+      'assembled config must not add identity.overrides when coreConfig has none'
+    );
+  });
+});

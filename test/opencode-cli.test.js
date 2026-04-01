@@ -381,7 +381,7 @@ test('CLI apply opencode --apply writes overlay to temp file without touching no
   fs.writeFileSync(opencodeConfigPath, JSON.stringify({
     agent: {
       'my-agent': { mode: 'primary' },
-      'gsr-stale': { mode: 'primary' },
+      'gsr-stale': { mode: 'primary', _gsr_generated: true },
     },
   }, null, 2), 'utf8');
 

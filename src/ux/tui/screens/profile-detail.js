@@ -51,6 +51,7 @@ export function ProfileDetailScreen({ config, configPath, router, setDescription
 
   const actions = [
     { label: 'Edit phases', value: 'edit', description: 'Open the phase/lane editor to modify models, roles, and fallbacks.' },
+    { label: 'Edit Identity', value: 'edit-identity', description: 'Configure agent context, prompt, and AGENTS.md inheritance for this profile.' },
     ...(!isActive ? [{ label: 'Activate', value: 'activate', description: `Set '${selectedProfile}' as the active routing preset.` }] : []),
     { label: 'Export', value: 'export', description: 'Export this profile as YAML to stdout.' },
     { label: 'Copy', value: 'copy', description: 'Clone this profile with a new name.' },
@@ -104,6 +105,11 @@ export function ProfileDetailScreen({ config, configPath, router, setDescription
 
         if (value === 'edit') {
           router.push('edit-profile');
+          return;
+        }
+
+        if (value === 'edit-identity') {
+          router.push('agent-identity-editor');
           return;
         }
 

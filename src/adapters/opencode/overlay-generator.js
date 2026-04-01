@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, readdir
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { resolvePersona } from '../../core/controller.js';
+import { resolveIdentity } from '../../core/agent-identity.js';
 
 const OPENCODE_CONFIG_PATH = join(homedir(), '.config', 'opencode', 'opencode.json');
 const GSR_AGENT_PREFIX = 'gsr-';
@@ -64,14 +65,24 @@ function getOrchestratorTarget(preset) {
  * Each preset that has an orchestrator phase becomes a gsr-{name} agent entry.
  * Presets without an orchestrator phase are skipped with a warning.
  *
+ * Each generated entry includes:
+ *   - prompt: resolved identity prompt (via resolveIdentity fallback chain)
+ *   - _gsr_generated: true (merge marker for safe regeneration)
+ *
  * @param {object} config - Loaded/assembled router config (v3-shaped, from loadRouterConfig)
+ * @param {object} [options]
+ *   - cwd {string}: Directory for AGENTS.md resolution (default: process.cwd())
  * @returns {{ agent: Record<string, object>, warnings: string[] }}
  */
-export function generateOpenCodeOverlay(config) {
+export function generateOpenCodeOverlay(config, options = {}) {
   const agents = {};
   const warnings = [];
   const catalogs = config.catalogs ?? {};
   const persona = resolvePersona(config);
+  const cwd = options.cwd ?? process.cwd();
+
+  // Router-level identity overrides: config.identity.overrides.<agentName>
+  const routerOverrides = config?.identity?.overrides ?? {};
 
   for (const [catalogName, catalog] of Object.entries(catalogs)) {
     // Only include presets from enabled catalogs in the overlay
@@ -93,11 +104,20 @@ export function generateOpenCodeOverlay(config) {
       const agentName = `${GSR_AGENT_PREFIX}${presetName}`;
       const availability = preset.availability ?? 'stable';
 
+      // Resolve identity for this preset using the fallback chain
+      const identity = resolveIdentity(preset, { cwd });
+
+      // Apply router-level override for this agent (if present) — overrides win
+      const agentOverride = routerOverrides[agentName] ?? {};
+      const resolvedPrompt = agentOverride.prompt ?? identity.prompt;
+
       const entry = {
         mode: 'primary',
         description: `gsr: ${presetName} — ${availability} [${persona}]`,
         model: orchestratorTarget,
+        prompt: resolvedPrompt,
         tools: mapPermissions(preset.permissions),
+        _gsr_generated: true,
       };
 
       if (preset.hidden === true) {
@@ -112,27 +132,60 @@ export function generateOpenCodeOverlay(config) {
 }
 
 /**
- * Merge overlay into existing opencode.json, only touching gsr-* keys.
- * Non-gsr agent keys are preserved as-is.
+ * Merge overlay into existing opencode.json, respecting the _gsr_generated marker.
  *
- * @param {object} existing - Current opencode.json content (parsed JSON object)
- * @param {{ agent: Record<string, object> }} overlay - Output from generateOpenCodeOverlay
- * @returns {object} - Merged config
+ * Rules:
+ *   - Non-gsr-* keys are always preserved.
+ *   - gsr-* entries with _gsr_generated === true in existing → safe to overwrite.
+ *   - gsr-* entries without _gsr_generated (or _gsr_generated !== true) in existing → preserved + warning.
+ *   - gsr-* entries in existing that are NOT in the new overlay → removed only if _gsr_generated === true;
+ *     user-created entries (no marker) are preserved.
+ *
+ * @param {{ agent: Record<string, object>, warnings?: string[] }} overlay - Output from generateOpenCodeOverlay
+ * @param {object} [existing] - Current opencode.json content (parsed JSON object)
+ * @returns {{ agent: Record<string, object>, warnings: string[] }} - Merged config with warnings
  */
 export function mergeOverlayWithExisting(overlay, existing = {}) {
   const result = JSON.parse(JSON.stringify(existing));
+  const mergeWarnings = Array.isArray(overlay.warnings) ? [...overlay.warnings] : [];
 
   if (!result.agent) result.agent = {};
 
-  // Remove old gsr-* entries (stale cleanup).
-  for (const key of Object.keys(result.agent)) {
-    if (key.startsWith(GSR_AGENT_PREFIX)) {
+  // Separate gsr-* entries in existing into:
+  //   - GSR-managed (has _gsr_generated === true) → safe to remove/replace
+  //   - User-owned (no marker or _gsr_generated !== true) → preserve
+  const existingGsrKeys = Object.keys(result.agent).filter(k => k.startsWith(GSR_AGENT_PREFIX));
+  const userOwnedKeys = new Set();
+
+  for (const key of existingGsrKeys) {
+    const entry = result.agent[key];
+    if (entry?._gsr_generated !== true) {
+      // User-owned entry — preserve it
+      userOwnedKeys.add(key);
+    }
+  }
+
+  // Remove stale GSR-managed gsr-* entries (not user-owned)
+  for (const key of existingGsrKeys) {
+    if (!userOwnedKeys.has(key)) {
       delete result.agent[key];
     }
   }
 
-  // Add new gsr-* entries.
-  Object.assign(result.agent, overlay.agent);
+  // Add/replace new gsr-* entries, respecting user ownership
+  for (const [key, entry] of Object.entries(overlay.agent ?? {})) {
+    if (userOwnedKeys.has(key)) {
+      // User-owned entry: emit warning and skip
+      mergeWarnings.push(
+        `${key}: user prompt detected — skipped (entry preserved as-is)`
+      );
+      // Keep existing user entry (already in result.agent)
+      continue;
+    }
+    result.agent[key] = entry;
+  }
+
+  result.warnings = mergeWarnings;
 
   return result;
 }
