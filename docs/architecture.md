@@ -36,6 +36,11 @@ src/
 │   ├── controller.js               # gentle-ai detection, controller label resolution
 │   ├── phases.js                   # Canonical phase list and metadata
 │   ├── preset-io.js                # import/export helpers and compact sharing format
+│   ├── agent-identity.js           # Layered context resolution (AGENTS.md inheritance)
+│   ├── status-reporter.js          # Simple status vocabulary (emoji + one-liner)
+│   ├── unified-sync.js             # Unified sync: contracts + overlay + commands + validate
+│   ├── sdd-catalog-io.js           # Custom SDD create/read/delete in router/catalogs/
+│   ├── sync.js                     # Low-level contract manifest generation
 │   └── migrations/
 │       ├── index.js                # Migration planner, runner, backup/restore
 │       └── 001_v3-to-v4-multifile.js  # First migration script
@@ -54,6 +59,22 @@ src/
     └── tui/                        # Full-screen TUI (Ink 6 + React 19)
         ├── app.js                  # TUI entry point (fullscreen-ink)
         └── screens/                # Split-panel screens (@inkjs/ui)
+            ├── home.js             # Home screen, navigation hub
+            ├── status.js           # Router status screen
+            ├── manage.js           # Profile/catalog management
+            ├── catalog-profiles.js # Catalog + profiles view
+            ├── catalogs.js         # Catalog list screen
+            ├── profile-detail.js   # Profile detail and route view
+            ├── create-profile-wizard.js  # Profile creation wizard
+            ├── edit-profile-wizard.js    # Profile editing wizard
+            ├── agent-identity-editor.js  # Identity resolution viewer
+            ├── sdd-list.js         # Custom SDD list
+            ├── sdd-detail.js       # Custom SDD detail view
+            ├── sdd-create-wizard.js # Custom SDD creation wizard
+            ├── sdd-phase-editor.js # Phase contract editor
+            ├── sdd-role-editor.js  # Role contract editor
+            ├── fresh-install.js    # First-time install screen
+            └── settings.js         # Settings screen
 ```
 
 ## Data Flow
@@ -91,6 +112,32 @@ config object
        └─ coreContent ────→ write core last (crash-safe ordering)
 ```
 
+### Unified sync flow
+
+```
+gsr sync
+   │
+   ▼ unifiedSync({ configPath, dryRun, force })
+   │
+   ├─ step: contracts
+   │    generateSyncManifest(contractsDir)
+   │    writes router/contracts/.sync-manifest.json
+   │
+   ├─ step: overlay + apply
+   │    applyOpenCodeOverlayCommand({ apply: true, configPath })
+   │    writes opencode.json (project-local)
+   │    preserves user-modified entries
+   │
+   ├─ step: commands
+   │    deployGsrCommands()
+   │    writes router/commands/*.md slash command files
+   │
+   └─ step: validate
+        checks catalog visibility, manifest completeness
+```
+
+`gsr sync` is idempotent — running it again when nothing changed reports "Already up to date."
+
 ### Migration flow
 
 ```
@@ -103,6 +150,19 @@ planMigrations(routerDir)
    createBackup() → apply() → validate() → updateRegistry()
        │                                          │
        └─ on failure: restoreBackup() ◄───────────┘
+```
+
+### Agent identity resolution
+
+```
+resolveIdentity(preset, { cwd })
+   │
+   ▼ layered sources (lowest to highest priority):
+   1. global gentle-ai AGENTS.md  (if gentle-ai installed)
+   2. project AGENTS.md           (cwd-relative lookup)
+   3. preset.agentsContext        (inline override in preset YAML)
+   │
+   └─ merged prompt + sources array
 ```
 
 ## Key Design Decisions
@@ -129,6 +189,14 @@ The controller label ("Alan/gentle-ai" or "host") is resolved at runtime by scan
 ### Atomic writes
 
 All file writes use temp-file + rename pattern. For v4 multi-file saves, profiles are written first, core file last. If the process crashes mid-write, the core file still points to valid profile files.
+
+### Auto-wiring
+
+`catalog create`, `catalog enable`, `catalog disable`, and `profile create` automatically trigger `unifiedSync`. This means a single operation keeps contracts, overlay, and commands in sync without requiring a manual `gsr sync`.
+
+### Simple status vocabulary
+
+`gsr status` (without flags) shows a simplified view: emoji, one-line message, active preset, activation state. Full details are behind `--verbose`. This hides overlay mechanics from everyday use.
 
 ## Dependencies
 

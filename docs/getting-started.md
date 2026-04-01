@@ -1,5 +1,167 @@
 # Getting Started
 
+> **This documentation is designed for both humans and AI agents.**
+> An AI agent can install, configure, and operate GSR by following these instructions step by step.
+> Each step includes expected output so you can verify correct execution.
+
+---
+
+## AI Agent Operational Guide
+
+If you are an AI agent setting up GSR for a project, follow this sequence exactly:
+
+### Step 1 — Install globally
+
+```bash
+npm install -g gentle-sdd-router
+```
+
+**Expected output**: npm progress + success message. No error.
+
+Verify installation:
+
+```bash
+gsr version
+```
+
+**Expected output**:
+```
+gsr v<X.Y.Z>
+Tip: check for updates with npm update -g gentle-sdd-router
+```
+
+### Step 2 — Initialize the project
+
+Run this from inside the project directory:
+
+```bash
+gsr setup install
+```
+
+**Expected output**:
+```
+Command: install opencode
+Status: ready
+...
+```
+
+This creates the `router/` directory with `router.yaml` and default profiles. If config already exists, skip this step.
+
+### Step 3 — Run a full sync
+
+```bash
+gsr sync
+```
+
+**Expected output**:
+```
+Synced <N> role contracts + <N> phase compositions (<total> total).
+Manifest: router/contracts/.sync-manifest.json
+<N> agent(s) synced to opencode.json.
+Commands: <N> written, <N> already up to date.
+Synchronized.
+```
+
+`gsr sync` is idempotent — running it again produces "Already up to date."
+
+### Step 4 — Check status
+
+```bash
+gsr status
+```
+
+**Expected output** (simplified):
+```
+✅ Router active
+Preset: multivendor
+Activation: active
+Run `gsr status --verbose` for full details.
+```
+
+For full route details:
+
+```bash
+gsr status --verbose
+```
+
+**Expected output** includes: installed state, controller, activation, schema version, active preset, config path, and all resolved routes per phase.
+
+### Step 5 — Create a catalog (optional)
+
+```bash
+gsr catalog create my-catalog
+```
+
+**Expected output**:
+```
+Created catalog 'my-catalog' at router/profiles/my-catalog/
+...
+Synchronized.
+```
+
+`catalog create` auto-enables and auto-syncs. New agents appear in the TUI host after reopening.
+
+### Step 6 — Create a preset (optional)
+
+```bash
+# Create empty preset
+gsr profile create my-preset
+
+# Or clone an existing preset as a starting point
+gsr profile copy multivendor my-preset
+```
+
+**Expected output**:
+```
+Created profile 'my-preset' → router/profiles/my-preset.router.yaml
+...
+Synchronized.
+```
+
+Profile creation auto-triggers sync. Edit the YAML file to configure model targets.
+
+### Step 7 — Verify identity resolution (optional)
+
+```bash
+gsr identity show
+```
+
+**Expected output** (per enabled preset):
+```
+=== multivendor ===
+Sources: global-agents-md, preset-agents-md
+Prompt:
+<resolved identity context>
+```
+
+Identity is layered: global `AGENTS.md` → project `AGENTS.md` → preset-level overrides.
+
+### Step 8 — Create custom SDDs (optional)
+
+```bash
+gsr sdd create game-design --description "Game design workflow"
+```
+
+**Expected output**:
+```
+Created SDD 'game-design' at router/catalogs/game-design/
+```
+
+List custom SDDs:
+
+```bash
+gsr sdd list
+```
+
+Add role contracts and phase contracts to the SDD:
+
+```bash
+gsr role create director --sdd game-design
+gsr phase create concept --sdd game-design
+```
+
+---
+
 ## Prerequisites
 
 - **Node.js 20+** — required for running gsr
@@ -31,6 +193,8 @@ If you use the [gentle-ai](https://github.com/Gentleman-Programming/gentle-ai) e
 ### Without gentle-ai (standalone)
 
 gsr works independently. Without gentle-ai, the controller label defaults to `host`, the default persona is `neutral`, and all execution owners fall back to `['host']`. You get the same routing features — just without the Gentleman persona injection and ecosystem integration.
+
+---
 
 ## First Setup
 
@@ -67,11 +231,16 @@ your-project/
       multivendor.router.yaml      # default preset
 ```
 
+---
+
 ## Basic Usage
 
 ```bash
 # Check current state
 gsr status
+
+# Full details (routes, pricing, activation)
+gsr status --verbose
 
 # List available presets
 gsr profile list
@@ -82,6 +251,9 @@ gsr route use claude
 # View resolved routes
 gsr route show
 
+# Sync contracts + overlay
+gsr sync
+
 # Import or export presets
 gsr profile export multivendor --compact
 gsr profile import ./shared.router.yaml
@@ -89,9 +261,157 @@ gsr profile import ./shared.router.yaml
 
 > **Backward-compat aliases**: The old commands `gsr list`, `gsr use claude`, `gsr reload`, and `gsr install` still work. The new tree (`gsr profile list`, `gsr route use`, etc.) is the recommended form going forward.
 
+---
+
+## Available Presets
+
+| Preset | Description | Best for |
+|--------|-------------|----------|
+| **multivendor** | Best model per phase across all providers | Default, balanced performance |
+| **claude** | Anthropic models only | Claude-heavy workflows |
+| **openai** | OpenAI models only | GPT-focused workflows |
+| **multiagent** | 2 lanes per phase (primary + judge/radar) | Cross-provider validation |
+| **ollama** | All local models (Qwen, QwQ, Devstral) | Offline, no tokens needed |
+| **local-hybrid** | Local models + free cloud fallbacks | Free tier / Ollama first |
+| **cheap** | Budget models with solid performance | Cost-sensitive projects |
+| **heavyweight** | 5 lanes per phase (3 models + judge + radar) | Maximum depth and quality |
+| **safety** | Restricted read-only routing profile | Investigation, debugging, planning |
+
+---
+
+## Identity Configuration
+
+gsr resolves agent identity from layered context:
+
+1. **Global `AGENTS.md`** — system-wide persona (e.g., from `gentle-ai`)
+2. **Project `AGENTS.md`** — project-specific overrides
+3. **Preset-level overrides** — inline `agentsContext` in the preset YAML
+
+Verify what identity gets resolved for each preset:
+
+```bash
+gsr identity show
+gsr identity show --preset multivendor
+```
+
+---
+
+## Status Checking
+
+```bash
+# Simple status (default)
+gsr status
+
+# Verbose: full routes, pricing, activation state
+gsr status --verbose
+```
+
+The simple status shows: status indicator, active preset, activation state, and a hint for `--verbose`.
+
+---
+
+## Command Reference
+
+### Top-level
+
+```
+gsr status [--verbose] [--debug]   Current state, routes, pricing
+gsr version                         Installed version
+gsr help [command]                  Help for any command
+gsr sync [--dry-run] [--force]      Full sync: contracts + overlay + commands + validate
+```
+
+### Route
+
+```
+gsr route use <preset>              Switch active preset
+gsr route show                      Show resolved routes
+gsr route activate                  gsr takes routing control
+gsr route deactivate                Host takes control back
+```
+
+### Profile
+
+```
+gsr profile list                    List profiles with catalog info
+gsr profile show [name]             Show routes for a profile
+gsr profile create <name>           Create empty profile (auto-syncs)
+gsr profile delete <name>           Delete profile
+gsr profile rename <old> <new>      Rename profile
+gsr profile copy <src> <dest>       Clone profile
+gsr profile export <name>           Export for sharing (--compact for gsr:// string)
+gsr profile import <source>         Import from file/URL/gsr://
+```
+
+### Catalog
+
+```
+gsr catalog list                    List catalogs with status
+gsr catalog create <name>           Create catalog (auto-enables + auto-syncs)
+gsr catalog delete <name>           Delete empty catalog
+gsr catalog enable <name>           Show in TUI host (TAB cycling) + auto-sync
+gsr catalog disable <name>          Hide from TUI host + auto-sync
+gsr catalog move <profile> <cat>    Move a profile to a different catalog
+gsr catalog use <name> [preset]     Set active catalog and preset
+```
+
+### Inspect
+
+```
+gsr inspect browse [selector]       Multimodel metadata
+gsr inspect compare <a> <b>         Compare two presets
+gsr inspect render <target>         Host boundary preview
+```
+
+### Setup
+
+```
+gsr setup install                   Install router config
+gsr setup uninstall [--confirm]     Remove gsr overlay and router/ (with backup)
+gsr setup bootstrap                 Guided first-time setup
+gsr setup update [--apply]          Config migrations
+gsr setup apply <target> [--apply]  Generate TUI overlay (writes to ./opencode.json)
+```
+
+### Identity
+
+```
+gsr identity show [--preset <name>] Resolve and display agent identity
+```
+
+### SDD (Custom Workflows)
+
+```
+gsr sdd create <name> [--description <desc>]  Create custom SDD
+gsr sdd list                                   List custom SDDs
+gsr sdd show <name>                            Show SDD phases and triggers
+gsr sdd delete <name> [--yes]                  Delete custom SDD
+```
+
+### Role & Phase (within a custom SDD)
+
+```
+gsr role create <name> --sdd <sdd>   Create role contract
+gsr phase create <name> --sdd <sdd>  Create phase contract
+```
+
+### Flags
+
+```
+--dry-run     Preview changes without writing files (sync, setup)
+--force       Overwrite existing files (import, sync)
+--verbose     Show full internal details (status)
+--debug       Alias for --verbose (status)
+--confirm     Required for destructive operations (uninstall)
+--compact     Use compact gsr:// encoding (export, import)
+```
+
+---
+
 ## Next Steps
 
 - [Presets Guide](presets-guide.md) — understand and customize presets
 - [Import/Export Guide](import-export.md) — share, package, and import presets
 - [Migration Guide](migration-guide.md) — upgrading from older schema versions
 - [Architecture](architecture.md) — how gsr works under the hood
+- [Host Adoption (EN)](host-adoption.en.md) — integrating gsr with OpenCode

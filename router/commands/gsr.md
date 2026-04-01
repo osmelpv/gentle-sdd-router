@@ -56,9 +56,31 @@ Installation, migration, and teardown commands.
 - `gsr setup install` — Inspect or apply a YAML-first install intent (**CLI-only**)
 - `gsr setup bootstrap` — Guided first-time setup (**CLI-only**)
 
+## Identity
+
+Resolve and display agent identity context.
+
+- `gsr identity show [--preset <name>]` — Show resolved AGENTS.md context for a preset or all enabled presets (**CLI-only**)
+
+## SDD (Custom Workflows)
+
+Manage custom SDD workflow definitions stored in `router/catalogs/`.
+
+- `gsr sdd create <name> [--description <desc>]` — Create a new custom SDD (**CLI-only**)
+- `gsr sdd list` — List all custom SDDs (**CLI-only**)
+- `gsr sdd show <name>` — Show SDD phases, triggers, and metadata (**CLI-only**)
+- `gsr sdd delete <name> [--yes]` — Delete a custom SDD (**CLI-only**)
+
+## Role & Phase Contracts
+
+Manage catalog-scoped contracts within a custom SDD.
+
+- `gsr role create <name> --sdd <sdd>` — Create a role contract `.md` file (**CLI-only**)
+- `gsr phase create <name> --sdd <sdd>` — Create a phase contract `.md` file (**CLI-only**)
+
 ## System
 
 Global operational state and data sync.
 
 - `/gsr-status` — Show router state, active preset, and resolved routes
-- `/gsr-sync` — Generate sync manifest for agent contracts and phase compositions
+- `/gsr-sync` — Full sync: contracts + overlay + slash commands + validate (idempotent)

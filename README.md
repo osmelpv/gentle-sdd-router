@@ -164,19 +164,45 @@ One keystroke to go from cloud to local. One keystroke to enter analysis-only mo
 | **Conditional phases** | Debug triggers only when verify fails. No wasted computation on clean runs |
 | **Dynamic model picker** | Fetches models from OpenRouter + Ollama in real time. Always fresh pricing and capabilities |
 | **Catalog switching** | Switch entire routing configurations instantly (cloud, local, hybrid, analysis-only) |
-| **8 built-in presets** | multivendor, claude, openai, multiagent, ollama, cheap, heavyweight, safety |
+| **9 built-in presets** | multivendor, claude, openai, multiagent, ollama, local-hybrid, cheap, heavyweight, safety |
 | **Agent contracts** | 9 role contracts + 10 phase compositions shipped as skills. `gsr sync` generates a local manifest for host discovery |
-| **Interactive TUI** | Split-panel wizard for profile creation, editing, and comparison |
+| **Agent identity system** | Layered AGENTS.md context resolution with per-preset overrides. `gsr identity show` to verify. |
+| **Unified sync** | `gsr sync` does everything: contracts + overlay + slash commands + validate (idempotent) |
+| **Auto-wiring** | catalog create/enable and profile create automatically trigger sync — no manual step needed |
+| **Custom SDDs** | `gsr sdd create` defines custom SDD workflows with their own role + phase contracts |
+| **Interactive TUI** | Split-panel wizard for profile creation, editing, SDD management, and identity inspection |
 | **Non-executing boundary** | Declares routing only -- never calls models or runs providers |
+
+---
+
+## Quick Start
+
+```bash
+# 1. Install globally
+npm install -g gentle-sdd-router
+
+# 2. Initialize in your project
+cd your-project
+gsr setup install
+
+# 3. Sync contracts + overlay (do everything at once)
+gsr sync
+
+# 4. Check status
+gsr status
+```
+
+See [Getting Started](docs/getting-started.md) for the full AI-operable setup guide.
 
 ---
 
 ## Commands
 
 ```
-gsr status                          Current state, routes, pricing
+gsr status [--verbose]              Current state, routes, pricing
 gsr version                         Installed version
 gsr help [command]                  Help for any command
+gsr sync [--dry-run] [--force]      Full sync: contracts + overlay + commands
 
 gsr route use <preset>              Switch active preset
 gsr route show                      Show resolved routes
@@ -185,7 +211,7 @@ gsr route deactivate                Host takes control back
 
 gsr profile list                    List profiles with catalog info
 gsr profile show [name]             Show routes for a profile
-gsr profile create <name>           Create empty profile
+gsr profile create <name>           Create empty profile (auto-syncs)
 gsr profile delete <name>           Delete profile
 gsr profile rename <old> <new>      Rename profile
 gsr profile copy <src> <dest>       Clone profile
@@ -193,10 +219,10 @@ gsr profile export <name>           Export for sharing (--compact)
 gsr profile import <source>         Import from file/URL/gsr://
 
 gsr catalog list                    List catalogs with status
-gsr catalog create <name>           Create catalog (disabled by default)
+gsr catalog create <name>           Create catalog (auto-enables + auto-syncs)
 gsr catalog delete <name>           Delete empty catalog
-gsr catalog enable <name>           Show in TUI host (TAB cycling)
-gsr catalog disable <name>          Hide from TUI host
+gsr catalog enable <name>           Show in TUI host (TAB cycling) + auto-sync
+gsr catalog disable <name>          Hide from TUI host + auto-sync
 gsr catalog move <profile> <cat>    Move a profile to a different catalog
 gsr catalog use <name> [preset]     Set active catalog and preset
 
@@ -205,15 +231,23 @@ gsr inspect compare <a> <b>         Compare two presets
 gsr inspect render <target>         Host boundary preview
 
 gsr setup install                   Install router config
-gsr setup uninstall                 Remove gsr overlay
+gsr setup uninstall [--confirm]     Remove gsr overlay + router/ (with backup)
 gsr setup bootstrap                 Guided first-time setup
 gsr setup update [--apply]          Config migrations
 gsr setup apply <target> [--apply]  Generate TUI overlay (writes to ./opencode.json)
 
-gsr sync                            Generate sync manifest for agent contracts
+gsr identity show [--preset <name>] Resolve and display agent identity
+
+gsr sdd create <name>               Create custom SDD workflow
+gsr sdd list                        List custom SDDs
+gsr sdd show <name>                 Show SDD phases and triggers
+gsr sdd delete <name> [--yes]       Delete custom SDD
+
+gsr role create <name> --sdd <sdd>  Create role contract for a custom SDD
+gsr phase create <name> --sdd <sdd> Create phase contract for a custom SDD
 ```
 
-Each category supports `help`: `gsr route help`, `gsr catalog help`, etc.
+Each category supports `help`: `gsr route help`, `gsr catalog help`, `gsr sdd help`, etc.
 
 Old flat commands (`gsr use`, `gsr list`, `gsr install`, `gsr reload`, `gsr activate`, `gsr deactivate`, `gsr browse`, `gsr compare`, `gsr render`, `gsr apply`, `gsr bootstrap`, `gsr update`, `gsr export`, `gsr import`) still work as backward-compat aliases.
 
@@ -273,6 +307,7 @@ TUI hosts can use the `tokenBudgetHint` field in the session sync contract to re
 | **openai** | OpenAI models only | GPT-focused workflows |
 | **multiagent** | 2 lanes per phase (primary + judge/radar) | Cross-provider validation |
 | **ollama** | All local models (Qwen, QwQ, Devstral) | Offline, no tokens needed |
+| **local-hybrid** | Local models first, free cloud fallbacks | Free tier / Ollama first |
 | **cheap** | Budget models with solid performance | Cost-sensitive projects |
 | **heavyweight** | 5 lanes per phase (3 models + judge + radar) | Maximum depth and quality |
 | **safety** | Restricted read-only routing profile for analysis and planning | Investigation, debugging, planning |
@@ -508,7 +543,7 @@ The bundled YAML parser is intentionally minimal. It supports the subset used by
 
 | Topic | Description |
 |-------|-------------|
-| [Getting Started](docs/getting-started.md) | Installation, first setup, basic usage |
+| [Getting Started](docs/getting-started.md) | AI-operable setup guide: install, sync, status, identity, SDDs |
 | [Presets Guide](docs/presets-guide.md) | Built-in presets, creating custom presets, sharing |
 | [Import/Export Guide](docs/import-export.md) | Export presets, compact sharing strings, import flows |
 | [Migration Guide](docs/migration-guide.md) | Upgrading schema versions safely |
