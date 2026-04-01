@@ -16,7 +16,18 @@ export {
 } from './core/router.js';
 
 export { CANONICAL_PHASES as CANONICAL_PHASES_FULL, PHASE_METADATA } from './core/phases.js';
-export { syncContracts, findContractsDir, readContracts, generateSyncManifest } from './core/sync.js';
+export { syncContracts, findContractsDir, readContracts, generateSyncManifest, readCatalogContracts } from './core/sync.js';
+
+export {
+  validateSddYaml,
+  loadCustomSdds,
+  loadCustomSdd,
+  createCustomSdd,
+  deleteCustomSdd,
+  resolveContract,
+} from './core/sdd-catalog-io.js';
+
+export { loadPhaseMetadataForCatalog } from './core/phases.js';
 
 export {
   loadV4Profiles,

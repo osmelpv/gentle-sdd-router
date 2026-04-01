@@ -1,3 +1,5 @@
+import { loadCustomSdd } from './sdd-catalog-io.js';
+
 /**
  * Canonical SDD phase list — the universal phase ordering for the pipeline.
  * Matches gentle-ai's phase model (10 phases including propose and debug).
@@ -103,3 +105,45 @@ export const PHASE_METADATA = {
     judgeContract: null,
   },
 };
+
+/**
+ * Load phase metadata for a given SDD catalog.
+ *
+ * - If sddName is null, undefined, or 'default': returns PHASE_METADATA (canonical behavior).
+ * - Otherwise: loads the custom SDD from catalogsDir and builds a phase metadata map from sdd.yaml.
+ *
+ * @param {string|null|undefined} sddName - SDD catalog name, or null/undefined/'default' for canonical
+ * @param {string} catalogsDir - Path to router/catalogs/
+ * @returns {Record<string, PhaseMetadataEntry>}
+ */
+export function loadPhaseMetadataForCatalog(sddName, catalogsDir) {
+  // Default fallback: return canonical metadata unchanged
+  if (!sddName || sddName === 'default') {
+    return PHASE_METADATA;
+  }
+
+  // Load the custom SDD definition (throws if not found)
+  const sdd = loadCustomSdd(catalogsDir, sddName);
+
+  // Build phase metadata map from sdd.yaml phases
+  const result = {};
+  for (const [phaseName, phase] of Object.entries(sdd.phases)) {
+    result[phaseName] = {
+      description: phase.intent,
+      defaultExecution: phase.execution ?? 'sequential',
+      agents: phase.agents ?? 1,
+      judge: phase.judge ?? false,
+      radar: phase.radar ?? false,
+      depends_on: phase.depends_on ?? [],
+      // Provide compatible fields for TUI wizard usage
+      alwaysMono: (phase.agents ?? 1) === 1 && phase.execution !== 'parallel',
+      fixedRoles: phase.agents && phase.agents > 1
+        ? Array.from({ length: phase.agents }, () => 'agent')
+        : ['agent'],
+      optionalRoles: [],
+      judgeContract: phase.judge ? 'Custom phase judge contract.' : null,
+    };
+  }
+
+  return result;
+}

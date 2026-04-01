@@ -2,6 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  createCustomSdd,
+  loadCustomSdds,
+  loadCustomSdd,
+  deleteCustomSdd,
+} from './core/sdd-catalog-io.js';
+import {
   formatConfigPathForDisplay,
   getConfigPath,
   activateOpenCodeCommand,
@@ -185,6 +191,12 @@ export async function runCli(argv) {
       return runProfile(rest);
     case 'catalog':
       return runCatalog(rest);
+    case 'sdd':
+      return runSddCommand(rest);
+    case 'role':
+      return runRoleCommand(rest);
+    case 'phase':
+      return runPhaseCommand(rest);
     case 'inspect':
       return runInspect(rest);
     case 'setup':
@@ -1692,6 +1704,104 @@ function renderCommandHelp(topic, subtopic) {
     ].join('\n') + '\n';
   }
 
+  if (normalized === 'sdd') {
+    const sub = subtopic?.toLowerCase();
+    if (!sub) {
+      return [
+        'Usage: gsr sdd <subcommand> [args]',
+        'Manage custom SDD definitions (stored in router/catalogs/).',
+        '',
+        '  create <name> [--description <desc>]  Create a new custom SDD.',
+        '  list                                  List all custom SDDs.',
+        '  show <name>                           Show SDD details (phases, triggers).',
+        '  delete <name> [--yes]                 Delete a custom SDD.',
+        '',
+        'Examples:',
+        '  gsr sdd create game-design --description "Game design workflow"',
+        '  gsr sdd list',
+        '  gsr sdd show game-design',
+        '  gsr sdd delete game-design --yes',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'create') {
+      return [
+        'Usage: gsr sdd create <name> [--description <desc>]',
+        'Create a new custom SDD catalog in router/catalogs/<name>/.',
+        '  <name>               SDD name (slug: lowercase letters, digits, hyphens).',
+        '  --description <desc> Optional human-readable description.',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'list') {
+      return [
+        'Usage: gsr sdd list',
+        'List all custom SDDs in router/catalogs/.',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'show') {
+      return [
+        'Usage: gsr sdd show <name>',
+        'Show the phases, triggers, and metadata of a custom SDD.',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'delete') {
+      return [
+        'Usage: gsr sdd delete <name> [--yes]',
+        'Delete a custom SDD catalog and all its files.',
+        '  <name>  SDD name to delete.',
+        '  --yes   Skip confirmation prompt.',
+      ].join('\n') + '\n';
+    }
+    return null;
+  }
+
+  if (normalized === 'role') {
+    const sub = subtopic?.toLowerCase();
+    if (!sub) {
+      return [
+        'Usage: gsr role <subcommand> [args]',
+        'Manage catalog-scoped role contracts for a custom SDD.',
+        '',
+        '  create <name> --sdd <sdd-name>  Create a new role contract .md file.',
+        '',
+        'Examples:',
+        '  gsr role create director --sdd game-design',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'create') {
+      return [
+        'Usage: gsr role create <name> --sdd <sdd-name>',
+        'Create a new catalog-scoped role contract in router/catalogs/<sdd>/contracts/roles/.',
+        '  <name>           Role name (slug: lowercase letters, digits, hyphens).',
+        '  --sdd <sdd-name> The SDD catalog to add the role to (required).',
+      ].join('\n') + '\n';
+    }
+    return null;
+  }
+
+  if (normalized === 'phase') {
+    const sub = subtopic?.toLowerCase();
+    if (!sub) {
+      return [
+        'Usage: gsr phase <subcommand> [args]',
+        'Manage catalog-scoped phase contracts for a custom SDD.',
+        '',
+        '  create <name> --sdd <sdd-name>  Create a new phase contract .md file.',
+        '',
+        'Examples:',
+        '  gsr phase create concept --sdd game-design',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'create') {
+      return [
+        'Usage: gsr phase create <name> --sdd <sdd-name>',
+        'Create a new catalog-scoped phase contract in router/catalogs/<sdd>/contracts/phases/.',
+        '  <name>           Phase name (slug: lowercase letters, digits, hyphens).',
+        '  --sdd <sdd-name> The SDD catalog to add the phase to (required).',
+      ].join('\n') + '\n';
+    }
+    return null;
+  }
+
   return null;
 }
 
@@ -2187,4 +2297,340 @@ function parseInstallOptions(args, defaults = {}) {
     ...options,
     intent: options.intent.join('; '),
   };
+}
+
+// === SDD COMMANDS ============================================================
+
+/**
+ * Internal dispatcher for `gsr sdd <subcommand>`.
+ * @param {string[]} args
+ */
+export function runSddCommand(args) {
+  const [sub, ...rest] = args;
+  switch (sub) {
+    case 'create': {
+      const configPath = discoverConfigPath();
+      if (!configPath) {
+        process.stdout.write('No router config found. Run `gsr install` first.\n');
+        return;
+      }
+      const catalogsDir = path.join(path.dirname(configPath), 'catalogs');
+      return runSddCreate(rest, catalogsDir);
+    }
+    case 'list': {
+      const configPath = discoverConfigPath();
+      if (!configPath) {
+        process.stdout.write('No router config found. Run `gsr install` first.\n');
+        return;
+      }
+      const catalogsDir = path.join(path.dirname(configPath), 'catalogs');
+      return runSddList(rest, catalogsDir);
+    }
+    case 'show': {
+      const configPath = discoverConfigPath();
+      if (!configPath) {
+        process.stdout.write('No router config found. Run `gsr install` first.\n');
+        return;
+      }
+      const catalogsDir = path.join(path.dirname(configPath), 'catalogs');
+      return runSddShow(rest, catalogsDir);
+    }
+    case 'delete': {
+      const configPath = discoverConfigPath();
+      if (!configPath) {
+        process.stdout.write('No router config found. Run `gsr install` first.\n');
+        return;
+      }
+      const catalogsDir = path.join(path.dirname(configPath), 'catalogs');
+      return runSddDelete(rest, catalogsDir);
+    }
+    default:
+      if (sub === 'help' || sub === '--help' || !sub) {
+        process.stdout.write(renderCommandHelp('sdd') ?? '');
+        return;
+      }
+      printUsage();
+      throw new Error(sub ? `Unknown sdd command: ${sub}` : 'gsr sdd requires a subcommand.');
+  }
+}
+
+/**
+ * Internal dispatcher for `gsr role <subcommand>`.
+ * @param {string[]} args
+ */
+export function runRoleCommand(args) {
+  const [sub, ...rest] = args;
+  switch (sub) {
+    case 'create': {
+      const configPath = discoverConfigPath();
+      if (!configPath) {
+        process.stdout.write('No router config found. Run `gsr install` first.\n');
+        return;
+      }
+      const catalogsDir = path.join(path.dirname(configPath), 'catalogs');
+      return runRoleCreate(rest, catalogsDir);
+    }
+    default:
+      if (sub === 'help' || sub === '--help' || !sub) {
+        process.stdout.write(renderCommandHelp('role') ?? '');
+        return;
+      }
+      printUsage();
+      throw new Error(sub ? `Unknown role command: ${sub}` : 'gsr role requires a subcommand.');
+  }
+}
+
+/**
+ * Internal dispatcher for `gsr phase <subcommand>`.
+ * @param {string[]} args
+ */
+export function runPhaseCommand(args) {
+  const [sub, ...rest] = args;
+  switch (sub) {
+    case 'create': {
+      const configPath = discoverConfigPath();
+      if (!configPath) {
+        process.stdout.write('No router config found. Run `gsr install` first.\n');
+        return;
+      }
+      const catalogsDir = path.join(path.dirname(configPath), 'catalogs');
+      return runPhaseCreate(rest, catalogsDir);
+    }
+    default:
+      if (sub === 'help' || sub === '--help' || !sub) {
+        process.stdout.write(renderCommandHelp('phase') ?? '');
+        return;
+      }
+      printUsage();
+      throw new Error(sub ? `Unknown phase command: ${sub}` : 'gsr phase requires a subcommand.');
+  }
+}
+
+// === EXPORTED SDD COMMAND FUNCTIONS (for direct testing) =====================
+
+/**
+ * Create a new custom SDD.
+ * @param {string[]} args - CLI args after 'sdd create'
+ * @param {string} catalogsDir - Path to router/catalogs/
+ */
+export function runSddCreate(args, catalogsDir) {
+  const name = args.find((a) => !a.startsWith('--'));
+  if (!name) {
+    throw new Error('gsr sdd create requires a name.');
+  }
+
+  const descIndex = args.indexOf('--description');
+  const description = descIndex !== -1 ? args[descIndex + 1] : undefined;
+
+  const result = createCustomSdd(catalogsDir, name, description);
+  process.stdout.write(`Created SDD '${result.name}' at ${result.path}\n`);
+}
+
+/**
+ * List all custom SDDs.
+ * @param {string[]} _args
+ * @param {string} catalogsDir
+ */
+export function runSddList(_args, catalogsDir) {
+  const sdds = loadCustomSdds(catalogsDir);
+
+  if (sdds.length === 0) {
+    process.stdout.write('No custom SDDs found. Run `gsr sdd create <name>` to create one.\n');
+    return;
+  }
+
+  process.stdout.write('Custom SDDs:\n');
+  for (const sdd of sdds) {
+    const desc = sdd.description ? ` — ${sdd.description}` : '';
+    const phaseCount = Object.keys(sdd.phases).length;
+    process.stdout.write(`  ${sdd.name}${desc} (${phaseCount} phase(s))\n`);
+  }
+}
+
+/**
+ * Show details of a custom SDD.
+ * @param {string[]} args
+ * @param {string} catalogsDir
+ */
+export function runSddShow(args, catalogsDir) {
+  const name = args.find((a) => !a.startsWith('--'));
+  if (!name) {
+    throw new Error('gsr sdd show requires a name.');
+  }
+
+  const sdd = loadCustomSdd(catalogsDir, name);
+
+  process.stdout.write(`SDD: ${sdd.name}\n`);
+  if (sdd.description) {
+    process.stdout.write(`Description: ${sdd.description}\n`);
+  }
+  process.stdout.write(`Version: ${sdd.version}\n`);
+  process.stdout.write(`Phases (${Object.keys(sdd.phases).length}):\n`);
+  for (const [phaseName, phase] of Object.entries(sdd.phases)) {
+    process.stdout.write(`  ${phaseName}: ${phase.intent} [${phase.execution}]\n`);
+  }
+  if (sdd.triggers) {
+    process.stdout.write('Triggers:\n');
+    if (sdd.triggers.from_sdd) {
+      process.stdout.write(`  from_sdd: ${sdd.triggers.from_sdd}\n`);
+    }
+    if (sdd.triggers.trigger_phase) {
+      process.stdout.write(`  trigger_phase: ${sdd.triggers.trigger_phase}\n`);
+    }
+    if (sdd.triggers.return_to) {
+      process.stdout.write(`  return_to: ${sdd.triggers.return_to}\n`);
+    }
+  }
+}
+
+/**
+ * Delete a custom SDD.
+ * @param {string[]} args
+ * @param {string} catalogsDir
+ */
+export function runSddDelete(args, catalogsDir) {
+  const name = args.find((a) => !a.startsWith('--'));
+  if (!name) {
+    throw new Error('gsr sdd delete requires a name.');
+  }
+
+  const yes = args.includes('--yes');
+
+  if (!yes) {
+    process.stdout.write(`This will delete SDD '${name}' and all its contents.\n`);
+    process.stdout.write(`Run with --yes to confirm: gsr sdd delete ${name} --yes\n`);
+    return;
+  }
+
+  const result = deleteCustomSdd(catalogsDir, name);
+  process.stdout.write(`Deleted SDD '${result.name}' from ${result.path}\n`);
+}
+
+// === ROLE CONTRACT TEMPLATE ===================================================
+
+const ROLE_CONTRACT_TEMPLATE = (roleName) => `---
+name: ${roleName}
+description: >
+  {Role description placeholder}
+metadata:
+  author: user
+  version: "1.0"
+  scope: catalog
+---
+
+## Role Definition
+
+{Describe what this role does within the SDD workflow.}
+
+## Input Contract
+
+- {What this role receives}
+
+## Output Contract
+
+- {What this role produces}
+`;
+
+// === PHASE CONTRACT TEMPLATE ==================================================
+
+const PHASE_CONTRACT_TEMPLATE = (phaseName) => `---
+name: ${phaseName}
+phase_order: 0
+description: {Phase intent from sdd.yaml}
+---
+
+## Composition
+
+| Role | Fixed/Optional | Count | Notes |
+|------|---------------|-------|-------|
+
+## Execution Mode
+Default: \`sequential\`
+
+## Phase Input
+- {Describe expected input}
+
+## Phase Output
+- {Describe expected output}
+`;
+
+// === EXPORTED ROLE/PHASE COMMAND FUNCTIONS ====================================
+
+/**
+ * Create a catalog-scoped role contract.
+ * @param {string[]} args - CLI args after 'role create'
+ * @param {string} catalogsDir
+ */
+export function runRoleCreate(args, catalogsDir) {
+  const sddIndex = args.indexOf('--sdd');
+  const sddName = sddIndex !== -1 ? args[sddIndex + 1] : null;
+  if (!sddName) {
+    throw new Error('gsr role create requires --sdd <catalog>.');
+  }
+
+  // Positional name: non-flag arg that is NOT the value after --sdd
+  const name = args.find((a, i) => {
+    if (a.startsWith('--')) return false;
+    if (sddIndex !== -1 && i === sddIndex + 1) return false;
+    return true;
+  });
+  if (!name) {
+    throw new Error('gsr role create requires a role name.');
+  }
+
+  // Verify catalog exists
+  const catalogDir = path.join(catalogsDir, sddName);
+  if (!fs.existsSync(catalogDir)) {
+    throw new Error(`Catalog '${sddName}' not found at ${catalogDir}.`);
+  }
+
+  const rolePath = path.join(catalogDir, 'contracts', 'roles', `${name}.md`);
+  fs.mkdirSync(path.dirname(rolePath), { recursive: true });
+
+  const template = ROLE_CONTRACT_TEMPLATE(name);
+  const tempPath = `${rolePath}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tempPath, template, 'utf8');
+  fs.renameSync(tempPath, rolePath);
+
+  process.stdout.write(`Created role contract '${name}' at ${rolePath}\n`);
+}
+
+/**
+ * Create a catalog-scoped phase contract.
+ * @param {string[]} args - CLI args after 'phase create'
+ * @param {string} catalogsDir
+ */
+export function runPhaseCreate(args, catalogsDir) {
+  const name = args.find((a) => !a.startsWith('--'));
+  if (!name) {
+    throw new Error('gsr phase create requires a phase name.');
+  }
+
+  const sddIndex = args.indexOf('--sdd');
+  const sddName = sddIndex !== -1 ? args[sddIndex + 1] : null;
+  if (!sddName) {
+    throw new Error('gsr phase create requires --sdd <catalog>.');
+  }
+
+  // Verify catalog exists
+  const catalogDir = path.join(catalogsDir, sddName);
+  if (!fs.existsSync(catalogDir)) {
+    throw new Error(`Catalog '${sddName}' not found at ${catalogDir}.`);
+  }
+
+  const phasePath = path.join(catalogDir, 'contracts', 'phases', `${name}.md`);
+  fs.mkdirSync(path.dirname(phasePath), { recursive: true });
+
+  // Do not overwrite existing contract — print warning instead
+  if (fs.existsSync(phasePath)) {
+    process.stdout.write(`Warning: Phase contract '${name}' already exists at ${phasePath}. Skipping.\n`);
+    return;
+  }
+
+  const template = PHASE_CONTRACT_TEMPLATE(name);
+  const tempPath = `${phasePath}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tempPath, template, 'utf8');
+  fs.renameSync(tempPath, phasePath);
+
+  process.stdout.write(`Created phase contract '${name}' at ${phasePath}\n`);
 }

@@ -1,0 +1,132 @@
+/**
+ * SDD Detail Screen — shows phases, roles, and trigger declarations for a selected SDD.
+ *
+ * Shows:
+ *   - SDD name and description
+ *   - All phases with intent and execution type
+ *   - Catalog-scoped role names
+ *   - Trigger fields if present
+ *   - Navigation to phase/role editors
+ *   - ESC returns to sdd-list
+ */
+import React, { useState, useEffect } from 'react';
+import { Box, Text, useInput } from 'ink';
+import { Menu } from '../components/menu.js';
+import { colors } from '../theme.js';
+
+const h = React.createElement;
+
+export function SddDetailScreen({
+  router,
+  configPath,
+  setDescription,
+  showResult,
+  selectedSdd,
+  setSelectedSdd,
+}) {
+  const [sdd, setSdd] = useState(null);
+  const [roles, setRoles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!selectedSdd) {
+      setError('No SDD selected.');
+      setLoading(false);
+      return;
+    }
+
+    (async () => {
+      try {
+        const pathMod = await import('node:path');
+        const fsMod = await import('node:fs');
+        const catalogsDir = pathMod.join(pathMod.dirname(configPath), 'catalogs');
+        const { loadCustomSdd } = await import('../../../core/sdd-catalog-io.js');
+        const loaded = loadCustomSdd(catalogsDir, selectedSdd);
+        setSdd(loaded);
+
+        // Load catalog-scoped role contracts
+        const rolesDir = pathMod.join(catalogsDir, selectedSdd, 'contracts', 'roles');
+        let roleFiles = [];
+        if (fsMod.existsSync(rolesDir)) {
+          try {
+            roleFiles = fsMod.readdirSync(rolesDir).filter(f => f.endsWith('.md'));
+          } catch { /* ignore */ }
+        }
+        setRoles(roleFiles.map(f => f.replace('.md', '')));
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [selectedSdd, configPath]);
+
+  useInput((input, key) => {
+    if (key.escape) {
+      router.pop();
+    }
+  });
+
+  if (loading) {
+    return h(Box, { flexDirection: 'column' },
+      h(Text, { color: colors.subtext }, 'Loading SDD...'),
+    );
+  }
+
+  if (error) {
+    return h(Box, { flexDirection: 'column' },
+      h(Text, { bold: true, color: colors.lavender }, 'SDD Detail'),
+      h(Text, { color: colors.red }, `Error: ${error}`),
+    );
+  }
+
+  const phaseNames = Object.keys(sdd.phases);
+
+  const items = [
+    { label: 'Edit phases', value: 'phases', description: 'Add, edit, or delete phases for this SDD.' },
+    { label: 'Manage roles', value: 'roles', description: 'Create or delete catalog-scoped role contracts.' },
+  ];
+
+  return h(Box, { flexDirection: 'column' },
+    h(Text, { bold: true, color: colors.lavender }, `SDD: ${sdd.name}`),
+    sdd.description ? h(Text, { color: colors.subtext }, sdd.description) : null,
+    h(Text, null, ''),
+    h(Text, { bold: true }, `Phases (${phaseNames.length}):`),
+    ...phaseNames.map(phaseName => {
+      const phase = sdd.phases[phaseName];
+      return h(Text, { key: phaseName },
+        `  ${phaseName}: ${phase.intent} [${phase.execution}]`
+      );
+    }),
+    h(Text, null, ''),
+    roles.length > 0 ? h(Box, { flexDirection: 'column' },
+      h(Text, { bold: true }, `Roles (${roles.length}):`),
+      ...roles.map(role => h(Text, { key: role }, `  ${role}`)),
+      h(Text, null, ''),
+    ) : null,
+    sdd.triggers && (sdd.triggers.from_sdd || sdd.triggers.trigger_phase) ? h(Box, { flexDirection: 'column' },
+      h(Text, { bold: true }, 'Triggers:'),
+      sdd.triggers.from_sdd ? h(Text, null, `  from_sdd: ${sdd.triggers.from_sdd}`) : null,
+      sdd.triggers.trigger_phase ? h(Text, null, `  trigger_phase: ${sdd.triggers.trigger_phase}`) : null,
+      sdd.triggers.return_to ? h(Text, null, `  return_to: ${sdd.triggers.return_to}`) : null,
+      h(Text, null, ''),
+    ) : null,
+    h(Menu, {
+      items,
+      onSelect: (value) => {
+        if (value === '__back__') { router.pop(); return; }
+        if (value === 'phases') {
+          router.push('sdd-phase-editor');
+          return;
+        }
+        if (value === 'roles') {
+          router.push('sdd-role-editor');
+          return;
+        }
+      },
+      setDescription,
+      showBack: true,
+    }),
+  );
+}

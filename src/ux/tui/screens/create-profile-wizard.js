@@ -1,4 +1,4 @@
-import React, { useEffect, useReducer } from 'react';
+import React, { useEffect, useMemo, useReducer } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { TextInput } from '@inkjs/ui';
 import { ModelPicker } from '../components/model-picker.js';
@@ -6,7 +6,7 @@ import { SplitPanelPicker } from '../components/split-panel-picker.js';
 import { PhaseComposer } from '../components/phase-composer.js';
 import { Menu } from '../components/menu.js';
 import { colors } from '../theme.js';
-import { CANONICAL_PHASES, PHASE_METADATA } from '../../../core/phases.js';
+import { CANONICAL_PHASES, PHASE_METADATA, loadPhaseMetadataForCatalog } from '../../../core/phases.js';
 
 const h = React.createElement;
 
@@ -66,7 +66,7 @@ const initialState = {
   name: '',
   type: null,        // 'mono' | 'per-phase' | 'multi-agent' | 'multi-full'
   phases: {},        // { orchestrator: [{ target, role, kind, phase }], ... }
-  phaseIndex: 0,     // which canonical phase we're configuring
+  phaseIndex: 0,     // which phase (by index into phasesList) we're configuring
   laneRole: 'primary', // which role we're picking for in current phase
   fallbackMode: null,  // 'yes' | 'no'
   fallbackRole: 'primary',
@@ -77,137 +77,161 @@ const initialState = {
   error: null,
 };
 
-function reducer(state, action) {
-  switch (action.type) {
-    case 'SET_NAME': return { ...state, name: action.value, error: null };
-    case 'SET_TYPE': return { ...state, type: action.value, step: 3, phaseIndex: 0, laneRole: 'primary' };
-    case 'SET_MODEL': {
-      // Add the model to the current phase/role, advance
-      const phaseName = CANONICAL_PHASES[state.phaseIndex];
-      const lane = { target: action.value, role: state.laneRole, kind: 'lane', phase: phaseName };
-      const currentLanes = state.phases[phaseName] || [];
-      const updatedLanes = [...currentLanes, lane];
-      const newPhases = { ...state.phases, [phaseName]: updatedLanes };
+/**
+ * Reducer factory — closes over `phasesList` so it works for both canonical
+ * and custom SDD phase lists.
+ * @param {string[]} phasesList - Ordered phase names (CANONICAL_PHASES or custom SDD phases)
+ */
+function makeReducer(phasesList) {
+  return function reducer(state, action) {
+    switch (action.type) {
+      case 'SET_NAME': return { ...state, name: action.value, error: null };
+      case 'SET_TYPE': return { ...state, type: action.value, step: 3, phaseIndex: 0, laneRole: 'primary' };
+      case 'SET_MODEL': {
+        // Add the model to the current phase/role, advance
+        const phaseName = phasesList[state.phaseIndex];
+        const lane = { target: action.value, role: state.laneRole, kind: 'lane', phase: phaseName };
+        const currentLanes = state.phases[phaseName] || [];
+        const updatedLanes = [...currentLanes, lane];
+        const newPhases = { ...state.phases, [phaseName]: updatedLanes };
 
-      // Figure out next step
-      if (state.type === 'mono') {
-        // Apply same model to all phases
-        const allPhases = {};
-        for (const p of CANONICAL_PHASES) {
-          allPhases[p] = [{ target: action.value, role: 'primary', kind: 'lane', phase: p }];
+        // Figure out next step
+        if (state.type === 'mono') {
+          // Apply same model to all phases
+          const allPhases = {};
+          for (const p of phasesList) {
+            allPhases[p] = [{ target: action.value, role: 'primary', kind: 'lane', phase: p }];
+          }
+          return { ...state, phases: allPhases, step: 4 };
         }
-        return { ...state, phases: allPhases, step: 4 };
-      }
 
-      // Need next role for this phase?
-      if (state.type === 'multi-agent' && state.laneRole === 'primary') {
-        return { ...state, phases: newPhases, laneRole: 'judge' };
-      }
-      if (state.type === 'multi-full' && state.laneRole === 'primary') {
-        return { ...state, phases: newPhases, laneRole: 'judge' };
-      }
-      if (state.type === 'multi-full' && state.laneRole === 'judge') {
-        return { ...state, phases: newPhases, laneRole: 'radar' };
-      }
-
-      // Next phase
-      const nextPhaseIndex = state.phaseIndex + 1;
-      if (nextPhaseIndex >= CANONICAL_PHASES.length) {
-        return { ...state, phases: newPhases, step: 4 };
-      }
-      return { ...state, phases: newPhases, phaseIndex: nextPhaseIndex, laneRole: 'primary' };
-    }
-    case 'SET_FALLBACK_MODE':
-      if (action.value === 'no') {
-        return { ...state, fallbackMode: 'no', step: 5 };
-      }
-      return { ...state, fallbackMode: 'yes', fallbackPhaseIndex: 0, fallbackLaneIndex: 0 };
-    case 'SET_FALLBACK': {
-      const phaseName = CANONICAL_PHASES[state.fallbackPhaseIndex];
-      const lanes = [...(state.phases[phaseName] || [])];
-      if (lanes[state.fallbackLaneIndex]) {
-        const currentFallbacks = Array.isArray(lanes[state.fallbackLaneIndex].fallbacks)
-          ? lanes[state.fallbackLaneIndex].fallbacks
-          : lanes[state.fallbackLaneIndex].fallbacks
-            ? [lanes[state.fallbackLaneIndex].fallbacks]
-            : [];
-        lanes[state.fallbackLaneIndex] = {
-          ...lanes[state.fallbackLaneIndex],
-          fallbacks: [...currentFallbacks, action.value],
-        };
-      }
-      const newPhases = { ...state.phases, [phaseName]: lanes };
-      return { ...state, phases: newPhases, pickingFallback: true };
-    }
-    case 'CONTINUE_FALLBACK': {
-      // Move to next lane or phase
-      const phaseName = CANONICAL_PHASES[state.fallbackPhaseIndex];
-      const lanes = state.phases[phaseName] || [];
-      const nextLaneIndex = state.fallbackLaneIndex + 1;
-      if (nextLaneIndex < lanes.length) {
-        return { ...state, fallbackLaneIndex: nextLaneIndex, pickingFallback: false };
-      }
-      const nextPhaseIndex = state.fallbackPhaseIndex + 1;
-      if (nextPhaseIndex >= CANONICAL_PHASES.length) {
-        return { ...state, step: 5, pickingFallback: false };
-      }
-      return { ...state, fallbackPhaseIndex: nextPhaseIndex, fallbackLaneIndex: 0, pickingFallback: false };
-    }
-    case 'PICK_MORE_FALLBACK': return { ...state, pickingFallback: false };
-    case 'SET_ALL_PHASES': return { ...state, phases: action.value };
-    case 'SET_LANE_ROLE': return { ...state, laneRole: action.value };
-    case 'SET_FALLBACK_ROLE': return { ...state, fallbackRole: action.value };
-    case 'SET_FALLBACK_MODE_RESET': return { ...state, fallbackMode: null, fallbackRole: 'primary' };
-    case 'SKIP_FALLBACK': {
-      // Skip this lane's fallback, advance same as CONTINUE_FALLBACK
-      const phaseName = CANONICAL_PHASES[state.fallbackPhaseIndex];
-      const lanes = state.phases[phaseName] || [];
-      const nextLaneIndex = state.fallbackLaneIndex + 1;
-      if (nextLaneIndex < lanes.length) {
-        return { ...state, fallbackLaneIndex: nextLaneIndex, pickingFallback: false };
-      }
-      const nextPhaseIndex = state.fallbackPhaseIndex + 1;
-      if (nextPhaseIndex >= CANONICAL_PHASES.length) {
-        return { ...state, step: 5, pickingFallback: false };
-      }
-      return { ...state, fallbackPhaseIndex: nextPhaseIndex, fallbackLaneIndex: 0, pickingFallback: false };
-    }
-    case 'GO_TO_STEP': return { ...state, step: action.value };
-    case 'SET_SAVING': return { ...state, saving: true };
-    case 'SET_ERROR': return { ...state, error: action.value, saving: false };
-    case 'BACK': {
-      if (state.step === 1) return state; // can't go back from step 1
-      if (state.step === 3 && state.phaseIndex === 0 && state.laneRole === 'primary') return { ...state, step: 2 };
-      if (state.step === 3) {
-        // Go back one step in model selection
-        if (state.laneRole !== 'primary') {
-          // Go back to primary of same phase
-          const phaseName = CANONICAL_PHASES[state.phaseIndex];
-          const lanes = (state.phases[phaseName] || []).slice(0, -1);
-          const newPhases = { ...state.phases, [phaseName]: lanes.length > 0 ? lanes : undefined };
-          // Clean up undefined
-          for (const k of Object.keys(newPhases)) { if (!newPhases[k]) delete newPhases[k]; }
-          const prevRole = state.laneRole === 'radar' ? 'judge' : 'primary';
-          return { ...state, phases: newPhases, laneRole: prevRole };
+        // Need next role for this phase?
+        if (state.type === 'multi-agent' && state.laneRole === 'primary') {
+          return { ...state, phases: newPhases, laneRole: 'judge' };
         }
-        // Go back to previous phase
-        const prevIndex = state.phaseIndex - 1;
-        if (prevIndex < 0) return { ...state, step: 2 };
-        const prevPhaseName = CANONICAL_PHASES[prevIndex];
-        const prevLanes = (state.phases[prevPhaseName] || []).slice(0, -1);
-        const newPhases = { ...state.phases };
-        delete newPhases[CANONICAL_PHASES[state.phaseIndex]];
-        if (prevLanes.length > 0) newPhases[prevPhaseName] = prevLanes;
-        else delete newPhases[prevPhaseName];
-        return { ...state, phases: newPhases, phaseIndex: prevIndex, laneRole: 'primary' };
+        if (state.type === 'multi-full' && state.laneRole === 'primary') {
+          return { ...state, phases: newPhases, laneRole: 'judge' };
+        }
+        if (state.type === 'multi-full' && state.laneRole === 'judge') {
+          return { ...state, phases: newPhases, laneRole: 'radar' };
+        }
+
+        // Next phase
+        const nextPhaseIndex = state.phaseIndex + 1;
+        if (nextPhaseIndex >= phasesList.length) {
+          return { ...state, phases: newPhases, step: 4 };
+        }
+        return { ...state, phases: newPhases, phaseIndex: nextPhaseIndex, laneRole: 'primary' };
       }
-      return { ...state, step: state.step - 1 };
+      case 'SET_FALLBACK_MODE':
+        if (action.value === 'no') {
+          return { ...state, fallbackMode: 'no', step: 5 };
+        }
+        return { ...state, fallbackMode: 'yes', fallbackPhaseIndex: 0, fallbackLaneIndex: 0 };
+      case 'SET_FALLBACK': {
+        const phaseName = phasesList[state.fallbackPhaseIndex];
+        const lanes = [...(state.phases[phaseName] || [])];
+        if (lanes[state.fallbackLaneIndex]) {
+          const currentFallbacks = Array.isArray(lanes[state.fallbackLaneIndex].fallbacks)
+            ? lanes[state.fallbackLaneIndex].fallbacks
+            : lanes[state.fallbackLaneIndex].fallbacks
+              ? [lanes[state.fallbackLaneIndex].fallbacks]
+              : [];
+          lanes[state.fallbackLaneIndex] = {
+            ...lanes[state.fallbackLaneIndex],
+            fallbacks: [...currentFallbacks, action.value],
+          };
+        }
+        const newPhases = { ...state.phases, [phaseName]: lanes };
+        return { ...state, phases: newPhases, pickingFallback: true };
+      }
+      case 'CONTINUE_FALLBACK': {
+        // Move to next lane or phase
+        const phaseName = phasesList[state.fallbackPhaseIndex];
+        const lanes = state.phases[phaseName] || [];
+        const nextLaneIndex = state.fallbackLaneIndex + 1;
+        if (nextLaneIndex < lanes.length) {
+          return { ...state, fallbackLaneIndex: nextLaneIndex, pickingFallback: false };
+        }
+        const nextPhaseIndex = state.fallbackPhaseIndex + 1;
+        if (nextPhaseIndex >= phasesList.length) {
+          return { ...state, step: 5, pickingFallback: false };
+        }
+        return { ...state, fallbackPhaseIndex: nextPhaseIndex, fallbackLaneIndex: 0, pickingFallback: false };
+      }
+      case 'PICK_MORE_FALLBACK': return { ...state, pickingFallback: false };
+      case 'SET_ALL_PHASES': return { ...state, phases: action.value };
+      case 'SET_LANE_ROLE': return { ...state, laneRole: action.value };
+      case 'SET_FALLBACK_ROLE': return { ...state, fallbackRole: action.value };
+      case 'SET_FALLBACK_MODE_RESET': return { ...state, fallbackMode: null, fallbackRole: 'primary' };
+      case 'SKIP_FALLBACK': {
+        // Skip this lane's fallback, advance same as CONTINUE_FALLBACK
+        const phaseName = phasesList[state.fallbackPhaseIndex];
+        const lanes = state.phases[phaseName] || [];
+        const nextLaneIndex = state.fallbackLaneIndex + 1;
+        if (nextLaneIndex < lanes.length) {
+          return { ...state, fallbackLaneIndex: nextLaneIndex, pickingFallback: false };
+        }
+        const nextPhaseIndex = state.fallbackPhaseIndex + 1;
+        if (nextPhaseIndex >= phasesList.length) {
+          return { ...state, step: 5, pickingFallback: false };
+        }
+        return { ...state, fallbackPhaseIndex: nextPhaseIndex, fallbackLaneIndex: 0, pickingFallback: false };
+      }
+      case 'GO_TO_STEP': return { ...state, step: action.value };
+      case 'SET_SAVING': return { ...state, saving: true };
+      case 'SET_ERROR': return { ...state, error: action.value, saving: false };
+      case 'BACK': {
+        if (state.step === 1) return state; // can't go back from step 1
+        if (state.step === 3 && state.phaseIndex === 0 && state.laneRole === 'primary') return { ...state, step: 2 };
+        if (state.step === 3) {
+          // Go back one step in model selection
+          if (state.laneRole !== 'primary') {
+            // Go back to primary of same phase
+            const phaseName = phasesList[state.phaseIndex];
+            const lanes = (state.phases[phaseName] || []).slice(0, -1);
+            const newPhases = { ...state.phases, [phaseName]: lanes.length > 0 ? lanes : undefined };
+            // Clean up undefined
+            for (const k of Object.keys(newPhases)) { if (!newPhases[k]) delete newPhases[k]; }
+            const prevRole = state.laneRole === 'radar' ? 'judge' : 'primary';
+            return { ...state, phases: newPhases, laneRole: prevRole };
+          }
+          // Go back to previous phase
+          const prevIndex = state.phaseIndex - 1;
+          if (prevIndex < 0) return { ...state, step: 2 };
+          const prevPhaseName = phasesList[prevIndex];
+          const prevLanes = (state.phases[prevPhaseName] || []).slice(0, -1);
+          const newPhases = { ...state.phases };
+          delete newPhases[phasesList[state.phaseIndex]];
+          if (prevLanes.length > 0) newPhases[prevPhaseName] = prevLanes;
+          else delete newPhases[prevPhaseName];
+          return { ...state, phases: newPhases, phaseIndex: prevIndex, laneRole: 'primary' };
+        }
+        return { ...state, step: state.step - 1 };
+      }
+      default: return state;
     }
-    default: return state;
-  }
+  };
 }
 
 export function CreateProfileWizard({ configPath, router, setDescription, showResult, reloadConfig, catalogName }) {
+  // Resolve phase list dynamically: use custom SDD phases when catalogName is provided,
+  // otherwise fall back to CANONICAL_PHASES for the default/null catalog.
+  const { phasesList, phaseMetadata } = useMemo(() => {
+    if (catalogName && configPath) {
+      try {
+        const routerDir = configPath.replace(/\/router\.yaml$/, '');
+        const catalogsDir = `${routerDir}/catalogs`;
+        const metadata = loadPhaseMetadataForCatalog(catalogName, catalogsDir);
+        return { phasesList: Object.keys(metadata), phaseMetadata: metadata };
+      } catch {
+        // Fallback to canonical if custom SDD load fails
+      }
+    }
+    return { phasesList: CANONICAL_PHASES, phaseMetadata: PHASE_METADATA };
+  }, [catalogName, configPath]);
+
+  const reducer = useMemo(() => makeReducer(phasesList), [phasesList]);
   const [state, dispatch] = useReducer(reducer, initialState);
   const pickerActive = state.step === 3 || (state.step === 4 && state.fallbackMode === 'yes');
 
@@ -348,17 +372,20 @@ export function CreateProfileWizard({ configPath, router, setDescription, showRe
 
   // Mono fallback: single picker applied to all phases
   if (state.step === 4 && state.fallbackMode === 'yes' && state.type === 'mono') {
-    const primaryTarget = state.phases.orchestrator?.[0]?.target ?? null;
+    // Use the first phase's model as the primary target reference for exclusion
+    const firstPhase = phasesList[0];
+    const primaryTarget = firstPhase && state.phases[firstPhase]?.[0]?.target ?? null;
+    const phaseCount = phasesList.length;
 
     return h(Box, { flexDirection: 'column' },
       h(Text, { bold: true, color: colors.lavender }, 'Step 4/6 — Fallback Model (all phases)'),
-      h(Text, { color: colors.subtext }, 'Pick one fallback model — it will be applied to all 10 phases.'),
+      h(Text, { color: colors.subtext }, `Pick one fallback model — it will be applied to all ${phaseCount} phases.`),
       h(Text, null, ''),
       h(ModelPicker, {
         key: 'mono-fallback',
         onSelect: (modelId) => {
           const newPhases = {};
-          for (const p of CANONICAL_PHASES) {
+          for (const p of phasesList) {
             const lanes = (state.phases[p] || []).map(lane => ({ ...lane, fallbacks: [modelId] }));
             newPhases[p] = lanes;
           }
@@ -416,7 +443,7 @@ export function CreateProfileWizard({ configPath, router, setDescription, showRe
     lines.push(`Type: ${PROFILE_TYPES.find(t => t.value === state.type)?.label ?? state.type}`);
     lines.push('');
 
-    for (const phaseName of CANONICAL_PHASES) {
+    for (const phaseName of phasesList) {
       const lanes = state.phases[phaseName] || [];
       if (lanes.length === 0) continue;
       lines.push(`  ${phaseName}:`);

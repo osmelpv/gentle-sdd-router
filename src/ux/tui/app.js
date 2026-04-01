@@ -14,6 +14,11 @@ import { CreateProfileWizard } from './screens/create-profile-wizard.js';
 import { EditProfileWizard } from './screens/edit-profile-wizard.js';
 import { ManageScreen } from './screens/manage.js';
 import { SettingsScreen } from './screens/settings.js';
+import { SddListScreen } from './screens/sdd-list.js';
+import { SddDetailScreen } from './screens/sdd-detail.js';
+import { SddCreateWizard } from './screens/sdd-create-wizard.js';
+import { SddPhaseEditor } from './screens/sdd-phase-editor.js';
+import { SddRoleEditor } from './screens/sdd-role-editor.js';
 
 const h = React.createElement;
 
@@ -26,10 +31,11 @@ function App({ initialConfig, initialConfigPath }) {
   const [configPath, setConfigPath] = useState(initialConfigPath);
   const [selectedCatalog, setSelectedCatalog] = useState(null);
   const [selectedProfile, setSelectedProfile] = useState(null);
+  const [selectedSdd, setSelectedSdd] = useState(null);
 
   // Global quit (only when not in text input screens)
   useInput((input, key) => {
-    const textScreens = ['create-profile', 'edit-profile'];
+    const textScreens = ['create-profile', 'edit-profile', 'sdd-create-wizard', 'sdd-list', 'sdd-detail', 'sdd-phase-editor', 'sdd-role-editor'];
     if (input === 'q' && !textScreens.includes(router.current) && router.current !== 'result') {
       exit();
     }
@@ -60,6 +66,7 @@ function App({ initialConfig, initialConfigPath }) {
     setConfig, setConfigPath,
     selectedCatalog, setSelectedCatalog,
     selectedProfile, setSelectedProfile,
+    selectedSdd, setSelectedSdd,
     // Convenience: pass profile and catalog name to wizards
     profileName: selectedProfile,
     catalogName: selectedCatalog,
@@ -76,6 +83,11 @@ function App({ initialConfig, initialConfigPath }) {
     'edit-profile': h(EditProfileWizard, ctx),
     'manage': h(ManageScreen, ctx),
     'settings': h(SettingsScreen, ctx),
+    'sdd-list': h(SddListScreen, ctx),
+    'sdd-detail': h(SddDetailScreen, ctx),
+    'sdd-create-wizard': h(SddCreateWizard, ctx),
+    'sdd-phase-editor': h(SddPhaseEditor, ctx),
+    'sdd-role-editor': h(SddRoleEditor, ctx),
     'result': h(ResultScreen, { text: result, onBack: () => router.pop() }),
   };
 
