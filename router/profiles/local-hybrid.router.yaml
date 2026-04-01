@@ -1,0 +1,70 @@
+name: local-hybrid
+# Strategy: free cloud models (openrouter free tier) as primary per SDD phase,
+# with ranked ollama local fallbacks for offline resilience.
+# Based on the ArchonLord ollama-archon preset pattern.
+availability: stable
+complexity: medium
+identity:
+  inherit_agents_md: true
+  persona: gentleman
+phases:
+  orchestrator:
+    - target: opencode/qwen3.6-plus-free
+      kind: lane
+      phase: orchestrator
+      role: primary
+      fallbacks: opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/devstral-small-2:24b
+  explore:
+    - target: opencode/nemotron-3-super-free
+      kind: lane
+      phase: explore
+      role: primary
+      fallbacks: opencode/qwen3.6-plus-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/devstral-small-2:24b
+  propose:
+    - target: opencode/qwen3.6-plus-free
+      kind: lane
+      phase: propose
+      role: primary
+      fallbacks: opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
+  spec:
+    - target: opencode/qwen3.6-plus-free
+      kind: lane
+      phase: spec
+      role: primary
+      fallbacks: opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
+  design:
+    - target: opencode/qwen3.6-plus-free
+      kind: lane
+      phase: design
+      role: primary
+      fallbacks: opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
+  tasks:
+    - target: opencode/qwen3.6-plus-free
+      kind: lane
+      phase: tasks
+      role: primary
+      fallbacks: opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
+  apply:
+    - target: opencode/mimo-v2-pro-free
+      kind: lane
+      phase: apply
+      role: primary
+      fallbacks: opencode/qwen3.6-plus-free, opencode/nemotron-3-super-free, opencode/minimax-m2.5-free, ollama/devstral-small-2:24b
+  verify:
+    - target: opencode/nemotron-3-super-free
+      kind: lane
+      phase: verify
+      role: judge
+      fallbacks: opencode/qwen3.6-plus-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
+  debug:
+    - target: opencode/qwen3.6-plus-free
+      kind: lane
+      phase: debug
+      role: primary
+      fallbacks: opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/devstral-small-2:24b
+  archive:
+    - target: opencode/minimax-m2.5-free
+      kind: lane
+      phase: archive
+      role: primary
+      fallbacks: opencode/qwen3.6-plus-free, opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, ollama/nemotron-cascade-2
