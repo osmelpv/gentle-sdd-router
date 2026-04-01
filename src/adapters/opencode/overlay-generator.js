@@ -137,15 +137,19 @@ export function generateOpenCodeOverlay(config, options = {}) {
  * Rules:
  *   - Non-gsr-* keys are always preserved.
  *   - gsr-* entries with _gsr_generated === true in existing → safe to overwrite.
- *   - gsr-* entries without _gsr_generated (or _gsr_generated !== true) in existing → preserved + warning.
+ *   - gsr-* entries without _gsr_generated (or _gsr_generated !== true) in existing → preserved + warning
+ *     (unless force=true, in which case they are overwritten with a warning).
  *   - gsr-* entries in existing that are NOT in the new overlay → removed only if _gsr_generated === true;
- *     user-created entries (no marker) are preserved.
+ *     user-created entries (no marker) are preserved (unless force=true).
  *
  * @param {{ agent: Record<string, object>, warnings?: string[] }} overlay - Output from generateOpenCodeOverlay
  * @param {object} [existing] - Current opencode.json content (parsed JSON object)
+ * @param {{ force?: boolean }} [options]
+ *   - force {boolean}: When true, overwrites ALL gsr-* entries including user-modified ones. Default: false.
  * @returns {{ agent: Record<string, object>, warnings: string[] }} - Merged config with warnings
  */
-export function mergeOverlayWithExisting(overlay, existing = {}) {
+export function mergeOverlayWithExisting(overlay, existing = {}, options = {}) {
+  const force = options?.force === true;
   const result = JSON.parse(JSON.stringify(existing));
   const mergeWarnings = Array.isArray(overlay.warnings) ? [...overlay.warnings] : [];
 
@@ -153,15 +157,17 @@ export function mergeOverlayWithExisting(overlay, existing = {}) {
 
   // Separate gsr-* entries in existing into:
   //   - GSR-managed (has _gsr_generated === true) → safe to remove/replace
-  //   - User-owned (no marker or _gsr_generated !== true) → preserve
+  //   - User-owned (no marker or _gsr_generated !== true) → preserve (unless force)
   const existingGsrKeys = Object.keys(result.agent).filter(k => k.startsWith(GSR_AGENT_PREFIX));
   const userOwnedKeys = new Set();
 
-  for (const key of existingGsrKeys) {
-    const entry = result.agent[key];
-    if (entry?._gsr_generated !== true) {
-      // User-owned entry — preserve it
-      userOwnedKeys.add(key);
+  if (!force) {
+    for (const key of existingGsrKeys) {
+      const entry = result.agent[key];
+      if (entry?._gsr_generated !== true) {
+        // User-owned entry — preserve it
+        userOwnedKeys.add(key);
+      }
     }
   }
 
@@ -182,6 +188,14 @@ export function mergeOverlayWithExisting(overlay, existing = {}) {
       // Keep existing user entry (already in result.agent)
       continue;
     }
+
+    if (force && existing?.agent?.[key] && existing.agent[key]._gsr_generated !== true) {
+      // Force overwrite: emit warning indicating forced overwrite
+      mergeWarnings.push(
+        `${key}: force overwrite — user entry replaced by generated value`
+      );
+    }
+
     result.agent[key] = entry;
   }
 
@@ -196,9 +210,10 @@ export function mergeOverlayWithExisting(overlay, existing = {}) {
  *
  * @param {{ agent: Record<string, object> }} overlay
  * @param {string} [configPath] - Override the default opencode.json path (for testing)
+ * @param {{ force?: boolean }} [options]
  * @returns {object} - Merged config ready to write
  */
-export function mergeOverlayWithFile(overlay, configPath = OPENCODE_CONFIG_PATH) {
+export function mergeOverlayWithFile(overlay, configPath = OPENCODE_CONFIG_PATH, options = {}) {
   let existing = {};
 
   if (existsSync(configPath)) {
@@ -209,7 +224,7 @@ export function mergeOverlayWithFile(overlay, configPath = OPENCODE_CONFIG_PATH)
     }
   }
 
-  return mergeOverlayWithExisting(overlay, existing);
+  return mergeOverlayWithExisting(overlay, existing, options);
 }
 
 /**

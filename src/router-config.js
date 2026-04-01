@@ -17,6 +17,7 @@ export {
 
 export { CANONICAL_PHASES as CANONICAL_PHASES_FULL, PHASE_METADATA } from './core/phases.js';
 export { syncContracts, findContractsDir, readContracts, generateSyncManifest, readCatalogContracts } from './core/sync.js';
+export { unifiedSync } from './core/unified-sync.js';
 
 export {
   validateSddYaml,

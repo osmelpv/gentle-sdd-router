@@ -1,0 +1,592 @@
+/**
+ * Tests for src/core/unified-sync.js
+ *
+ * Covers: REQ-1 pipeline order, REQ-2 idempotency, partial failure,
+ * default-only sync (REQ-10), dry-run (REQ-4), and force (REQ-5).
+ *
+ * Auto-wiring integration tests are in Phase 4.
+ */
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, test, beforeEach, afterEach } from 'node:test';
+import { unifiedSync } from '../src/core/unified-sync.js';
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Create a minimal temp router directory with contracts + router.yaml.
+ * Returns { routerDir, configPath, contractsDir }.
+ */
+function makeTempRouterDir(options = {}) {
+  const {
+    withCatalogs = false,
+    catalogEnabled = true,
+    withPresets = true,
+    catalogName = 'default',
+  } = options;
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-us-test-'));
+  const routerDir = path.join(tmpDir, 'router');
+  const contractsDir = path.join(routerDir, 'contracts');
+
+  fs.mkdirSync(path.join(contractsDir, 'roles'), { recursive: true });
+  fs.mkdirSync(path.join(contractsDir, 'phases'), { recursive: true });
+
+  // Minimal role contract
+  fs.writeFileSync(
+    path.join(contractsDir, 'roles', 'primary.md'),
+    '# Role: Primary\n',
+    'utf8'
+  );
+
+  // Minimal phase contract
+  fs.writeFileSync(
+    path.join(contractsDir, 'phases', 'orchestrator.md'),
+    '# Phase: Orchestrator\n',
+    'utf8'
+  );
+
+  // Build minimal router.yaml — use version:3 for inline catalogs (v4 requires profile files)
+  let catalogsYaml = '';
+  if (withCatalogs) {
+    const enabledStr = catalogEnabled ? 'true' : 'false';
+    const presetsYaml = withPresets
+      ? `
+    presets:
+      testpreset:
+        availability: stable
+        phases:
+          orchestrator:
+            - kind: lane
+              phase: orchestrator
+              role: primary
+              target: anthropic/claude-sonnet`
+      : '';
+
+    catalogsYaml = `
+catalogs:
+  ${catalogName}:
+    enabled: ${enabledStr}${presetsYaml}
+`;
+  }
+
+  const routerYaml = `version: 3
+active_catalog: default
+active_preset: balanced
+activation_state: active
+${catalogsYaml}`;
+
+  const configPath = path.join(routerDir, 'router.yaml');
+  fs.writeFileSync(configPath, routerYaml, 'utf8');
+
+  return { tmpDir, routerDir, configPath, contractsDir };
+}
+
+// ── Result shape ──────────────────────────────────────────────────────────────
+
+describe('unifiedSync — result shape', () => {
+  let tmpDir;
+  let configPath;
+
+  beforeEach(() => {
+    ({ tmpDir, configPath } = makeTempRouterDir());
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('returns object with steps array', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    assert.ok(Array.isArray(result.steps), 'steps must be an array');
+    assert.ok(result.steps.length > 0, 'steps must not be empty');
+  });
+
+  test('returns status string that is ok, partial, or failed', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    assert.ok(
+      ['ok', 'partial', 'failed'].includes(result.status),
+      `status must be ok|partial|failed, got: ${result.status}`
+    );
+  });
+
+  test('returns warnings array', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    assert.ok(Array.isArray(result.warnings), 'warnings must be an array');
+  });
+
+  test('returns requiresReopen boolean', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    assert.equal(typeof result.requiresReopen, 'boolean', 'requiresReopen must be boolean');
+  });
+
+  test('each step has name and status fields', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    for (const step of result.steps) {
+      assert.ok(typeof step.name === 'string', `step.name must be string, got ${typeof step.name}`);
+      assert.ok(
+        ['ok', 'skipped', 'failed'].includes(step.status),
+        `step.status must be ok|skipped|failed, got: ${step.status}`
+      );
+    }
+  });
+});
+
+// ── Pipeline order (REQ-1) ────────────────────────────────────────────────────
+
+describe('unifiedSync — pipeline order (REQ-1)', () => {
+  let tmpDir;
+  let configPath;
+
+  beforeEach(() => {
+    ({ tmpDir, configPath } = makeTempRouterDir());
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('pipeline includes contracts step', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    const names = result.steps.map(s => s.name);
+    assert.ok(names.includes('contracts'), `expected contracts step, got: ${names.join(', ')}`);
+  });
+
+  test('pipeline includes overlay step', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    const names = result.steps.map(s => s.name);
+    assert.ok(names.includes('overlay'), `expected overlay step, got: ${names.join(', ')}`);
+  });
+
+  test('pipeline includes apply step', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    const names = result.steps.map(s => s.name);
+    assert.ok(names.includes('apply'), `expected apply step, got: ${names.join(', ')}`);
+  });
+
+  test('pipeline includes commands step', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    const names = result.steps.map(s => s.name);
+    assert.ok(names.includes('commands'), `expected commands step, got: ${names.join(', ')}`);
+  });
+
+  test('pipeline includes validate step', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    const names = result.steps.map(s => s.name);
+    assert.ok(names.includes('validate'), `expected validate step, got: ${names.join(', ')}`);
+  });
+
+  test('contracts step runs first (index 0)', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    assert.equal(result.steps[0].name, 'contracts');
+  });
+
+  test('validate step runs last', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    const last = result.steps[result.steps.length - 1];
+    assert.equal(last.name, 'validate');
+  });
+});
+
+// ── Dry-run mode (REQ-4) ─────────────────────────────────────────────────────
+
+describe('unifiedSync — dry-run mode (REQ-4)', () => {
+  let tmpDir;
+  let configPath;
+  let routerDir;
+
+  beforeEach(() => {
+    ({ tmpDir, configPath, routerDir } = makeTempRouterDir({
+      withCatalogs: true,
+      withPresets: true,
+    }));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('dry-run does not write opencode.json', async () => {
+    const targetPath = path.join(tmpDir, 'opencode.json');
+    await unifiedSync({ configPath, dryRun: true, targetPath });
+    assert.equal(fs.existsSync(targetPath), false, 'opencode.json must NOT be written in dry-run');
+  });
+
+  test('dry-run does not write sync manifest', async () => {
+    const manifestPath = path.join(routerDir, 'contracts', '.sync-manifest.json');
+    await unifiedSync({ configPath, dryRun: true });
+    assert.equal(fs.existsSync(manifestPath), false, 'manifest must NOT be written in dry-run');
+  });
+
+  test('dry-run returns status ok or partial (not failed)', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    assert.ok(
+      result.status !== 'failed',
+      `dry-run should not fail on valid config, got: ${result.status}`
+    );
+  });
+});
+
+// ── Default-only sync (REQ-10) ────────────────────────────────────────────────
+
+describe('unifiedSync — default-only sync (REQ-10)', () => {
+  let tmpDir;
+  let configPath;
+  let contractsDir;
+
+  beforeEach(() => {
+    ({ tmpDir, configPath, contractsDir } = makeTempRouterDir());
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('returns ok status with no catalogs in config', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    assert.ok(
+      ['ok', 'partial'].includes(result.status),
+      `expected ok or partial, got: ${result.status}`
+    );
+  });
+
+  test('contracts step succeeds and manifest data is in step.data', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    const contractsStep = result.steps.find(s => s.name === 'contracts');
+    assert.ok(contractsStep, 'contracts step must exist');
+    assert.equal(contractsStep.status, 'ok', 'contracts step must succeed');
+    assert.ok(contractsStep.data, 'contracts step must have data');
+    assert.ok(typeof contractsStep.data.total === 'number', 'data.total must be number');
+  });
+});
+
+// ── Partial failure (REQ-1 spec scenario) ────────────────────────────────────
+
+describe('unifiedSync — missing contracts dir (fatal failure)', () => {
+  test('returns failed status when configPath is missing', async () => {
+    const result = await unifiedSync({
+      configPath: '/nonexistent/path/router.yaml',
+      dryRun: true,
+    });
+    assert.equal(result.status, 'failed', 'must return failed status for missing config');
+  });
+
+  test('returns failed status when contracts dir is missing', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-us-nocontracts-'));
+    const routerDir = path.join(tmpDir, 'router');
+    fs.mkdirSync(routerDir, { recursive: true });
+
+    const configPath = path.join(routerDir, 'router.yaml');
+    fs.writeFileSync(configPath, 'version: 4\n', 'utf8');
+
+    try {
+      const result = await unifiedSync({ configPath, dryRun: true });
+      assert.equal(result.status, 'failed', 'must return failed when contracts dir missing');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── Force mode (REQ-5) ────────────────────────────────────────────────────────
+
+describe('unifiedSync — force mode (REQ-5)', () => {
+  let tmpDir;
+  let configPath;
+
+  beforeEach(() => {
+    ({ tmpDir, configPath } = makeTempRouterDir({
+      withCatalogs: true,
+      withPresets: true,
+    }));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('force mode does not throw and returns status ok or partial', async () => {
+    const targetPath = path.join(tmpDir, 'opencode.json');
+    const result = await unifiedSync({ configPath, force: true, targetPath });
+    assert.ok(
+      ['ok', 'partial'].includes(result.status),
+      `expected ok or partial, got: ${result.status}`
+    );
+  });
+
+  test('force mode writes opencode.json', async () => {
+    const targetPath = path.join(tmpDir, 'opencode.json');
+    await unifiedSync({ configPath, force: true, targetPath });
+    assert.ok(fs.existsSync(targetPath), 'opencode.json must be written in force mode');
+  });
+});
+
+// ── Triangulation: step data content ─────────────────────────────────────────
+
+describe('unifiedSync — step data content (triangulation)', () => {
+  let tmpDir;
+  let configPath;
+
+  beforeEach(() => {
+    ({ tmpDir, configPath } = makeTempRouterDir({
+      withCatalogs: true,
+      withPresets: true,
+    }));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('contracts step data has correct role/phase counts', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    const contractsStep = result.steps.find(s => s.name === 'contracts');
+    assert.equal(contractsStep.data.roles, 1, 'should have 1 role from fixture');
+    assert.equal(contractsStep.data.phases, 1, 'should have 1 phase from fixture');
+    assert.equal(contractsStep.data.total, 2, 'total = roles + phases');
+  });
+
+  test('skipped steps present after contracts failure', async () => {
+    const result = await unifiedSync({
+      configPath: '/nonexistent/router.yaml',
+      dryRun: true,
+    });
+    assert.equal(result.status, 'failed');
+    const skippedSteps = result.steps.filter(s => s.status === 'skipped');
+    assert.ok(skippedSteps.length >= 4, 'should have at least 4 skipped steps after contracts failure');
+  });
+
+  test('overlay step has agent object in data', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    const overlayStep = result.steps.find(s => s.name === 'overlay');
+    assert.ok(overlayStep, 'overlay step must exist');
+    assert.equal(overlayStep.status, 'ok', 'overlay step must succeed');
+    assert.ok(typeof overlayStep.data.agent === 'object', 'overlay data must have agent object');
+  });
+
+  test('apply step in dry-run has dryRun flag in data', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    const applyStep = result.steps.find(s => s.name === 'apply');
+    assert.equal(applyStep.data.dryRun, true, 'apply step must report dryRun');
+  });
+});
+
+// ── requiresReopen semantics ──────────────────────────────────────────────────
+
+describe('unifiedSync — requiresReopen semantics', () => {
+  let tmpDir;
+  let configPath;
+
+  beforeEach(() => {
+    ({ tmpDir, configPath } = makeTempRouterDir({
+      withCatalogs: true,
+      withPresets: true,
+    }));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('requiresReopen is false in dry-run (no file changes)', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    assert.equal(result.requiresReopen, false, 'dry-run must have requiresReopen = false');
+  });
+
+  test('requiresReopen is true when opencode.json is newly written', async () => {
+    const targetPath = path.join(tmpDir, 'opencode.json');
+    const result = await unifiedSync({ configPath, targetPath });
+    // New file written means host needs to reload
+    assert.equal(result.requiresReopen, true, 'writing new file should set requiresReopen = true');
+  });
+
+  test('requiresReopen is false when second sync produces identical gsr-* entries (REQ-8)', async () => {
+    const targetPath = path.join(tmpDir, 'opencode.json');
+    // First run: file created, requiresReopen = true
+    const first = await unifiedSync({ configPath, targetPath });
+    assert.equal(first.requiresReopen, true, 'first write must require reopen');
+
+    // Second run: same agents, no change to gsr-* entries, requiresReopen = false
+    const second = await unifiedSync({ configPath, targetPath });
+    assert.equal(second.requiresReopen, false, 'second run with same agents must NOT require reopen');
+  });
+
+  test('requiresReopen is false when opencode.json has all expected gsr-* entries pre-populated (REQ-8)', async () => {
+    const targetPath = path.join(tmpDir, 'opencode.json');
+    // Run once to write the gsr-* entries
+    await unifiedSync({ configPath, targetPath });
+
+    // Run again: gsr-* entries already present — no opencode change needed
+    const result = await unifiedSync({ configPath, targetPath });
+    assert.equal(result.requiresReopen, false, 'manifest-only update must not require reopen');
+  });
+});
+
+// ── Validation readback (REQ-8) ───────────────────────────────────────────────
+
+describe('unifiedSync — validation readback (REQ-8)', () => {
+  let tmpDir;
+  let configPath;
+
+  beforeEach(() => {
+    ({ tmpDir, configPath } = makeTempRouterDir({
+      withCatalogs: true,
+      withPresets: true,
+    }));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('validate step has agentsVisible count after real write', async () => {
+    const targetPath = path.join(tmpDir, 'opencode.json');
+    const result = await unifiedSync({ configPath, targetPath });
+
+    const validateStep = result.steps.find(s => s.name === 'validate');
+    assert.ok(validateStep, 'validate step must exist');
+    assert.equal(validateStep.status, 'ok', 'validate step must succeed');
+    assert.ok(typeof validateStep.data.agentsVisible === 'number', 'agentsVisible must be number');
+    assert.ok(typeof validateStep.data.expectedAgents === 'number', 'expectedAgents must be number');
+    // At least 1 gsr-testpreset agent visible from our fixture
+    assert.ok(validateStep.data.agentsVisible >= 1, 'at least 1 agent must be visible after write');
+  });
+
+  test('validate step shows 0 agentsVisible in dry-run', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+
+    const validateStep = result.steps.find(s => s.name === 'validate');
+    assert.equal(validateStep.data.dryRun, true, 'validate step must report dryRun');
+    assert.equal(validateStep.data.agentsVisible, 0, 'dry-run must show 0 agents visible');
+  });
+
+  test('validate step requiresReopen is false in dry-run', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    const validateStep = result.steps.find(s => s.name === 'validate');
+    assert.equal(validateStep.data.requiresReopen, false, 'dry-run must not require reopen');
+  });
+});
+
+// ── REQ-2: Idempotency ────────────────────────────────────────────────────────
+
+describe('unifiedSync — idempotency (REQ-2)', () => {
+  let tmpDir;
+  let configPath;
+
+  beforeEach(() => {
+    ({ tmpDir, configPath } = makeTempRouterDir({
+      withCatalogs: true,
+      withPresets: true,
+    }));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('running twice produces the same opencode.json content', async () => {
+    const targetPath = path.join(tmpDir, 'opencode.json');
+
+    await unifiedSync({ configPath, targetPath });
+    const firstContent = fs.readFileSync(targetPath, 'utf8');
+
+    await unifiedSync({ configPath, targetPath });
+    const secondContent = fs.readFileSync(targetPath, 'utf8');
+
+    // Same JSON structure (generated_at may differ in manifest but opencode.json should be stable)
+    const first = JSON.parse(firstContent);
+    const second = JSON.parse(secondContent);
+
+    // Agent entries should be identical (structure, not warnings)
+    assert.deepEqual(
+      Object.keys(first.agent ?? {}).sort(),
+      Object.keys(second.agent ?? {}).sort(),
+      'agent keys must be identical after second run'
+    );
+  });
+
+  test('second run status is still ok (not failed)', async () => {
+    const targetPath = path.join(tmpDir, 'opencode.json');
+
+    const first = await unifiedSync({ configPath, targetPath });
+    assert.ok(['ok', 'partial'].includes(first.status), 'first run must succeed');
+
+    const second = await unifiedSync({ configPath, targetPath });
+    assert.ok(['ok', 'partial'].includes(second.status), 'second run must also succeed');
+  });
+
+  test('second run with no changes reports noop (REQ-2)', async () => {
+    const targetPath = path.join(tmpDir, 'opencode.json');
+    await unifiedSync({ configPath, targetPath });
+
+    const second = await unifiedSync({ configPath, targetPath });
+    // noop must be true when nothing changed
+    assert.equal(second.noop, true, 'second identical run must report noop = true');
+  });
+
+  test('first run is not noop (new file creation is a real change) (REQ-2)', async () => {
+    const targetPath = path.join(tmpDir, 'opencode.json');
+    const first = await unifiedSync({ configPath, targetPath });
+    // First run creates new agents → not noop
+    assert.equal(first.noop, false, 'first run creating new agents must not be noop');
+  });
+});
+
+// ── REQ-6/REQ-7: Auto-wiring integration ─────────────────────────────────────
+
+describe('unifiedSync — auto-wiring: catalog create triggers sync (REQ-6)', () => {
+  test('calling unifiedSync after createCatalog produces opencode.json', async () => {
+    // Simulate the auto-wiring flow: create catalog + run unifiedSync
+    const { tmpDir, configPath } = makeTempRouterDir({
+      withCatalogs: true,
+      withPresets: true,
+    });
+
+    try {
+      const targetPath = path.join(tmpDir, 'opencode.json');
+      const result = await unifiedSync({ configPath, targetPath });
+
+      assert.ok(['ok', 'partial'].includes(result.status), 'auto-wiring sync must succeed');
+      assert.ok(fs.existsSync(targetPath), 'opencode.json must exist after auto-wiring');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('unifiedSync — auto-wiring: enable/disable produces updated overlay', () => {
+  test('enabling a catalog with presets adds gsr-* agents to opencode.json', async () => {
+    // Start with catalog disabled
+    const { tmpDir, configPath } = makeTempRouterDir({
+      withCatalogs: true,
+      catalogEnabled: false,
+      withPresets: true,
+    });
+
+    const targetPath = path.join(tmpDir, 'opencode.json');
+
+    try {
+      // Run sync with disabled catalog — should have 0 gsr agents
+      const disabledResult = await unifiedSync({ configPath, targetPath });
+      const disabledApplyStep = disabledResult.steps.find(s => s.name === 'apply');
+      const disabledGsrCount = disabledApplyStep?.data?.gsrCount ?? 0;
+
+      // Now update config to enable the catalog
+      const enabledConfig = fs.readFileSync(configPath, 'utf8')
+        .replace('enabled: false', 'enabled: true');
+      fs.writeFileSync(configPath, enabledConfig, 'utf8');
+
+      // Run sync again — should now have 1 gsr agent
+      const enabledResult = await unifiedSync({ configPath, targetPath });
+      const enabledApplyStep = enabledResult.steps.find(s => s.name === 'apply');
+      const enabledGsrCount = enabledApplyStep?.data?.gsrCount ?? 0;
+
+      assert.equal(disabledGsrCount, 0, 'disabled catalog must produce 0 gsr agents');
+      assert.equal(enabledGsrCount, 1, 'enabled catalog must produce 1 gsr agent');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});

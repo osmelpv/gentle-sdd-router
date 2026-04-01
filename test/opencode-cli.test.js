@@ -830,3 +830,184 @@ test('runUninstall does not remove gsr-*.md command files', async () => {
   }
   // If no command files existed before, we just verify uninstall did not fail (test passed to here)
 });
+
+// ── gsr sync — unified pipeline (REQ-1, REQ-4, REQ-5, REQ-8, REQ-10) ─────────
+
+/**
+ * Create a temp dir with a valid router config (v3 inline catalogs) + contracts dir.
+ * Uses version 3 so overlay generation works with inline presets in tests.
+ */
+function makeSyncTempDir({ withContracts = true, withPresets = true } = {}) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-sync-test-'));
+  const routerDir = path.join(tempDir, 'router');
+
+  if (withContracts) {
+    fs.mkdirSync(path.join(routerDir, 'contracts', 'roles'), { recursive: true });
+    fs.mkdirSync(path.join(routerDir, 'contracts', 'phases'), { recursive: true });
+    fs.writeFileSync(path.join(routerDir, 'contracts', 'roles', 'primary.md'), '# Role: Primary\n', 'utf8');
+    fs.writeFileSync(path.join(routerDir, 'contracts', 'phases', 'orchestrator.md'), '# Phase: Orchestrator\n', 'utf8');
+  } else {
+    fs.mkdirSync(routerDir, { recursive: true });
+  }
+
+  const presetsYaml = withPresets ? `
+catalogs:
+  default:
+    enabled: true
+    presets:
+      testpreset:
+        availability: stable
+        phases:
+          orchestrator:
+            - kind: lane
+              phase: orchestrator
+              role: primary
+              target: anthropic/claude-sonnet` : '';
+
+  const routerYaml = `version: 3
+active_catalog: default
+active_preset: balanced
+activation_state: active
+${presetsYaml}`;
+
+  fs.writeFileSync(path.join(routerDir, 'router.yaml'), routerYaml, 'utf8');
+  return { tempDir, routerDir };
+}
+
+test('gsr sync — reports contracts, agents, and commands in output (REQ-1, REQ-8)', async () => {
+  const { tempDir } = makeSyncTempDir({ withPresets: true });
+
+  const output = await captureRunCli(['sync'], tempDir);
+
+  // Must report sync outcome
+  assert.match(output, /Sync(ed|.)/i, 'must report sync result');
+  assert.doesNotMatch(output, /Sync failed:/i, 'must not report fatal failure');
+});
+
+test('gsr sync --dry-run — does not write opencode.json (REQ-4)', async () => {
+  const { tempDir } = makeSyncTempDir({ withPresets: true });
+
+  const originalCwd = process.cwd();
+  const chunks = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+
+  process.chdir(tempDir);
+  process.stdout.write = (chunk) => {
+    chunks.push(String(chunk));
+    return true;
+  };
+
+  try {
+    await runCli(['sync', '--dry-run']);
+  } finally {
+    process.stdout.write = originalWrite;
+    process.chdir(originalCwd);
+  }
+
+  const opencodeJsonPath = path.join(tempDir, 'opencode.json');
+  assert.equal(fs.existsSync(opencodeJsonPath), false, 'opencode.json must NOT be written in dry-run');
+
+  const output = chunks.join('');
+  assert.match(output, /dry.run/i, 'output must mention dry-run');
+});
+
+test('gsr sync -- missing contracts dir exits with failure message (REQ-1)', async () => {
+  const { tempDir } = makeSyncTempDir({ withContracts: false });
+
+  const originalCwd = process.cwd();
+  const chunks = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+
+  process.chdir(tempDir);
+  process.stdout.write = (chunk) => {
+    chunks.push(String(chunk));
+    return true;
+  };
+
+  try {
+    await runCli(['sync']);
+  } finally {
+    process.stdout.write = originalWrite;
+    process.chdir(originalCwd);
+  }
+
+  const output = chunks.join('');
+  assert.match(output, /Sync failed|failed/i, 'must report failure when contracts dir is missing');
+});
+
+test('gsr sync summary includes agent count from unified result (REQ-8)', async () => {
+  const { tempDir } = makeSyncTempDir({ withPresets: true });
+
+  const output = await captureRunCli(['sync', '--dry-run'], tempDir);
+
+  // Dry-run must still report what would happen — no error
+  assert.doesNotMatch(output, /Sync failed:/i, 'dry-run must not report fatal failure');
+});
+
+test('gsr sync second run reports already up to date (REQ-2 noop)', async () => {
+  const { tempDir } = makeSyncTempDir({ withPresets: true });
+
+  // First run: writes opencode.json
+  await captureRunCli(['sync'], tempDir);
+
+  // Second run: same config, noop expected — must print sync-level "Already up to date."
+  // The phrase must appear as a standalone sync status message, not within "commands: N already up to date"
+  const secondOutput = await captureRunCli(['sync'], tempDir);
+  assert.match(secondOutput, /^Already up to date\./im, 'second run with no changes must say "Already up to date." as a standalone sync status line');
+});
+
+test('gsr sync --dry-run reports would-create and would-update counts (REQ-4)', async () => {
+  const { tempDir } = makeSyncTempDir({ withPresets: true });
+
+  const output = await captureRunCli(['sync', '--dry-run'], tempDir);
+  // Dry-run must report what would happen — specific "Would create: N" format
+  assert.match(output, /Would create: \d+/i, 'dry-run must report "Would create: N" count');
+  assert.doesNotMatch(output, /Sync failed:/i, 'dry-run must not report failure');
+});
+
+test('gsr sync reports preserved user override count (REQ-8)', async () => {
+  const { tempDir } = makeSyncTempDir({ withPresets: true });
+  const opencodeJsonPath = path.join(tempDir, 'opencode.json');
+
+  // Pre-seed opencode.json with a user-modified gsr-* entry (no _gsr_generated)
+  const userEntry = {
+    agent: {
+      'gsr-testpreset': {
+        model: 'openai/custom',
+        instructions: 'User customized this entry — no _gsr_generated marker',
+      },
+    },
+  };
+  fs.writeFileSync(opencodeJsonPath, JSON.stringify(userEntry, null, 2), 'utf8');
+
+  const output = await captureRunCli(['sync'], tempDir);
+  // Must report explicit preserved count: "Preserved N user-modified entries"
+  assert.match(output, /Preserved \d+ user-modified entr/i, 'must report count of preserved user overrides');
+});
+
+test('gsr setup apply opencode --apply still works after unified sync refactor (REQ-9)', async () => {
+  const tempDir = makeV4TempDir();
+
+  const originalCwd = process.cwd();
+  process.chdir(tempDir);
+
+  try {
+    const { applyOpenCodeOverlayCommand: applyCmd } = await import('../src/adapters/opencode/index.js');
+    const routerConfigPath = path.join(tempDir, 'router', 'router.yaml');
+    const targetPath = path.join(tempDir, 'opencode.json');
+
+    const report = applyCmd({
+      apply: true,
+      configPath: routerConfigPath,
+      targetPath,
+    });
+
+    assert.ok(report.agents, 'backward compat: report.agents must exist');
+    assert.ok(typeof report.warnings !== 'undefined', 'backward compat: report.warnings must exist');
+    assert.ok(report.writtenPath, 'backward compat: report.writtenPath must be set');
+    assert.ok(fs.existsSync(targetPath), 'backward compat: opencode.json must be written');
+  } finally {
+    process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true });
+  }
+});

@@ -853,3 +853,122 @@ describe('identity.overrides — router-level overrides win over resolved identi
     assert.equal(second.agent['gsr-multivendor']._gsr_generated, true, '_gsr_generated stays true on regen');
   });
 });
+
+// ── mergeOverlayWithExisting — force mode (REQ-5) ─────────────────────────────
+
+describe('mergeOverlayWithExisting — force mode', () => {
+  test('force=true overwrites user-owned gsr-* entry (no _gsr_generated)', () => {
+    // Overlay has the new generated value
+    const overlay = {
+      agent: {
+        'gsr-multivendor': { mode: 'primary', prompt: 'Generated prompt', _gsr_generated: true },
+      },
+      warnings: [],
+    };
+
+    // Existing has a user-owned entry (no marker)
+    const existing = {
+      agent: {
+        'gsr-multivendor': { mode: 'primary', prompt: 'User custom prompt' },
+      },
+    };
+
+    // Without force: user entry is preserved
+    const withoutForce = mergeOverlayWithExisting(overlay, existing);
+    assert.equal(
+      withoutForce.agent['gsr-multivendor'].prompt,
+      'User custom prompt',
+      'without force: user entry preserved'
+    );
+
+    // With force: user entry is overwritten
+    const withForce = mergeOverlayWithExisting(overlay, existing, { force: true });
+    assert.equal(
+      withForce.agent['gsr-multivendor'].prompt,
+      'Generated prompt',
+      'with force: entry must be overwritten'
+    );
+  });
+
+  test('force=true overwrites entry with _gsr_generated: false', () => {
+    const overlay = {
+      agent: {
+        'gsr-balanced': { mode: 'primary', prompt: 'New prompt', _gsr_generated: true },
+      },
+      warnings: [],
+    };
+
+    const existing = {
+      agent: {
+        'gsr-balanced': { mode: 'primary', prompt: 'User override', _gsr_generated: false },
+      },
+    };
+
+    const result = mergeOverlayWithExisting(overlay, existing, { force: true });
+    assert.equal(result.agent['gsr-balanced'].prompt, 'New prompt', 'force must overwrite _gsr_generated:false entries');
+  });
+
+  test('force=true emits a warning for each overwritten user entry', () => {
+    const overlay = {
+      agent: {
+        'gsr-multivendor': { mode: 'primary', prompt: 'Generated', _gsr_generated: true },
+      },
+      warnings: [],
+    };
+
+    const existing = {
+      agent: {
+        'gsr-multivendor': { mode: 'primary', prompt: 'User custom' },
+      },
+    };
+
+    const result = mergeOverlayWithExisting(overlay, existing, { force: true });
+    const forceWarnings = result.warnings.filter(w => w.includes('forced overwrite') || w.includes('force'));
+    assert.ok(forceWarnings.length > 0, 'force mode must emit at least one warning per overwritten entry');
+  });
+
+  test('force=false (explicit) behaves same as no option — preserves user entries', () => {
+    const overlay = {
+      agent: {
+        'gsr-multivendor': { mode: 'primary', prompt: 'Generated', _gsr_generated: true },
+      },
+      warnings: [],
+    };
+
+    const existing = {
+      agent: {
+        'gsr-multivendor': { mode: 'primary', prompt: 'User prompt' },
+      },
+    };
+
+    const result = mergeOverlayWithExisting(overlay, existing, { force: false });
+    assert.equal(
+      result.agent['gsr-multivendor'].prompt,
+      'User prompt',
+      'force:false must behave like default — preserve user entry'
+    );
+  });
+
+  test('force=true does not affect non-gsr-* entries', () => {
+    const overlay = {
+      agent: {
+        'gsr-balanced': { mode: 'primary', prompt: 'Generated', _gsr_generated: true },
+      },
+      warnings: [],
+    };
+
+    const existing = {
+      agent: {
+        'gsr-balanced': { mode: 'primary', prompt: 'User prompt' },
+        'my-custom-agent': { mode: 'secondary', prompt: 'Not touched' },
+      },
+    };
+
+    const result = mergeOverlayWithExisting(overlay, existing, { force: true });
+    assert.equal(
+      result.agent['my-custom-agent'].prompt,
+      'Not touched',
+      'force=true must not touch non-gsr-* entries'
+    );
+  });
+});

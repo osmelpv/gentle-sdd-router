@@ -1452,9 +1452,13 @@ export const cleanStaleGlobalOverlay = _cleanStaleGlobalOverlay;
  * the global ~/.config/opencode/opencode.json. This ensures project A's gsr-* agents
  * do not appear in project B.
  *
- * @param {{ apply?: boolean, configPath?: string, targetPath?: string }} options
+ * Backward-compatible with existing callers (REQ-9). Accepts force option for
+ * callers that need to bypass the _gsr_generated marker check.
+ *
+ * @param {{ apply?: boolean, configPath?: string, targetPath?: string, force?: boolean }} options
  *   - configPath: path to router.yaml (e.g. /path/to/project/router/router.yaml)
  *   - targetPath: explicit override for the output opencode.json path (used in tests)
+ *   - force: when true, overwrites user-modified gsr-* entries (default: false)
  * @returns {{ agents: Record<string, object>, warnings: string[], writtenPath?: string }}
  */
 export function applyOpenCodeOverlayCommand(options = {}) {
@@ -1475,7 +1479,8 @@ export function applyOpenCodeOverlayCommand(options = {}) {
     targetPath = path.join(projectRoot, 'opencode.json');
   }
 
-  const merged = _mergeOverlayWithFile(overlay, targetPath);
+  const force = options.force === true;
+  const merged = _mergeOverlayWithFile(overlay, targetPath, { force });
   const writtenPath = _writeOpenCodeConfig(merged, targetPath);
 
   return { agents: overlay.agent, warnings: overlay.warnings, writtenPath };

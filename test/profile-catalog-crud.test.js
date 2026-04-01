@@ -435,6 +435,18 @@ describe('gsr profile list (CLI)', () => {
   });
 });
 
+// ─── Helper: router dir WITH contracts (for unified sync to succeed) ─────────
+
+function makeRouterDirWithContracts(tmpDir) {
+  const routerDir = makeRouterDir(tmpDir);
+  const contractsDir = path.join(routerDir, 'contracts');
+  fs.mkdirSync(path.join(contractsDir, 'roles'), { recursive: true });
+  fs.mkdirSync(path.join(contractsDir, 'phases'), { recursive: true });
+  fs.writeFileSync(path.join(contractsDir, 'roles', 'primary.md'), '# Role: Primary\n', 'utf8');
+  fs.writeFileSync(path.join(contractsDir, 'phases', 'orchestrator.md'), '# Phase: Orchestrator\n', 'utf8');
+  return routerDir;
+}
+
 describe('gsr profile create (CLI)', () => {
   test('creates a profile in temp dir', async () => {
     const tmpDir = makeTempDir();
@@ -448,6 +460,43 @@ describe('gsr profile create (CLI)', () => {
 
       const profilePath = path.join(routerDir, 'profiles', 'newprofile.router.yaml');
       assert.ok(fs.existsSync(profilePath), 'profile file should exist');
+    } finally {
+      process.chdir(originalCwd);
+      cleanup(tmpDir);
+    }
+  });
+
+  test('profile create triggers unified sync after creation (REQ-7)', async () => {
+    const tmpDir = makeTempDir();
+    makeRouterDirWithContracts(tmpDir);
+
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(tmpDir);
+      // Use profile name without "sync" to avoid false-positive regex match
+      const output = await captureStdout(() => runCli(['profile', 'create', 'autotest']));
+      // Must create the profile
+      assert.match(output, /Created profile 'autotest'/);
+      // Must report sync output (sync ran after creation)
+      // "Synced N role contracts" or "No agents generated" are both valid sync outputs
+      assert.match(output, /Synced \d+ role contracts|No agents generated/);
+    } finally {
+      process.chdir(originalCwd);
+      cleanup(tmpDir);
+    }
+  });
+
+  test('profile create sync failure is non-blocking (REQ-7)', async () => {
+    // Router dir without contracts — sync will fail, but profile still creates
+    const tmpDir = makeTempDir();
+    makeRouterDir(tmpDir); // no contracts dir
+
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(tmpDir);
+      const output = await captureStdout(() => runCli(['profile', 'create', 'blocking-test']));
+      // Profile is still created even when sync fails
+      assert.match(output, /Created profile 'blocking-test'/);
     } finally {
       process.chdir(originalCwd);
       cleanup(tmpDir);

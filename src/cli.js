@@ -193,7 +193,7 @@ export async function runCli(argv) {
     case 'profile':
       return runProfile(rest);
     case 'catalog':
-      return runCatalog(rest);
+      return await runCatalog(rest);
     case 'sdd':
       return runSddCommand(rest);
     case 'role':
@@ -241,7 +241,7 @@ export async function runCli(argv) {
     case 'uninstall':
       return runUninstall(rest);
     case 'sync':
-      return await runSync();
+      return await runSync(rest);
     default:
       printUsage();
       if (command) {
@@ -607,15 +607,105 @@ function runExport(args) {
   }
 }
 
-async function runSync() {
-  const { syncContracts } = await import('./core/sync.js');
+async function runSync(args = []) {
+  const dryRun = args.includes('--dry-run');
+  const force = args.includes('--force');
+
+  const { unifiedSync } = await import('./core/unified-sync.js');
+
+  // Discover the local config path so unified-sync finds the right contracts dir
+  const configPath = safeDiscoverConfigPath();
+
   try {
-    const result = syncContracts();
-    process.stdout.write(`Synced ${result.roles} role contracts + ${result.phases} phase compositions.\n`);
-    process.stdout.write(`Manifest: ${result.manifestPath}\n`);
-    process.stdout.write(`Total: ${result.total} contracts.\n`);
+    const result = await unifiedSync({ configPath, dryRun, force });
+    printSyncSummary(result, dryRun);
+
+    if (result.status === 'failed') {
+      const contractsStep = result.steps.find(s => s.name === 'contracts');
+      const errMsg = contractsStep?.error ?? 'Unknown error';
+      process.stdout.write(`Sync failed: ${errMsg}\n`);
+    }
   } catch (err) {
     process.stdout.write(`Sync failed: ${err.message}\n`);
+  }
+}
+
+/**
+ * Print a human-readable summary of a unified sync result.
+ * Shared between direct sync and auto-wiring paths.
+ * @param {import('./core/unified-sync.js').UnifiedSyncResult} result
+ * @param {boolean} [dryRun]
+ */
+function printSyncSummary(result, dryRun = false) {
+  if (result.status === 'failed') {
+    // Fatal failure — the caller will print the specific error
+    return;
+  }
+
+  const prefix = dryRun ? '[dry-run] ' : '';
+
+  // Contracts step
+  const contractsStep = result.steps.find(s => s.name === 'contracts');
+  if (contractsStep?.status === 'ok' && contractsStep.data) {
+    const { roles = 0, phases = 0, total = 0 } = contractsStep.data;
+    process.stdout.write(`${prefix}Synced ${roles} role contracts + ${phases} phase compositions (${total} total).\n`);
+    if (contractsStep.data.manifestPath) {
+      process.stdout.write(`${prefix}Manifest: ${contractsStep.data.manifestPath}\n`);
+    }
+  }
+
+  // Apply step — agent count and breakdown
+  const applyStep = result.steps.find(s => s.name === 'apply');
+  if (applyStep?.status === 'ok' && applyStep.data) {
+    const gsrCount = applyStep.data.gsrCount ?? 0;
+    if (dryRun) {
+      // W2: dry-run reports create/update/preserve breakdown
+      const wouldCreate = applyStep.data.wouldCreate ?? 0;
+      const wouldUpdate = applyStep.data.wouldUpdate ?? 0;
+      const wouldPreserve = applyStep.data.wouldPreserve ?? 0;
+      process.stdout.write(
+        `${prefix}Would create: ${wouldCreate}, Would update: ${wouldUpdate}, Would preserve: ${wouldPreserve} user overrides.\n`
+      );
+    } else if (gsrCount > 0) {
+      process.stdout.write(`${prefix}${gsrCount} agent(s) synced to opencode.json.\n`);
+    } else {
+      process.stdout.write(`${prefix}No agents generated — all catalogs disabled or no presets.\n`);
+    }
+    if (applyStep.data.writtenPath) {
+      process.stdout.write(`${prefix}Written: ${applyStep.data.writtenPath}\n`);
+    }
+
+    // W3: report preserved user overrides count
+    const preservedCount = applyStep.data.preservedCount ?? 0;
+    if (!dryRun && preservedCount > 0) {
+      process.stdout.write(`${prefix}Preserved ${preservedCount} user-modified entries.\n`);
+    }
+  }
+
+  // Commands step
+  const commandsStep = result.steps.find(s => s.name === 'commands');
+  if (commandsStep?.status === 'ok' && commandsStep.data && !commandsStep.data.dryRun) {
+    const { written = 0, skipped = 0 } = commandsStep.data;
+    process.stdout.write(`${prefix}Commands: ${written} written, ${skipped} already up to date.\n`);
+  }
+
+  // Warnings (non-preserve warnings only; preserved count is reported above)
+  for (const warn of result.warnings ?? []) {
+    if (!warn.includes('user prompt detected')) {
+      process.stdout.write(`${prefix}Warning: ${warn}\n`);
+    }
+  }
+
+  // Reopen / noop / synchronized notice
+  if (result.requiresReopen) {
+    process.stdout.write(`${prefix}Synchronized. Reopen editor to activate new agents.\n`);
+  } else if (!dryRun && result.noop) {
+    // W1: noop — second run with no changes
+    process.stdout.write(`${prefix}Already up to date.\n`);
+  } else if (result.status === 'ok' && !dryRun) {
+    process.stdout.write(`${prefix}Synchronized.\n`);
+  } else if (dryRun) {
+    process.stdout.write(`${prefix}Dry-run complete — no files written.\n`);
   }
 }
 
@@ -934,19 +1024,19 @@ async function runProfile(args) {
   }
 }
 
-function runCatalog(args) {
+async function runCatalog(args) {
   const [subcommand, ...rest] = args;
   switch (subcommand) {
     case 'list':
       return runCatalogList(rest);
     case 'create':
-      return runCatalogCreate(rest);
+      return await runCatalogCreate(rest);
     case 'delete':
       return runCatalogDelete(rest);
     case 'enable':
-      return runCatalogEnable(rest);
+      return await runCatalogEnable(rest);
     case 'disable':
-      return runCatalogDisable(rest);
+      return await runCatalogDisable(rest);
     case 'move':
       return runCatalogMove(rest);
     case 'use':
@@ -961,7 +1051,7 @@ function runCatalog(args) {
   }
 }
 
-function runProfileCreate(args) {
+async function runProfileCreate(args) {
   const name = args.find((a) => !a.startsWith('--'));
   if (!name) {
     printUsage();
@@ -983,6 +1073,19 @@ function runProfileCreate(args) {
   const result = createProfile(name, routerDir, { catalog, target });
   const catalogLabel = result.catalog !== 'default' ? ` (catalog: ${result.catalog})` : '';
   process.stdout.write(`Created profile '${result.presetName}'${catalogLabel} → ${result.path}\n`);
+
+  // Auto-trigger unified sync after successful profile creation (REQ-7)
+  try {
+    const { unifiedSync } = await import('./core/unified-sync.js');
+    const syncResult = await unifiedSync({ configPath });
+    printSyncSummary(syncResult);
+    if (syncResult.status === 'failed') {
+      process.stdout.write('Note: Sync after profile create failed — run `gsr sync` manually.\n');
+    }
+  } catch (err) {
+    // Non-blocking: profile creation succeeded; sync failure is a soft warning
+    process.stdout.write(`Note: Sync after profile create failed: ${err.message}\n`);
+  }
 }
 
 function runProfileDelete(args) {
@@ -1074,7 +1177,7 @@ function runCatalogList(_args) {
   }
 }
 
-function runCatalogCreate(args) {
+async function runCatalogCreate(args) {
   const name = args.find((a) => !a.startsWith('--'));
   if (!name) {
     printUsage();
@@ -1090,6 +1193,20 @@ function runCatalogCreate(args) {
   const routerDir = path.dirname(configPath);
   const result = createCatalog(name, routerDir);
   process.stdout.write(`Created catalog '${result.name}' at ${result.path}\n`);
+
+  // Auto-enable + trigger unified sync (REQ-6)
+  try {
+    setCatalogEnabled(name, true, routerDir);
+    const { unifiedSync } = await import('./core/unified-sync.js');
+    const syncResult = await unifiedSync({ configPath });
+    printSyncSummary(syncResult);
+    if (syncResult.status === 'failed') {
+      process.stdout.write('Note: Sync after catalog create failed — add profiles to make agents available.\n');
+    }
+  } catch (err) {
+    // Non-blocking: catalog create succeeded; sync failure is a soft warning
+    process.stdout.write(`Note: Sync after catalog create failed: ${err.message}\n`);
+  }
 }
 
 function runCatalogDelete(args) {
@@ -1110,7 +1227,7 @@ function runCatalogDelete(args) {
   process.stdout.write(`Deleted catalog '${result.name}' from ${result.path}\n`);
 }
 
-function runCatalogEnable(args) {
+async function runCatalogEnable(args) {
   const name = args.find((a) => !a.startsWith('--'));
   if (!name) {
     printUsage();
@@ -1123,11 +1240,19 @@ function runCatalogEnable(args) {
   }
   const routerDir = path.dirname(configPath);
   setCatalogEnabled(name, true, routerDir);
-  process.stdout.write(`Catalog '${name}' enabled. Its presets will appear in TUI host.\n`);
-  process.stdout.write('Tip: Run `gsr setup apply opencode --apply` to update OpenCode agents.\n');
+  process.stdout.write(`Catalog '${name}' enabled.\n`);
+
+  // Auto-sync after enable (REQ-6)
+  try {
+    const { unifiedSync } = await import('./core/unified-sync.js');
+    const syncResult = await unifiedSync({ configPath });
+    printSyncSummary(syncResult);
+  } catch (err) {
+    process.stdout.write(`Note: Sync after catalog enable failed: ${err.message}\n`);
+  }
 }
 
-function runCatalogDisable(args) {
+async function runCatalogDisable(args) {
   const name = args.find((a) => !a.startsWith('--'));
   if (!name) {
     printUsage();
@@ -1140,8 +1265,16 @@ function runCatalogDisable(args) {
   }
   const routerDir = path.dirname(configPath);
   setCatalogEnabled(name, false, routerDir);
-  process.stdout.write(`Catalog '${name}' disabled. Its presets will be hidden from TUI host.\n`);
-  process.stdout.write('Tip: Run `gsr setup apply opencode --apply` to update OpenCode agents.\n');
+  process.stdout.write(`Catalog '${name}' disabled.\n`);
+
+  // Auto-sync after disable to remove agents from opencode.json (REQ-6)
+  try {
+    const { unifiedSync } = await import('./core/unified-sync.js');
+    const syncResult = await unifiedSync({ configPath });
+    printSyncSummary(syncResult);
+  } catch (err) {
+    process.stdout.write(`Note: Sync after catalog disable failed: ${err.message}\n`);
+  }
 }
 
 function runCatalogMove(args) {
