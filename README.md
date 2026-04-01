@@ -533,7 +533,7 @@ The bundled YAML parser is intentionally minimal. It supports the subset used by
 - Compatibility: router.yaml versions 1, 3, and 4 are supported; v3 powers multimodel browse/compare and v4 is the current multi-file format.
 - Quickstart: run gsr status, then gsr bootstrap if router/router.yaml is missing.
 - Select the active profile in router/router.yaml without changing who is in control.
-- Show who is in control, how to toggle it, the active profile, and resolved routes.
+- Show current router status. Use --verbose or --debug for full details.
 - Inspect shareable multimodel metadata projected from schema v3 without recommending or executing anything.
 - Compare two shareable multimodel projections without recommending or executing anything.
 - Inspect or apply a YAML-first install intent to router/router.yaml.

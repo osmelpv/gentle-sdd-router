@@ -321,7 +321,7 @@ describe('pricing display in gsr status output', () => {
     assert.match(output, /multivendor/);
   });
 
-  test('gsr status with v4 actual config shows resolved routes without crashing', async () => {
+  test('gsr status --verbose with v4 actual config shows resolved routes without crashing', async () => {
     const chunks = [];
     const originalWrite = process.stdout.write.bind(process.stdout);
     process.stdout.write = function capture(chunk) {
@@ -330,7 +330,7 @@ describe('pricing display in gsr status output', () => {
     };
 
     try {
-      await runCli(['status']);
+      await runCli(['status', '--verbose']);
     } finally {
       process.stdout.write = originalWrite;
     }
@@ -340,7 +340,7 @@ describe('pricing display in gsr status output', () => {
     assert.match(output, /orchestrator:/);
   });
 
-  test('gsr status shows pricing for multivendor preset (orchestrator has $15\\.00/$75)', async () => {
+  test('gsr status --verbose shows pricing for multivendor preset (orchestrator has $15\\.00/$75)', async () => {
     const chunks = [];
     const originalWrite = process.stdout.write.bind(process.stdout);
     process.stdout.write = function capture(chunk) {
@@ -349,7 +349,7 @@ describe('pricing display in gsr status output', () => {
     };
 
     try {
-      await runCli(['status']);
+      await runCli(['status', '--verbose']);
     } finally {
       process.stdout.write = originalWrite;
     }
@@ -359,7 +359,7 @@ describe('pricing display in gsr status output', () => {
     assert.match(output, /orchestrator:.*\(\$15\/\$75\)/);
   });
 
-  test('gsr status shows pricing for archive phase (google/gemini-flash $0.075/$0.3)', async () => {
+  test('gsr status --verbose shows pricing for archive phase (google/gemini-flash $0.075/$0.3)', async () => {
     const chunks = [];
     const originalWrite = process.stdout.write.bind(process.stdout);
     process.stdout.write = function capture(chunk) {
@@ -368,7 +368,7 @@ describe('pricing display in gsr status output', () => {
     };
 
     try {
-      await runCli(['status']);
+      await runCli(['status', '--verbose']);
     } finally {
       process.stdout.write = originalWrite;
     }

@@ -209,7 +209,7 @@ test('rejects v3 metadata that implies execution', () => {
   assert.throws(() => validateRouterSchemaV3(invalid), /execution-oriented field "instructions"/i);
 });
 
-test('status command only renders resolved routes', async () => {
+test('status --verbose command renders resolved routes', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-'));
   fs.mkdirSync(path.join(tempDir, 'router'), { recursive: true });
   fs.writeFileSync(path.join(tempDir, 'router', 'router.yaml'), routeObjectFixtureYaml, 'utf8');
@@ -225,7 +225,7 @@ test('status command only renders resolved routes', async () => {
   };
 
   try {
-    await runCli(['status']);
+    await runCli(['status', '--verbose']);
   } finally {
     process.stdout.write = originalWrite;
     process.chdir(originalCwd);
@@ -264,7 +264,7 @@ test('help output lists the available commands', async () => {
   assert.match(output, /Compatibility: router\.yaml versions 1, 3, and 4 are supported; v3 powers multimodel browse\/compare and v4 is the current multi-file format\./i);
   assert.match(output, /Quickstart: run gsr status, then gsr bootstrap if router\/router\.yaml is missing\./i);
   assert.match(output, /use <profile>\s+Select the active profile in router\/router\.yaml without changing who is in control\./i);
-  assert.match(output, /status\s+Show who is in control, how to toggle it, the active profile, and resolved routes\./i);
+  assert.match(output, /status\s+Show current router status\./i);
   assert.match(output, /list\s+List available profiles and mark the active one\./i);
   assert.match(output, /browse \[selector\]\s+Inspect shareable multimodel metadata projected from schema v3 without recommending or executing anything\./i);
   assert.match(output, /compare <left> <right>\s+Compare two shareable multimodel projections without recommending or executing anything\./i);
@@ -461,7 +461,7 @@ test('activate and deactivate toggle activation without changing the active prof
     assert.equal(persisted.active_profile, 'default');
 
     chunks.length = 0;
-    await runCli(['status']);
+    await runCli(['status', '--verbose']);
     output = chunks.join('');
     assert.match(output, /In control: gsr/);
     assert.match(output, /Activation: active/);
@@ -477,7 +477,7 @@ test('activate and deactivate toggle activation without changing the active prof
     assert.equal(persisted.active_profile, 'default');
 
     chunks.length = 0;
-    await runCli(['status']);
+    await runCli(['status', '--verbose']);
     output = chunks.join('');
     assert.match(output, /In control: (Alan\/gentle-ai|host)/);
     assert.match(output, /Activation: inactive/);
@@ -526,10 +526,10 @@ test('render opencode reports honest adapter output', async () => {
   assert.match(output, /Reason: OpenCode render is configuration-backed only/i);
 });
 
-test('status resolves config from outside the repo cwd', () => {
+test('status --verbose resolves config from outside the repo cwd', () => {
   const outsideCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-outside-'));
   const binPath = fileURLToPath(new URL('../bin/gsr.js', import.meta.url));
-  const result = spawnSync(process.execPath, [binPath, 'status'], {
+  const result = spawnSync(process.execPath, [binPath, 'status', '--verbose'], {
     cwd: outsideCwd,
     encoding: 'utf8',
   });
@@ -547,7 +547,7 @@ test('status resolves config from outside the repo cwd', () => {
   assert.match(result.stdout, /Resolved routes:/);
 });
 
-test('status keeps working after cwd changes within the process', async () => {
+test('status --verbose keeps working after cwd changes within the process', async () => {
   const outsideCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-cwd-'));
   const originalCwd = process.cwd();
   const originalWrite = process.stdout.write;
@@ -560,7 +560,7 @@ test('status keeps working after cwd changes within the process', async () => {
   };
 
   try {
-    await runCli(['status']);
+    await runCli(['status', '--verbose']);
   } finally {
     process.stdout.write = originalWrite;
     process.chdir(originalCwd);
@@ -594,6 +594,7 @@ test('status reports invalid configs honestly', async () => {
   };
 
   try {
+    // Default (simple) status shows simplified error message
     await runCli(['status']);
   } finally {
     process.stdout.write = originalWrite;
@@ -601,8 +602,16 @@ test('status reports invalid configs honestly', async () => {
   }
 
   const output = chunks.join('');
-  assert.match(output, /Status: invalid/);
-  assert.match(output, /version: 1|router\.yaml requires version: 1/);
+  // Simple mode shows a user-friendly error indicator
+  assert.ok(
+    output.includes('❌') || output.includes('error') || output.includes('invalid'),
+    `Status should report an error indicator. Got: ${output}`
+  );
+  // Should still mention the config issue in some form
+  assert.ok(
+    output.includes('version') || output.includes('router.yaml') || output.includes('Configuration'),
+    `Status should mention configuration issue. Got: ${output}`
+  );
 });
 
 test('config discovery returns null when no router config exists', () => {

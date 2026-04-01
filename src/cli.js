@@ -52,6 +52,7 @@ import {
 } from './router-config.js';
 import { resolveControllerLabel, resolvePersona } from './core/controller.js';
 import { resolveIdentity, resetIdentityCache } from './core/agent-identity.js';
+import { getSimpleStatus } from './core/status-reporter.js';
 
 const CURRENT_SCHEMA_VERSION = 4;
 let wizardEntrypointForTesting = null;
@@ -207,7 +208,7 @@ export async function runCli(argv) {
 
     // === Top-level (stay at root) ===
     case 'status':
-      return runStatus();
+      return runStatus(rest);
 
     // === Backward-compat aliases (old flat commands still work) ===
     case 'use':
@@ -313,12 +314,19 @@ function runReload() {
   process.stdout.write(renderStatus(state, configPath, config));
 }
 
-function runStatus() {
+function runStatus(args = []) {
+  const verbose = args.includes('--verbose') || args.includes('--debug');
+
   maybeWarnOutdatedConfig();
   const configPath = tryGetConfigPath();
 
   if (!configPath) {
-    process.stdout.write(renderMissingStatus());
+    if (verbose) {
+      process.stdout.write(renderMissingStatus());
+    } else {
+      const simple = getSimpleStatus(null, null);
+      process.stdout.write(renderSimpleStatus(simple, null, null) + '\n');
+    }
     return;
   }
 
@@ -326,9 +334,18 @@ function runStatus() {
     const config = loadRouterConfig(configPath);
     const state = resolveRouterState(config);
 
-    process.stdout.write(renderStatus(state, configPath, config));
+    if (verbose) {
+      process.stdout.write(renderStatus(state, configPath, config));
+    } else {
+      const simple = getSimpleStatus(config, null);
+      process.stdout.write(renderSimpleStatus(simple, configPath, config) + '\n');
+    }
   } catch (error) {
-    process.stdout.write(renderInvalidStatus(configPath, error));
+    if (verbose) {
+      process.stdout.write(renderInvalidStatus(configPath, error));
+    } else {
+      process.stdout.write(`❌ Configuration error: ${error.message}\n`);
+    }
   }
 }
 
@@ -980,6 +997,39 @@ function renderMissingStatus() {
   ].join('\n') + '\n';
 }
 
+/**
+ * Render a simplified, user-friendly status line.
+ * Shows status indicator, active preset, and a one-liner message.
+ * Does NOT expose overlay mechanics, routes, costs, or internal details.
+ *
+ * @param {import('./core/status-reporter.js').SimpleStatusResult} simple
+ * @param {string|null} configPath
+ * @param {object|null} config
+ * @returns {string}
+ */
+function renderSimpleStatus(simple, configPath, config) {
+  const lines = [];
+
+  // Status indicator line
+  lines.push(`${simple.emoji} ${simple.message}`);
+
+  // Active preset (if available)
+  if (config?.active_preset) {
+    lines.push(`Preset: ${config.active_preset}`);
+  }
+
+  // Activation state
+  if (config?.activation_state) {
+    const state = config.activation_state;
+    lines.push(`Activation: ${state}`);
+  }
+
+  // Hint for more details
+  lines.push('Run `gsr status --verbose` for full details.');
+
+  return lines.join('\n');
+}
+
 function renderInvalidStatus(configPath, error) {
   const message = error instanceof Error ? error.message : String(error);
 
@@ -1463,7 +1513,7 @@ function renderGeneralHelp() {
     '  gsr setup install         First-time setup.',
     '',
     'Commands:',
-    '  status                    Show who is in control, how to toggle it, the active profile, and resolved routes.',
+    '  status                    Show current router status. Use --verbose or --debug for full details.',
     '  version                   Installed gsr version.',
     '  help [command]            Help for a command or subcommand.',
     '  sync                      Push global contracts to Engram (dev/repair).',
