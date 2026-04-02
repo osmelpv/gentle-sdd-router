@@ -15,6 +15,7 @@ import {
   createCustomSdd,
   deleteCustomSdd,
   resolveContract,
+  scaffoldPhaseContract,
 } from '../src/core/sdd-catalog-io.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -698,5 +699,186 @@ describe('validateSddYaml — invoke field', () => {
     assert.equal(result.phases.concept.execution, 'parallel');
     assert.equal(result.phases.concept.agents, 2);
     assert.equal(result.phases.concept.invoke, null);
+  });
+});
+
+// ─── scaffoldPhaseContract ────────────────────────────────────────────────────
+
+describe('scaffoldPhaseContract', () => {
+  test('creates a .md contract file for the phase', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      fs.mkdirSync(path.join(catalogsDir, 'my-sdd', 'contracts', 'phases'), { recursive: true });
+      scaffoldPhaseContract(catalogsDir, 'my-sdd', 'concept', {
+        intent: 'Define the concept',
+        agents: 1,
+        judge: false,
+        radar: false,
+      });
+      const contractPath = path.join(catalogsDir, 'my-sdd', 'contracts', 'phases', 'concept.md');
+      assert.ok(fs.existsSync(contractPath), 'Contract file should exist');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('contract contains phase name as title', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      fs.mkdirSync(path.join(catalogsDir, 'game-design', 'contracts', 'phases'), { recursive: true });
+      scaffoldPhaseContract(catalogsDir, 'game-design', 'narrative', {
+        intent: 'Write the narrative arc',
+        agents: 1,
+        judge: false,
+        radar: false,
+      });
+      const contractPath = path.join(catalogsDir, 'game-design', 'contracts', 'phases', 'narrative.md');
+      const content = fs.readFileSync(contractPath, 'utf8');
+      assert.ok(content.includes('narrative'), 'Contract must include phase name');
+      assert.ok(content.startsWith('# Phase:') || content.includes('# Phase:'), 'Contract must have Phase heading');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('contract contains the intent from phaseConfig', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      fs.mkdirSync(path.join(catalogsDir, 'my-sdd', 'contracts', 'phases'), { recursive: true });
+      scaffoldPhaseContract(catalogsDir, 'my-sdd', 'explore', {
+        intent: 'Investigate and understand the codebase',
+        agents: 2,
+        judge: true,
+        radar: false,
+      });
+      const contractPath = path.join(catalogsDir, 'my-sdd', 'contracts', 'phases', 'explore.md');
+      const content = fs.readFileSync(contractPath, 'utf8');
+      assert.ok(content.includes('Investigate and understand the codebase'), 'Contract must include intent text');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('contract contains composition info (agents, judge, radar)', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      fs.mkdirSync(path.join(catalogsDir, 'my-sdd', 'contracts', 'phases'), { recursive: true });
+      scaffoldPhaseContract(catalogsDir, 'my-sdd', 'apply', {
+        intent: 'Implement tasks',
+        agents: 3,
+        judge: true,
+        radar: true,
+      });
+      const contractPath = path.join(catalogsDir, 'my-sdd', 'contracts', 'phases', 'apply.md');
+      const content = fs.readFileSync(contractPath, 'utf8');
+      assert.ok(content.includes('3'), 'Contract must include agents count');
+      // judge: true → 'yes'
+      assert.ok(content.includes('yes') || content.includes('true'), 'Contract must include judge info');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('does NOT overwrite existing contract file', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const phasesDir = path.join(catalogsDir, 'my-sdd', 'contracts', 'phases');
+      fs.mkdirSync(phasesDir, { recursive: true });
+      const contractPath = path.join(phasesDir, 'concept.md');
+      // Write original content
+      fs.writeFileSync(contractPath, '# My Custom Content\n', 'utf8');
+      // Try to scaffold — should skip
+      scaffoldPhaseContract(catalogsDir, 'my-sdd', 'concept', {
+        intent: 'New intent',
+        agents: 1,
+        judge: false,
+        radar: false,
+      });
+      // Content must remain unchanged
+      const afterContent = fs.readFileSync(contractPath, 'utf8');
+      assert.equal(afterContent, '# My Custom Content\n', 'Should not overwrite existing contract');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('returns { created: true } when file is created', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      fs.mkdirSync(path.join(catalogsDir, 'my-sdd', 'contracts', 'phases'), { recursive: true });
+      const result = scaffoldPhaseContract(catalogsDir, 'my-sdd', 'concept', {
+        intent: 'Define concept',
+        agents: 1,
+        judge: false,
+        radar: false,
+      });
+      assert.equal(result.created, true);
+      assert.ok(result.path.endsWith('concept.md'), 'Result path should end with concept.md');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('returns { created: false } when file already exists', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const phasesDir = path.join(catalogsDir, 'my-sdd', 'contracts', 'phases');
+      fs.mkdirSync(phasesDir, { recursive: true });
+      fs.writeFileSync(path.join(phasesDir, 'concept.md'), '# Existing\n', 'utf8');
+      const result = scaffoldPhaseContract(catalogsDir, 'my-sdd', 'concept', {
+        intent: 'Define concept',
+        agents: 1,
+        judge: false,
+        radar: false,
+      });
+      assert.equal(result.created, false);
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('contract includes template sections (Instructions, Input Contract, Output Contract)', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      fs.mkdirSync(path.join(catalogsDir, 'my-sdd', 'contracts', 'phases'), { recursive: true });
+      scaffoldPhaseContract(catalogsDir, 'my-sdd', 'verify', {
+        intent: 'Verify implementation',
+        agents: 1,
+        judge: false,
+        radar: false,
+      });
+      const contractPath = path.join(catalogsDir, 'my-sdd', 'contracts', 'phases', 'verify.md');
+      const content = fs.readFileSync(contractPath, 'utf8');
+      assert.ok(content.includes('## Instructions'), 'Contract must have Instructions section');
+      assert.ok(content.includes('## Input Contract'), 'Contract must have Input Contract section');
+      assert.ok(content.includes('## Output Contract'), 'Contract must have Output Contract section');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+});
+
+// ─── createCustomSdd — auto-generates phase contracts ─────────────────────────
+
+describe('createCustomSdd — auto-generates phase contracts', () => {
+  test('createCustomSdd generates a contract file for the default main phase', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      fs.mkdirSync(catalogsDir, { recursive: true });
+      createCustomSdd(catalogsDir, 'my-sdd');
+      const contractPath = path.join(catalogsDir, 'my-sdd', 'contracts', 'phases', 'main.md');
+      assert.ok(fs.existsSync(contractPath), 'Contract for default main phase must be created');
+    } finally {
+      cleanup(tmp);
+    }
   });
 });

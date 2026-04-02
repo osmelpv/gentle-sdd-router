@@ -1,0 +1,49 @@
+name: sdd-debug-mono
+catalog: sdd-debug
+availability: stable
+identity:
+  inherit_agents_md: true
+  persona: gentleman
+phases:
+  explore-issues:
+    - target: openai/gpt-5.4
+      kind: lane
+      phase: explore-issues
+      role: primary
+      fallbacks: anthropic/claude-sonnet-4-6, google/gemini-3-pro-preview
+  triage:
+    - target: openai/gpt-5.4
+      kind: lane
+      phase: triage
+      role: primary
+      fallbacks: anthropic/claude-sonnet-4-6, google/gemini-3-pro-preview
+  diagnose:
+    - target: openai/gpt-5.4
+      kind: lane
+      phase: diagnose
+      role: primary
+      fallbacks: anthropic/claude-sonnet-4-6, google/gemini-3-pro-preview
+  propose-fix:
+    - target: openai/gpt-5.4
+      kind: lane
+      phase: propose-fix
+      role: primary
+      fallbacks: anthropic/claude-sonnet-4-6, google/gemini-3-pro-preview
+  apply-fix:
+    - target: openai/gpt-5.4
+      kind: lane
+      phase: apply-fix
+      role: primary
+      fallbacks: anthropic/claude-sonnet-4-6, google/gemini-3-pro-preview
+  validate-fix:
+    - target: openai/gpt-5.4
+      kind: lane
+      phase: validate-fix
+      role: primary
+      fallbacks: anthropic/claude-sonnet-4-6, google/gemini-3-pro-preview
+  archive-debug:
+    - target: openai/gpt-5.4
+      kind: lane
+      phase: archive-debug
+      role: primary
+      fallbacks: anthropic/claude-sonnet-4-6, google/gemini-3-pro-preview

@@ -36,4 +36,43 @@ Default: `parallel` — Multiple verification agents work simultaneously. Judge 
 - Test run results
 - Gap list (spec requirements not met)
 - Security/risk findings (if auditors present)
-- Recommendation: proceed to archive OR trigger debug
+- Recommendation: proceed to archive OR invoke sdd-debug
+
+## sdd-debug Invocation
+
+### When Issues Found
+If verify finds failing tests, spec gaps, or security/risk findings, it MUST invoke the
+`sdd-debug` catalog via the cross-catalog mechanism:
+
+```
+gsr sdd invoke sdd-debug/sdd-debug-mono --from <caller> --phase verify --payload "<issues JSON>"
+```
+
+Or with multi-agent variant for complex issues:
+```
+gsr sdd invoke sdd-debug/sdd-debug-multi --from <caller> --phase verify --payload "<issues JSON>"
+```
+
+The `--payload` carries the issues array from the verification report as JSON.
+
+### When No Issues Found
+If verify finds NO issues (all spec requirements met, all tests passing, no security flags),
+proceed directly to `archive` — do NOT invoke sdd-debug.
+
+## Re-Verify Loop
+
+After `sdd-debug` returns its `debug_result`:
+
+1. If `debug_result.requires_reverify = true` → verify runs AGAIN on the modified codebase
+2. The re-verify cycle uses the same composition and criteria as the original verify pass
+
+### Re-Verify Outcomes
+- **Clean pass** → proceed to `archive` normally
+- **New issues introduced by the fix** → judge evaluates the delta:
+  - `revert` — if the fix introduced more problems than it solved
+  - `escalate` — if the issue exceeds the current change scope
+  - `retry` — if a narrow targeted fix could work (judge must specify the scope)
+
+### Escalation Guard
+After 2 full sdd-debug + re-verify cycles without resolution, verify MUST escalate to the
+orchestrator with a full report. Infinite retry loops are PROHIBITED.

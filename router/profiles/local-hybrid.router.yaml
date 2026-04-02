@@ -56,12 +56,6 @@ phases:
       phase: verify
       role: judge
       fallbacks: opencode/qwen3.6-plus-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
-  debug:
-    - target: opencode/qwen3.6-plus-free
-      kind: lane
-      phase: debug
-      role: primary
-      fallbacks: opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/devstral-small-2:24b
   archive:
     - target: opencode/qwen3.6-plus-free
       kind: lane

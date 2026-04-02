@@ -673,3 +673,157 @@ describe('SddCreateWizard — cancel behavior (reducer + exported helper)', () =
     assert.equal(popCalled, true, 'ESC on step 5 must call router.pop() to cancel to sdd-list');
   });
 });
+
+// ─── Auto-contract generation — data layer (used by TUI wizard + phase editor) ─
+
+describe('scaffoldPhaseContract — data layer used by TUI', () => {
+  test('scaffoldPhaseContract is exported from sdd-catalog-io', async () => {
+    const mod = await import('../src/core/sdd-catalog-io.js');
+    assert.equal(typeof mod.scaffoldPhaseContract, 'function',
+      'scaffoldPhaseContract must be exported from sdd-catalog-io.js');
+  });
+
+  test('createCustomSdd auto-generates contract for each phase (wizard post-save side effect)', async () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      fs.mkdirSync(catalogsDir, { recursive: true });
+      const { createCustomSdd } = await import('../src/core/sdd-catalog-io.js');
+      // Simulate wizard creating SDD with a custom phase
+      createCustomSdd(catalogsDir, 'wizard-sdd', 'Created by wizard');
+      // Default main phase contract must exist
+      const contractPath = path.join(catalogsDir, 'wizard-sdd', 'contracts', 'phases', 'main.md');
+      assert.ok(fs.existsSync(contractPath),
+        'Wizard-created SDD must auto-generate phase contract for main phase');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('scaffoldPhaseContract skips existing file (phase editor add → no overwrite)', async () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const phasesDir = path.join(catalogsDir, 'test-sdd', 'contracts', 'phases');
+      fs.mkdirSync(phasesDir, { recursive: true });
+      const existingPath = path.join(phasesDir, 'explore.md');
+      fs.writeFileSync(existingPath, '# Existing Content\n', 'utf8');
+      const { scaffoldPhaseContract } = await import('../src/core/sdd-catalog-io.js');
+      const result = scaffoldPhaseContract(catalogsDir, 'test-sdd', 'explore', {
+        intent: 'New intent attempt',
+        agents: 1,
+        judge: false,
+        radar: false,
+      });
+      assert.equal(result.created, false, 'Should return created: false when file already exists');
+      const afterContent = fs.readFileSync(existingPath, 'utf8');
+      assert.equal(afterContent, '# Existing Content\n', 'Existing file must not be overwritten');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('scaffoldPhaseContract generates contract with intent text from phase data', async () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      fs.mkdirSync(path.join(catalogsDir, 'my-sdd', 'contracts', 'phases'), { recursive: true });
+      const { scaffoldPhaseContract } = await import('../src/core/sdd-catalog-io.js');
+      const result = scaffoldPhaseContract(catalogsDir, 'my-sdd', 'design', {
+        intent: 'Plan the architecture carefully',
+        agents: 2,
+        judge: false,
+        radar: true,
+      });
+      assert.equal(result.created, true, 'Should create the file');
+      const content = fs.readFileSync(result.path, 'utf8');
+      assert.ok(content.includes('Plan the architecture carefully'), 'Intent must appear in contract');
+      assert.ok(content.includes('2'), 'Agents count must appear in contract');
+      // radar: true → 'yes'
+      assert.ok(content.includes('yes'), 'Radar=true must render as yes');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('wizard step 5 simulation: scaffoldPhaseContract called for user phase after sdd.yaml overwrite', async () => {
+    // This simulates what the wizard save step does:
+    //   1. createCustomSdd → creates dir + main.md
+    //   2. Overwrite sdd.yaml with user's phase
+    //   3. Call scaffoldPhaseContract for user's phase
+    // We verify step 3 produces the correct contract file.
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      fs.mkdirSync(catalogsDir, { recursive: true });
+      const { createCustomSdd, scaffoldPhaseContract } = await import('../src/core/sdd-catalog-io.js');
+
+      // Step 1: wizard calls createCustomSdd
+      createCustomSdd(catalogsDir, 'wizard-test', '');
+
+      // Step 2: wizard overwrites sdd.yaml with user's phase
+      const { stringifyYaml } = await import('../src/core/router.js');
+      const sddContent = {
+        name: 'wizard-test',
+        version: 1,
+        description: '',
+        phases: {
+          'explore': { intent: 'Explore the codebase and gather context' },
+        },
+      };
+      fs.writeFileSync(
+        path.join(catalogsDir, 'wizard-test', 'sdd.yaml'),
+        stringifyYaml(sddContent),
+        'utf8'
+      );
+
+      // Step 3: wizard calls scaffoldPhaseContract for user's phase
+      const result = scaffoldPhaseContract(catalogsDir, 'wizard-test', 'explore', {
+        intent: 'Explore the codebase and gather context',
+        agents: 1,
+        judge: false,
+        radar: false,
+      });
+
+      assert.equal(result.created, true, 'User phase contract should be created');
+      const contractPath = path.join(catalogsDir, 'wizard-test', 'contracts', 'phases', 'explore.md');
+      assert.ok(fs.existsSync(contractPath), 'explore.md contract must exist');
+      const content = fs.readFileSync(contractPath, 'utf8');
+      assert.ok(content.includes('explore'), 'Contract must include phase name');
+      assert.ok(content.includes('Explore the codebase and gather context'), 'Contract must include intent');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('phase editor simulation: scaffoldPhaseContract called when saving new phase', async () => {
+    // Simulates what sdd-phase-editor savePhase should do after writing sdd.yaml:
+    //   call scaffoldPhaseContract for the new phase if contract doesn't exist
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      fs.mkdirSync(catalogsDir, { recursive: true });
+      const { createCustomSdd, scaffoldPhaseContract } = await import('../src/core/sdd-catalog-io.js');
+
+      // Set up existing SDD
+      createCustomSdd(catalogsDir, 'editor-test', '');
+
+      // Simulate phase editor saving a new phase
+      const result = scaffoldPhaseContract(catalogsDir, 'editor-test', 'new-feature', {
+        intent: 'Implement the new feature',
+        agents: 1,
+        judge: false,
+        radar: false,
+      });
+
+      assert.equal(result.created, true, 'New phase contract should be created by editor');
+      const contractPath = path.join(catalogsDir, 'editor-test', 'contracts', 'phases', 'new-feature.md');
+      assert.ok(fs.existsSync(contractPath), 'new-feature.md contract must exist');
+      const content = fs.readFileSync(contractPath, 'utf8');
+      assert.ok(content.includes('new-feature'), 'Contract must include phase name');
+      assert.ok(content.includes('Implement the new feature'), 'Contract must include intent');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+});

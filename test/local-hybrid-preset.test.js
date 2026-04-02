@@ -6,7 +6,7 @@
  * Verifies:
  *   - Preset file exists and is valid YAML
  *   - Preset loads via loadV4Profiles without throwing
- *   - All 10 canonical SDD phases + propose are covered
+ *   - All 9 canonical SDD phases are covered (debug moved to sdd-debug catalog)
  *   - Each phase has at minimum one lane with a primary role
  *   - Primary targets use openrouter free tier models
  *   - Fallbacks include ollama/ local models for offline use
@@ -84,12 +84,11 @@ describe('local-hybrid preset — file and basic structure', () => {
 // ─── Phase coverage ───────────────────────────────────────────────────────────
 
 describe('local-hybrid preset — phase coverage', () => {
-  // The preset must cover all 10 canonical SDD phases + propose as custom phase.
-  // CANONICAL_PHASES = orchestrator, explore, propose, spec, design, tasks, apply, verify, debug, archive
-  // 'propose' is already in CANONICAL_PHASES (index 2), so total = 10 phases minimum.
+  // The preset covers 9 canonical SDD phases (debug removed — now handled by sdd-debug catalog).
+  // CANONICAL_PHASES = orchestrator, explore, propose, spec, design, tasks, apply, verify, archive
   const REQUIRED_PHASES = [
     'orchestrator', 'explore', 'propose', 'spec',
-    'design', 'tasks', 'apply', 'verify', 'debug', 'archive',
+    'design', 'tasks', 'apply', 'verify', 'archive',
   ];
 
   test('preset phases is a non-empty object', () => {

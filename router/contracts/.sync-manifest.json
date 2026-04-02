@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-04-02T02:29:21.311Z",
+  "generated_at": "2026-04-02T05:03:35.118Z",
   "contracts": [
     {
       "type": "role",
@@ -133,7 +133,7 @@
       "name": "verify",
       "topic_key": "gsr/contracts/phases/verify",
       "file": "router/contracts/phases/verify.md",
-      "checksum": "16f7721429535038076f3eefa58efb3c1dedc70369fa0386b709e43883af99d2"
+      "checksum": "fb7ab4a11d5a250d7ec7e58ccd8b01b22cb4b46c8f3d0d179cdda88cefd461cb"
     }
   ]
 }

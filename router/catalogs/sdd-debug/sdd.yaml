@@ -1,0 +1,79 @@
+name: sdd-debug
+version: 1
+description: "Structured debug workflow for resolving issues found during verify. Invoked automatically when verify produces findings."
+
+phases:
+  explore-issues:
+    intent: "Investigate ALL code related to reported issues. Map dependencies, call chains, test coverage, and side-effect risks. DO NOT propose solutions yet."
+    execution: parallel
+    agents: 1
+    judge: false
+    radar: false
+    input: "debug_request with issues list, affected_files, last_change_files, test_baseline"
+    output: "Impact map per issue: files, functions, tests, potential breakage points"
+
+  triage:
+    intent: "Classify and prioritize issues by real severity, cascade risk, interdependencies, and safe resolution order."
+    execution: sequential
+    agents: 1
+    judge: false
+    radar: false
+    depends_on:
+      - explore-issues
+    input: "Impact map from explore-issues"
+    output: "Ordered issue list with blast radius, interdependencies, resolution order"
+
+  diagnose:
+    intent: "For each issue in triage order: find the ROOT CAUSE, not the symptom. Verify the diagnosis explains ALL symptoms."
+    execution: sequential
+    agents: 1
+    judge: false
+    radar: false
+    depends_on:
+      - triage
+    input: "Ordered issues with impact map"
+    output: "Per issue: root cause, hypothesis, evidence, exact code causing the problem"
+
+  propose-fix:
+    intent: "Propose the MOST CONSERVATIVE fix possible. Minimal change surface. Do NOT refactor working code. Do NOT change public APIs."
+    execution: sequential
+    agents: 1
+    judge: false
+    radar: false
+    depends_on:
+      - diagnose
+    input: "Diagnosed issues with root causes"
+    output: "Per issue: proposed fix, files to touch, estimated lines, tests to add, residual risk"
+
+  apply-fix:
+    intent: "Implement fixes ONE AT A TIME in triage order. TDD strict: test that demonstrates the bug (RED) then fix (GREEN) then full suite must pass."
+    execution: sequential
+    agents: 1
+    judge: false
+    radar: false
+    depends_on:
+      - propose-fix
+    input: "Proposed fixes in order"
+    output: "Modified files, added tests, full suite results per fix"
+
+  validate-fix:
+    intent: "Run FULL test suite. Compare with baseline. Verify: (a) issue tests now pass, (b) NO previously-passing test now fails, (c) no detectable side effects."
+    execution: sequential
+    agents: 1
+    judge: false
+    radar: false
+    depends_on:
+      - apply-fix
+    input: "Applied fixes, test baseline"
+    output: "Validation report: before/after tests, regressions, confidence level"
+
+  archive-debug:
+    intent: "Archive debug session to memory (Engram or file-based). Then generate the standardized debug_result output for the calling SDD."
+    execution: sequential
+    agents: 1
+    judge: false
+    radar: false
+    depends_on:
+      - validate-fix
+    input: "Validation report, all phase outputs"
+    output: "debug_result standardized output (status, summary, issues_resolved, regressions, requires_reverify)"

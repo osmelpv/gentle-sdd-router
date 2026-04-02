@@ -6,6 +6,7 @@ import {
   loadCustomSdds,
   loadCustomSdd,
   deleteCustomSdd,
+  scaffoldPhaseContract,
 } from './core/sdd-catalog-io.js';
 import {
   createInvocation,
@@ -2828,7 +2829,6 @@ export function runPhaseCreate(args, catalogsDir) {
   }
 
   const phasePath = path.join(catalogDir, 'contracts', 'phases', `${name}.md`);
-  fs.mkdirSync(path.dirname(phasePath), { recursive: true });
 
   // Do not overwrite existing contract — print warning instead
   if (fs.existsSync(phasePath)) {
@@ -2836,12 +2836,12 @@ export function runPhaseCreate(args, catalogsDir) {
     return;
   }
 
-  const template = PHASE_CONTRACT_TEMPLATE(name);
-  const tempPath = `${phasePath}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tempPath, template, 'utf8');
-  fs.renameSync(tempPath, phasePath);
+  // Extract optional --intent flag
+  const intentIndex = args.indexOf('--intent');
+  const intent = intentIndex !== -1 ? (args[intentIndex + 1] ?? '') : '';
 
-  process.stdout.write(`Created phase contract '${name}' at ${phasePath}\n`);
+  const result = scaffoldPhaseContract(catalogsDir, sddName, name, { intent });
+  process.stdout.write(`Created phase contract '${name}' at ${result.path}\n`);
 }
 
 // === EXPORTED INVOKE COMMAND FUNCTIONS ========================================

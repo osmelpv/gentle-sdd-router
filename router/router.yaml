@@ -8,6 +8,9 @@ catalogs:
     displayName: SDD-Orchestrator
     enabled: true
     active_preset: multivendor
+  sdd-debug:
+    displayName: SDD-Debug
+    enabled: true
 metadata:
   installation_contract:
     source_of_truth: router/router.yaml

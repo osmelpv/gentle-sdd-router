@@ -198,14 +198,14 @@ export function SddCreateWizard({
           try {
             const pathMod = await import('node:path');
             const catalogsDir = pathMod.join(pathMod.dirname(configPath), 'catalogs');
-            const { createCustomSdd } = await import('../../../core/sdd-catalog-io.js');
+            const { createCustomSdd, scaffoldPhaseContract } = await import('../../../core/sdd-catalog-io.js');
             const { stringifyYaml } = await import('../../../core/router.js');
             const fsMod = await import('node:fs');
 
-            // Create the directory structure
+            // Create the directory structure (generates main.md contract as a side-effect)
             createCustomSdd(catalogsDir, state.name, state.description);
 
-            // Write the sdd.yaml with the first phase
+            // Write the sdd.yaml with the first phase (user-provided)
             const sddContent = {
               name: state.name,
               version: 1,
@@ -218,6 +218,14 @@ export function SddCreateWizard({
             };
             const sddYamlPath = pathMod.join(catalogsDir, state.name, 'sdd.yaml');
             fsMod.writeFileSync(sddYamlPath, stringifyYaml(sddContent), 'utf8');
+
+            // Generate contract for the user's first phase (only if different from default 'main')
+            scaffoldPhaseContract(catalogsDir, state.name, state.firstPhaseName, {
+              intent: state.firstPhaseIntent,
+              agents: 1,
+              judge: false,
+              radar: false,
+            });
 
             if (setSelectedSdd) setSelectedSdd(state.name);
             router.pop(); // back to sdd-list

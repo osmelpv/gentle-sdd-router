@@ -75,6 +75,7 @@ export function SddPhaseEditor({
       const pathMod = await import('node:path');
       const fsMod = await import('node:fs');
       const { stringifyYaml } = await import('../../../core/router.js');
+      const { scaffoldPhaseContract } = await import('../../../core/sdd-catalog-io.js');
       const catalogsDir = pathMod.join(pathMod.dirname(configPath), 'catalogs');
       const sddYamlPath = pathMod.join(catalogsDir, selectedSdd, 'sdd.yaml');
       const phaseData = { intent };
@@ -87,6 +88,15 @@ export function SddPhaseEditor({
         },
       };
       fsMod.writeFileSync(sddYamlPath, stringifyYaml(updatedSdd), 'utf8');
+
+      // Auto-generate contract if it doesn't already exist
+      scaffoldPhaseContract(catalogsDir, selectedSdd, newPhaseName, {
+        intent,
+        agents: 1,
+        judge: false,
+        radar: false,
+      });
+
       await loadSdd();
       setView('menu');
       setNewPhaseName('');

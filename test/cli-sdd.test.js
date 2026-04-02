@@ -378,6 +378,72 @@ describe('runPhaseCreate', () => {
   });
 });
 
+// ─── runPhaseCreate — enhanced: uses scaffoldPhaseContract with intent ─────────
+
+describe('runPhaseCreate — contract content', () => {
+  test('phase contract contains the template sections (Instructions, Input Contract, Output Contract)', () => {
+    const tmp = makeTempDir();
+    try {
+      const { catalogsDir } = makeRouterDir(tmp);
+      createCustomSdd(catalogsDir, 'game-design');
+      runPhaseCreate(['narrative', '--sdd', 'game-design'], catalogsDir);
+      const phasePath = path.join(catalogsDir, 'game-design', 'contracts', 'phases', 'narrative.md');
+      assert.ok(fs.existsSync(phasePath), 'Contract file must be created');
+      const content = fs.readFileSync(phasePath, 'utf8');
+      assert.ok(content.includes('## Instructions'), 'Must include Instructions section');
+      assert.ok(content.includes('## Input Contract'), 'Must include Input Contract section');
+      assert.ok(content.includes('## Output Contract'), 'Must include Output Contract section');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('phase contract contains phase name as title when --intent is provided', () => {
+    const tmp = makeTempDir();
+    try {
+      const { catalogsDir } = makeRouterDir(tmp);
+      createCustomSdd(catalogsDir, 'game-design');
+      runPhaseCreate(['concept', '--sdd', 'game-design', '--intent', 'Design the core concept'], catalogsDir);
+      const phasePath = path.join(catalogsDir, 'game-design', 'contracts', 'phases', 'concept.md');
+      const content = fs.readFileSync(phasePath, 'utf8');
+      assert.ok(content.includes('concept'), 'Must include phase name');
+      assert.ok(content.includes('Design the core concept'), 'Must include --intent value');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+});
+
+// ─── runSddCreate — auto-generates phase contracts ────────────────────────────
+
+describe('runSddCreate — auto-generates phase contracts', () => {
+  test('runSddCreate generates a contract .md for the default main phase', () => {
+    const tmp = makeTempDir();
+    try {
+      const { catalogsDir } = makeRouterDir(tmp);
+      runSddCreate(['auto-sdd'], catalogsDir);
+      const contractPath = path.join(catalogsDir, 'auto-sdd', 'contracts', 'phases', 'main.md');
+      assert.ok(fs.existsSync(contractPath), 'Contract for default main phase must be created by runSddCreate');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('runSddCreate contract for main phase contains phase name and template sections', () => {
+    const tmp = makeTempDir();
+    try {
+      const { catalogsDir } = makeRouterDir(tmp);
+      runSddCreate(['structured-sdd'], catalogsDir);
+      const contractPath = path.join(catalogsDir, 'structured-sdd', 'contracts', 'phases', 'main.md');
+      const content = fs.readFileSync(contractPath, 'utf8');
+      assert.ok(content.includes('main'), 'Contract must include phase name');
+      assert.ok(content.includes('## Instructions'), 'Contract must have Instructions section');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+});
+
 // ─── CLI Help text for sdd/role/phase commands ───────────────────────────────
 
 import {

@@ -369,6 +369,11 @@ export function createCustomSdd(catalogsDir, name, description) {
   writeFileSync(tempPath, yaml, 'utf8');
   renameSync(tempPath, sddYamlPath);
 
+  // Auto-generate phase contracts for each phase defined in the sdd.yaml
+  for (const [phaseName, phaseConfig] of Object.entries(sddContent.phases)) {
+    scaffoldPhaseContract(catalogsDir, name, phaseName, phaseConfig);
+  }
+
   return { name, path: catalogDir };
 }
 
@@ -395,6 +400,71 @@ export function deleteCustomSdd(catalogsDir, name) {
   rmSync(catalogDir, { recursive: true, force: true });
 
   return { name, path: catalogDir, deleted: true };
+}
+
+// ─── scaffoldPhaseContract ────────────────────────────────────────────────────
+
+/**
+ * Generate a phase contract `.md` scaffold file for a given phase.
+ * Only creates the file if it does not already exist (never overwrites).
+ *
+ * @param {string} catalogsDir - Path to router/catalogs/
+ * @param {string} sddName - SDD catalog name
+ * @param {string} phaseName - Phase name
+ * @param {{ intent?: string, agents?: number, judge?: boolean, radar?: boolean, input?: string, output?: string }} phaseConfig - Phase configuration
+ * @returns {{ created: boolean, path: string }}
+ */
+export function scaffoldPhaseContract(catalogsDir, sddName, phaseName, phaseConfig = {}) {
+  const phasesDir = join(catalogsDir, sddName, 'contracts', 'phases');
+  const contractPath = join(phasesDir, `${phaseName}.md`);
+
+  if (existsSync(contractPath)) {
+    return { created: false, path: contractPath };
+  }
+
+  const intent = phaseConfig.intent || '';
+  const agents = phaseConfig.agents ?? 1;
+  const judge = phaseConfig.judge === true ? 'yes' : 'no';
+  const radar = phaseConfig.radar === true ? 'yes' : 'no';
+  const inputContract = typeof phaseConfig.input === 'string' && phaseConfig.input.trim()
+    ? phaseConfig.input.trim()
+    : '<!-- What this phase receives from the previous phase -->';
+  const outputContract = typeof phaseConfig.output === 'string' && phaseConfig.output.trim()
+    ? phaseConfig.output.trim()
+    : '<!-- What this phase produces for the next phase -->';
+
+  const content = `# Phase: ${phaseName}
+
+## Intent
+${intent}
+
+## Composition
+- Agents: ${agents}
+- Judge: ${judge}
+- Radar: ${radar}
+
+## Instructions
+<!-- Define what the agent(s) in this phase should do -->
+
+## Input Contract
+${inputContract}
+
+## Output Contract
+${outputContract}
+
+## Skills
+<!-- List skills the agent(s) should use -->
+
+## Constraints
+<!-- Rules the agent(s) must follow -->
+`;
+
+  mkdirSync(phasesDir, { recursive: true });
+  const tempPath = `${contractPath}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tempPath, content, 'utf8');
+  renameSync(tempPath, contractPath);
+
+  return { created: true, path: contractPath };
 }
 
 // ─── resolveContract ─────────────────────────────────────────────────────────
