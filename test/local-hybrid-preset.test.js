@@ -131,11 +131,16 @@ describe('local-hybrid preset — phase coverage', () => {
 // ─── Model assignment strategy ────────────────────────────────────────────────
 
 describe('local-hybrid preset — model assignment strategy', () => {
-  test('main lane models are free-tier cloud or local-first targets', () => {
+  test('main lane models match the intended hybrid routing strategy', () => {
     // Main lane = role: primary for most phases, role: judge for verify phase.
-    // Most phases use opencode/ (free cloud), but apply uses ollama/ (local-first for code).
+    // The preset intentionally mixes free cloud, paid cloud, and local-first choices by phase.
     const preset = loadPreset();
-    const LOCAL_FIRST_PHASES = ['apply'];
+    const EXPECTED_PREFIXES = {
+      apply: 'anthropic/',
+      verify: 'openai/',
+      archive: 'google/',
+    };
+
     for (const [phaseName, lanes] of Object.entries(preset.phases)) {
       const mainLane = lanes.find((lane) => lane.role === 'primary' || lane.role === 'judge');
       assert.ok(mainLane, `Phase "${phaseName}" has no primary or judge lane`);
@@ -143,17 +148,18 @@ describe('local-hybrid preset — model assignment strategy', () => {
         typeof mainLane.target === 'string' && mainLane.target.length > 0,
         `Phase "${phaseName}" main lane must have a non-empty target`
       );
-      if (LOCAL_FIRST_PHASES.includes(phaseName)) {
-        // Local-first phases use ollama/ as primary (code execution stays local)
+
+      const expectedPrefix = EXPECTED_PREFIXES[phaseName] ?? 'opencode/';
+
+      if (phaseName in EXPECTED_PREFIXES) {
         assert.ok(
-          mainLane.target.startsWith('ollama/'),
-          `Phase "${phaseName}" is local-first, expected ollama/ prefix, got: ${mainLane.target}`
+          mainLane.target.startsWith(expectedPrefix),
+          `Phase "${phaseName}" main target must use ${expectedPrefix} prefix, got: ${mainLane.target}`
         );
       } else {
-        // Cloud phases use opencode/ prefix (free models via openrouter)
         assert.ok(
-          mainLane.target.startsWith('opencode/'),
-          `Phase "${phaseName}" main target must use opencode/ prefix, got: ${mainLane.target}`
+          mainLane.target.startsWith(expectedPrefix),
+          `Phase "${phaseName}" main target must use ${expectedPrefix} prefix, got: ${mainLane.target}`
         );
       }
     }

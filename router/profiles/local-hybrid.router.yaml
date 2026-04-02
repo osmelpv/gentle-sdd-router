@@ -19,7 +19,7 @@ phases:
       kind: lane
       phase: orchestrator
       role: primary
-      fallbacks: "opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/devstral-small-2:24b"
+      fallbacks: "opencode/mimo-v2-pro-free, opencode/nemotron-3-super-free, opencode/minimax-m2.5-free, ollama/devstral-small-2:24b"
   explore:
     - target: opencode/nemotron-3-super-free
       kind: lane
@@ -31,40 +31,40 @@ phases:
       kind: lane
       phase: propose
       role: primary
-      fallbacks: opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
+      fallbacks: opencode/mimo-v2-pro-free, opencode/nemotron-3-super-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
   spec:
     - target: opencode/qwen3.6-plus-free
       kind: lane
       phase: spec
       role: primary
-      fallbacks: opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
+      fallbacks: opencode/mimo-v2-pro-free, opencode/nemotron-3-super-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
   design:
     - target: opencode/qwen3.6-plus-free
       kind: lane
       phase: design
       role: primary
-      fallbacks: opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
+      fallbacks: opencode/mimo-v2-pro-free, opencode/nemotron-3-super-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
   tasks:
     - target: opencode/qwen3.6-plus-free
       kind: lane
       phase: tasks
       role: primary
-      fallbacks: opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
+      fallbacks: opencode/mimo-v2-pro-free, opencode/nemotron-3-super-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
   apply:
-    - target: "ollama/devstral-small-2:24b"
+    - target: anthropic/claude-sonnet-4-6
       kind: lane
       phase: apply
       role: primary
-      fallbacks: "opencode/qwen3.6-plus-free, opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, ollama/qwen3.5:35b"
+      fallbacks: "ollama/devstral-small-2:24b, opencode/qwen3.6-plus-free, opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, ollama/qwen3.5:35b"
   verify:
-    - target: opencode/nemotron-3-super-free
+    - target: openai/gpt-5.4
       kind: lane
       phase: verify
       role: judge
       fallbacks: opencode/qwen3.6-plus-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
   archive:
-    - target: opencode/qwen3.6-plus-free
+    - target: google/gemini-3-flash-preview
       kind: lane
       phase: archive
       role: primary
-      fallbacks: opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
+      fallbacks: opencode/mimo-v2-pro-free, opencode/nemotron-3-super-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
