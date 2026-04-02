@@ -1,183 +1,499 @@
 /**
  * Status Reporter
  *
- * Translates internal sync/config state into human-friendly status messages.
- * Two modes:
- *   - Simple (default): user-facing vocabulary only
- *   - Detailed (--verbose/--debug): full internal state exposed
+ * Builds human-friendly status output strings for `gsr status` and
+ * `gsr status --verbose`.
  *
- * Status levels (in order of completeness):
- *   error          → something is wrong, needs attention
- *   configured     → router.yaml found, but no sync has been run
- *   synchronized   → sync completed, agents written to host
- *   visible        → agents confirmed visible in host
- *   ready          → all checks pass, ready to use
- *   requires_reopen → sync done but editor must be reopened to activate
+ * Two modes:
+ *   - Simple (default):  clean aligned text, no box drawing, preset/catalog/debug summary
+ *   - Verbose:           full sections — CONFIGURATION, PRESET, ROUTES, CATALOGS, SDD CONNECTIONS
+ *
+ * All output is string-based: no React/Ink, no internal terms leaked.
  *
  * @module status-reporter
  */
 
-// ── Status level definitions ──────────────────────────────────────────────
+// ── STATUS_LEVELS (kept for TUI compat) ───────────────────────────────────────
 
 /**
- * @typedef {Object} StatusLevel
- * @property {string} emoji
- * @property {string} message
- */
-
-/**
- * All valid status levels with their default emoji and human-friendly message.
- * @type {Record<string, StatusLevel>}
+ * Status level definitions used by the TUI home screen indicator.
+ * @type {Record<string, { emoji: string, message: string }>}
  */
 export const STATUS_LEVELS = {
-  error: {
-    emoji: '❌',
-    message: 'Something went wrong. Check your configuration and try again.',
-  },
-  configured: {
-    emoji: '✅',
-    message: 'Configured. Run `gsr sync` to activate.',
-  },
-  synchronized: {
-    emoji: '🔄',
-    message: 'Synchronized. Your routing is active.',
-  },
-  visible: {
-    emoji: '👁️',
-    message: 'Visible in host. Agents are available.',
-  },
-  ready: {
-    emoji: '✅',
-    message: 'Ready to use.',
-  },
-  requires_reopen: {
-    emoji: '⚠️',
-    message: 'Synchronized. Reopen your editor to activate the new agents.',
-  },
+  error: { emoji: '❌', message: 'Something went wrong. Check your configuration and try again.' },
+  configured: { emoji: '✅', message: 'Configured. Run `gsr sync` to activate.' },
+  synchronized: { emoji: '🔄', message: 'Synchronized. Your routing is active.' },
+  visible: { emoji: '👁️', message: 'Visible in host. Agents are available.' },
+  ready: { emoji: '✅', message: 'Ready to use.' },
+  requires_reopen: { emoji: '⚠️', message: 'Synchronized. Reopen your editor to activate the new agents.' },
 };
 
-// ── Helpers ──────────────────────────────────────────────────────────────
+// ── Internal helpers ──────────────────────────────────────────────────────────
 
 /**
- * Check if the sync result represents a completed, successful sync.
- * @param {object|null} syncResult
- * @returns {boolean}
+ * Get the active preset config object from the assembled config.
+ * Supports both v3/v4 (catalogs-based) and legacy v1/v2 (profiles-based) configs.
+ * @param {object} config
+ * @returns {object|null} preset config or null
  */
-function isSyncSuccessful(syncResult) {
-  if (!syncResult) return false;
-  return syncResult.status === 'ok' || syncResult.status === 'partial';
+function getActivePreset(config) {
+  // v3/v4: catalogs-based
+  if (config?.catalogs) {
+    const catalogName = config.active_catalog ?? 'default';
+    const presetName = config.active_preset ?? config.active_profile;
+    if (!presetName) return null;
+    const catalog = config.catalogs[catalogName];
+    if (!catalog) return null;
+    return catalog.presets?.[presetName] ?? null;
+  }
+
+  // Legacy v1/v2: profiles-based
+  if (config?.profiles) {
+    const profileName = config.active_profile ?? config.active_preset;
+    if (!profileName) return null;
+    return config.profiles[profileName] ?? null;
+  }
+
+  return null;
 }
 
 /**
- * Check if the sync result has a fatal failure.
- * @param {object|null} syncResult
- * @returns {boolean}
+ * Get sorted list of phase names from a preset config.
+ * @param {object|null} preset
+ * @returns {string[]}
  */
-function isSyncFailed(syncResult) {
-  if (!syncResult) return false;
-  return syncResult.status === 'failed';
+function getPresetPhaseNames(preset) {
+  if (!preset?.phases) return [];
+  return Object.keys(preset.phases);
 }
 
-// ── Public API ────────────────────────────────────────────────────────────
-
 /**
- * @typedef {Object} SimpleStatusResult
- * @property {string} level - One of the STATUS_LEVELS keys
- * @property {string} emoji - Indicator emoji
- * @property {string} message - Human-friendly message (no internal terms)
+ * Count enabled catalogs.
+ * @param {object} config
+ * @returns {{ count: number, names: string[] }}
  */
+function getEnabledCatalogs(config) {
+  if (!config?.catalogs) return { count: 0, names: [] };
+  const names = Object.entries(config.catalogs)
+    .filter(([, meta]) => meta?.enabled !== false)
+    .map(([name]) => name);
+  return { count: names.length, names };
+}
 
 /**
- * Get a simplified, user-friendly status from config and sync result.
+ * Format an identity label from config.
+ * @param {object|null} preset
+ * @param {object|null} config
+ * @returns {string|null}
+ */
+function resolveIdentityLabel(preset, config) {
+  // Try from preset identity section
+  const identity = preset?.identity ?? config?.identity ?? null;
+  if (!identity) return null;
+
+  const persona = identity.persona;
+  if (persona && persona !== 'auto') return persona;
+
+  const inheritsMd = identity.inherit_agents_md !== false;
+  if (inheritsMd) {
+    // If persona is auto but AGENTS.md inheritance is on, label accordingly
+    return persona && persona !== 'auto' ? persona : null;
+  }
+  return null;
+}
+
+/**
+ * Pad a label to a fixed width for aligned output.
+ * @param {string} label
+ * @param {number} width
+ * @returns {string}
+ */
+function padLabel(label, width) {
+  return label.padEnd(width, ' ');
+}
+
+/**
+ * Format the primary target model from a lane array.
+ * @param {Array} lanes
+ * @returns {string}
+ */
+function formatLaneTarget(lanes) {
+  if (!Array.isArray(lanes) || lanes.length === 0) return '—';
+  const lane = lanes[0];
+  return lane?.target ?? '—';
+}
+
+/**
+ * Format pricing from a lane.
+ * @param {Array} lanes
+ * @returns {string|null}
+ */
+function formatLanePricing(lanes) {
+  if (!Array.isArray(lanes) || lanes.length === 0) return null;
+  const lane = lanes[0];
+  const isNumeric = (v) => v !== null && v !== undefined && Number.isFinite(Number(v));
+  const input = lane?.inputPerMillion;
+  const output = lane?.outputPerMillion;
+  if (!isNumeric(input) && !isNumeric(output)) return null;
+
+  const fmt = (n) => {
+    if (n === null || n === undefined) return '?';
+    const num = Number(n);
+    if (!Number.isFinite(num)) return '?';
+    if (num === 0) return '$0';
+    if (num < 1) return `$${num}`;
+    return `$${num.toFixed(2).replace(/\.00$/, '')}`;
+  };
+  return `${fmt(input)}/${fmt(output)}`;
+}
+
+/**
+ * Format context window from a lane.
+ * @param {Array} lanes
+ * @returns {string|null}
+ */
+function formatLaneCtx(lanes) {
+  if (!Array.isArray(lanes) || lanes.length === 0) return null;
+  const lane = lanes[0];
+  const contextWindow = lane?.contextWindow;
+  if (!Number.isInteger(contextWindow) || contextWindow <= 0) return null;
+  if (contextWindow >= 1_000_000) {
+    const m = contextWindow / 1_000_000;
+    return m === Math.floor(m) ? `${m}M` : `${m.toFixed(1)}M`;
+  }
+  if (contextWindow >= 1_000) {
+    const k = contextWindow / 1_000;
+    return k === Math.floor(k) ? `${k}K` : `${k.toFixed(1)}K`;
+  }
+  return String(contextWindow);
+}
+
+// ── buildConnectionGraph ──────────────────────────────────────────────────────
+
+/**
+ * Build ASCII SDD connections graph lines.
  *
- * Hides all internal details: overlay mechanics, boundary info, manifest paths,
- * _gsr_generated markers, execution mode internals.
+ * For the default SDD-Orchestrator: shows canonical phases + debug_invoke arrow on the
+ * phase that triggers debug (defaults to 'verify' if not specified).
+ *
+ * For custom SDDs with invoke declarations, shows their phases + invoke arrows.
+ *
+ * @param {string[]} presetPhaseNames - Phase names from active preset
+ * @param {object|null} debugInvoke - debug_invoke config from active preset
+ * @param {Array|null} customSdds - Custom SDD definitions (from loadCustomSdds)
+ * @returns {string[]} Array of lines (ASCII graph)
+ */
+export function buildConnectionGraph(presetPhaseNames, debugInvoke, customSdds) {
+  const phases = Array.isArray(presetPhaseNames) ? presetPhaseNames : [];
+  const sdds = Array.isArray(customSdds) ? customSdds : [];
+  const lines = [];
+
+  // ── Default SDD-Orchestrator block ─────────────────────────────────────────
+  lines.push('  SDD-Orchestrator (default)');
+
+  // The phase that has the debug_invoke arrow (default: verify)
+  const debugPhase = debugInvoke?.phase ?? 'verify';
+  const hasDebug = debugInvoke != null && debugInvoke.preset;
+
+  for (let i = 0; i < phases.length; i++) {
+    const phase = phases[i];
+    const isLast = i === phases.length - 1;
+    const connector = isLast ? '└──' : '├──';
+
+    if (hasDebug && phase === debugPhase) {
+      const arrowTarget = debugInvoke.preset;
+      const trigger = debugInvoke.trigger ? ` (${debugInvoke.trigger})` : '';
+      // Show the invoke arrow on this phase
+      lines.push(`  ${connector} ${phase} ──invoke──→ ${arrowTarget}${trigger}`);
+    } else {
+      lines.push(`  ${connector} ${phase}`);
+    }
+  }
+
+  // ── Custom SDD blocks ──────────────────────────────────────────────────────
+  for (const sdd of sdds) {
+    const sddPhases = sdd.phases ? Object.keys(sdd.phases) : [];
+    if (sddPhases.length === 0) continue;
+
+    lines.push('');
+    lines.push(`  ${sdd.name}`);
+
+    for (let i = 0; i < sddPhases.length; i++) {
+      const phase = sddPhases[i];
+      const isLast = i === sddPhases.length - 1;
+      const connector = isLast ? '└──' : '├──';
+
+      // Check if this phase has an invoke declaration
+      const phaseConfig = sdd.phases[phase];
+      const invoke = phaseConfig?.invoke;
+
+      if (invoke?.target) {
+        const onFailure = invoke.on_failure ? `, on_failure: ${invoke.on_failure}` : '';
+        const timing = invoke.timing ? `${invoke.timing}, ` : '';
+        lines.push(`  ${connector} ${phase} ──invoke──→ ${invoke.target} (${timing}${onFailure || invoke.trigger || ''})`);
+      } else {
+        lines.push(`  ${connector} ${phase}`);
+      }
+    }
+  }
+
+  return lines;
+}
+
+// ── getSimpleStatus ───────────────────────────────────────────────────────────
+
+/**
+ * Build the simple (default) status output string.
+ *
+ * Header logic:
+ *   - No config → "❌ Not installed"
+ *   - Config but not active → "⚠️  Inactive"
+ *   - Config active but no manifest → "⚠️  Needs sync — config changed"
+ *   - Otherwise → "✅ Ready — Synchronized"
  *
  * @param {object|null} config - Loaded router config (or null if not installed)
- * @param {object|null} syncResult - Result from unifiedSync() (or null if not run yet)
- * @returns {SimpleStatusResult}
+ * @param {object} options
+ * @param {boolean} [options.manifestExists] - Whether the sync manifest exists
+ * @param {string} [options.configPath] - Display path for config
+ * @returns {string} Formatted status output
  */
-export function getSimpleStatus(config, syncResult) {
-  // No config = not installed / error state
+export function getSimpleStatus(config, options = {}) {
+  const { manifestExists = false } = options;
+  const LABEL_WIDTH = 12;
+
+  // ── Not installed ──────────────────────────────────────────────────────────
   if (!config) {
-    return {
-      level: 'error',
-      emoji: STATUS_LEVELS.error.emoji,
-      message: 'Not configured. Run `gsr install` to get started.',
-    };
+    return [
+      '❌ Not installed',
+      '',
+      '  → Run `gsr setup install` to initialize',
+    ].join('\n');
   }
 
-  // Sync had a fatal error
-  if (isSyncFailed(syncResult)) {
-    return {
-      level: 'error',
-      emoji: STATUS_LEVELS.error.emoji,
-      message: 'Setup failed. Run `gsr sync` again or check your configuration.',
-    };
+  // ── Derive state ───────────────────────────────────────────────────────────
+  const preset = getActivePreset(config);
+  const presetName = config.active_preset ?? config.active_profile ?? '—';
+  const phaseNames = getPresetPhaseNames(preset);
+  const phaseCount = phaseNames.length;
+  const catalogName = config.active_catalog ?? 'default';
+  const catalogMeta = config.catalogs?.[catalogName];
+  const catalogDisplayName = catalogMeta?.displayName ?? (catalogName === 'default' ? 'SDD-Orchestrator' : catalogName);
+  const { count: catalogCount, names: enabledCatalogNames } = getEnabledCatalogs(config);
+  const debugInvoke = preset?.debug_invoke ?? null;
+  const identityLabel = resolveIdentityLabel(preset, config);
+  const isActive = config.activation_state === 'active';
+
+  // ── Header line ────────────────────────────────────────────────────────────
+  let header;
+  if (!isActive) {
+    header = '⚠️  Inactive';
+  } else if (!manifestExists) {
+    header = '⚠️  Needs sync — config changed';
+  } else {
+    header = '✅ Ready — Synchronized';
   }
 
-  // Sync completed and requires editor reopen
-  if (syncResult?.requiresReopen === true) {
-    return {
-      level: 'requires_reopen',
-      emoji: STATUS_LEVELS.requires_reopen.emoji,
-      message: STATUS_LEVELS.requires_reopen.message,
-    };
+  const lines = [header, ''];
+
+  // ── Fields ─────────────────────────────────────────────────────────────────
+  lines.push(`${padLabel('Preset', LABEL_WIDTH)}${presetName} (${phaseCount} phases)`);
+  lines.push(`${padLabel('Catalog', LABEL_WIDTH)}${catalogName} (${catalogDisplayName})`);
+
+  if (identityLabel) {
+    lines.push(`${padLabel('Identity', LABEL_WIDTH)}${identityLabel} (AGENTS.md inherited)`);
+  } else if (preset?.identity?.inherit_agents_md !== false) {
+    lines.push(`${padLabel('Identity', LABEL_WIDTH)}AGENTS.md inherited`);
   }
 
-  // Sync completed successfully (ok or partial)
-  if (isSyncSuccessful(syncResult)) {
-    return {
-      level: 'synchronized',
-      emoji: STATUS_LEVELS.synchronized.emoji,
-      message: STATUS_LEVELS.synchronized.message,
-    };
+  if (debugInvoke?.preset) {
+    const trigger = debugInvoke.trigger ? ` → ${debugInvoke.trigger}` : '';
+    lines.push(`${padLabel('Debug', LABEL_WIDTH)}${debugInvoke.preset}${trigger}`);
   }
 
-  // Config found, no sync yet
-  return {
-    level: 'configured',
-    emoji: STATUS_LEVELS.configured.emoji,
-    message: STATUS_LEVELS.configured.message,
-  };
+  if (catalogCount > 0) {
+    const catalogList = enabledCatalogNames.join(', ');
+    lines.push(`${padLabel('Catalogs', LABEL_WIDTH)}${catalogCount} enabled: ${catalogList}`);
+  }
+
+  // SDD connections summary (one-line: most important invoke)
+  if (debugInvoke?.preset) {
+    const debugPhase = debugInvoke.phase ?? 'verify';
+    const triggerSuffix = debugInvoke.trigger ? ` (${debugInvoke.trigger})` : '';
+    lines.push(`${padLabel('Connections', LABEL_WIDTH)}${catalogDisplayName}/${debugPhase} → ${debugInvoke.preset}${triggerSuffix}`);
+  }
+
+  lines.push('');
+
+  // ── Hints ──────────────────────────────────────────────────────────────────
+  lines.push('  gsr status --verbose   full routes, pricing & SDD graph');
+  lines.push('  gsr route use <name>   switch preset');
+
+  if (!manifestExists) {
+    lines.push('');
+    lines.push('  → Run `gsr sync` to apply pending changes');
+  } else {
+    lines.push('  gsr sync               re-sync everything');
+  }
+
+  return lines.join('\n');
 }
 
-/**
- * @typedef {Object} DetailedStatusResult
- * @property {string} level - One of the STATUS_LEVELS keys
- * @property {string} emoji - Indicator emoji
- * @property {string} message - Human-friendly message
- * @property {object} details - Full internal state (for --verbose/--debug output)
- */
+// ── getVerboseStatus ──────────────────────────────────────────────────────────
 
 /**
- * Get detailed status including all internal state.
- * Used for `gsr status --verbose` and `gsr status --debug`.
+ * Build the verbose status output string.
  *
- * @param {object|null} config - Loaded router config
- * @param {object|null} syncResult - Result from unifiedSync()
- * @returns {DetailedStatusResult}
+ * Sections: CONFIGURATION, PRESET, ROUTES, CATALOGS, PRESETS, SDD CONNECTIONS
+ *
+ * @param {object|null} config - Loaded router config (or null if not installed)
+ * @param {object} options
+ * @param {boolean} [options.manifestExists] - Whether the sync manifest exists
+ * @param {string} [options.configPath] - Config file path for display
+ * @param {string} [options.routerDir] - Router directory path
+ * @param {Array} [options.customSdds] - Custom SDD definitions
+ * @returns {string} Formatted verbose output
  */
-export function getDetailedStatus(config, syncResult) {
-  const simple = getSimpleStatus(config, syncResult);
+export function getVerboseStatus(config, options = {}) {
+  const { manifestExists = false, configPath, customSdds = [] } = options;
 
-  const details = {
-    // Config info
-    activeCatalog: config?.active_catalog ?? null,
-    activePreset: config?.active_preset ?? null,
-    activationState: config?.activation_state ?? null,
-    schemaVersion: config?.version ?? null,
+  // ── Not installed ──────────────────────────────────────────────────────────
+  if (!config) {
+    return [
+      '❌ Not installed',
+      '',
+      '  → Run `gsr setup install` to initialize',
+    ].join('\n');
+  }
 
-    // Sync result internals
-    syncStatus: syncResult?.status ?? null,
-    requiresReopen: syncResult?.requiresReopen ?? false,
-    noop: syncResult?.noop ?? false,
-    steps: syncResult?.steps ?? [],
-    warnings: syncResult?.warnings ?? [],
-  };
+  const LABEL_WIDTH = 14;
 
-  return {
-    ...simple,
-    details,
-  };
+  // ── Derive state ───────────────────────────────────────────────────────────
+  const isV4 = Object.getOwnPropertyDescriptor(config, '_v4Source') !== undefined;
+  const schemaVersion = isV4 ? 4 : (config.version ?? 3);
+  const preset = getActivePreset(config);
+  const presetName = config.active_preset ?? '—';
+  const catalogName = config.active_catalog ?? 'default';
+  const catalogMeta = config.catalogs?.[catalogName];
+  const catalogDisplayName = catalogMeta?.displayName ?? (catalogName === 'default' ? 'SDD-Orchestrator' : catalogName);
+  const phaseNames = getPresetPhaseNames(preset);
+  const phaseCount = phaseNames.length;
+  const isActive = config.activation_state === 'active';
+  const debugInvoke = preset?.debug_invoke ?? null;
+  const identityLabel = resolveIdentityLabel(preset, config);
+
+  // ── Header line ────────────────────────────────────────────────────────────
+  let header;
+  if (!isActive) {
+    header = '⚠️  Inactive';
+  } else if (!manifestExists) {
+    header = '⚠️  Needs sync — config changed';
+  } else {
+    header = '✅ Ready — Synchronized';
+  }
+
+  const lines = [header, ''];
+
+  // ── CONFIGURATION section ──────────────────────────────────────────────────
+  lines.push('CONFIGURATION');
+  lines.push(`  ${padLabel('Schema', LABEL_WIDTH)}v${schemaVersion} (${isV4 ? 'multi-file' : 'single-file'})`);
+  if (configPath) {
+    lines.push(`  ${padLabel('Config', LABEL_WIDTH)}${configPath}`);
+  }
+  lines.push(`  ${padLabel('Controller', LABEL_WIDTH)}gsr (toggle: gsr deactivate)`);
+  lines.push(`  ${padLabel('Activation', LABEL_WIDTH)}${config.activation_state ?? 'unknown'}`);
+
+  const manifestState = manifestExists ? `v3 (.sync-manifest.json)` : 'not synced';
+  lines.push(`  ${padLabel('Manifest', LABEL_WIDTH)}${manifestState}`);
+  lines.push('');
+
+  // ── PRESET section ─────────────────────────────────────────────────────────
+  lines.push('PRESET');
+  lines.push(`  ${padLabel('Active', LABEL_WIDTH)}${presetName} (${phaseCount} phases, catalog: ${catalogName})`);
+
+  if (identityLabel) {
+    lines.push(`  ${padLabel('Identity', LABEL_WIDTH)}${identityLabel} (AGENTS.md inherited)`);
+  } else if (preset?.identity?.inherit_agents_md !== false) {
+    lines.push(`  ${padLabel('Identity', LABEL_WIDTH)}AGENTS.md inherited`);
+  }
+
+  if (debugInvoke?.preset) {
+    const trigger = debugInvoke.trigger ? ` (trigger: ${debugInvoke.trigger})` : '';
+    lines.push(`  ${padLabel('Debug', LABEL_WIDTH)}${debugInvoke.preset}${trigger}`);
+    if (Array.isArray(debugInvoke.required_fields) && debugInvoke.required_fields.length > 0) {
+      lines.push(`  ${padLabel('', LABEL_WIDTH)}required: ${debugInvoke.required_fields.join(', ')}`);
+    }
+  }
+  lines.push('');
+
+  // ── ROUTES section ─────────────────────────────────────────────────────────
+  lines.push('ROUTES');
+  if (preset?.phases && Object.keys(preset.phases).length > 0) {
+    const routeLabelWidth = Math.max(...Object.keys(preset.phases).map(n => n.length)) + 2;
+    for (const [phaseName, lanes] of Object.entries(preset.phases)) {
+      const target = formatLaneTarget(lanes);
+      const pricing = formatLanePricing(lanes);
+      const ctx = formatLaneCtx(lanes);
+      const pricingStr = pricing ? `   ${pricing}` : '';
+      const ctxStr = ctx ? `   ${ctx} ctx` : '';
+      lines.push(`  ${phaseName.padEnd(routeLabelWidth)}${target}${pricingStr}${ctxStr}`);
+    }
+  } else {
+    lines.push('  (no phases defined)');
+  }
+  lines.push('');
+
+  // ── CATALOGS section ───────────────────────────────────────────────────────
+  if (config.catalogs && Object.keys(config.catalogs).length > 0) {
+    lines.push('CATALOGS');
+    for (const [catName, catMeta] of Object.entries(config.catalogs)) {
+      const enabled = catMeta?.enabled !== false;
+      const dot = enabled ? '●' : '○';
+      const displayName = catMeta?.displayName ?? (catName === 'default' ? 'SDD-Orchestrator' : catName);
+      const presetCount = Object.keys(catMeta?.presets ?? {}).length;
+      const state = enabled ? 'enabled' : 'disabled';
+      lines.push(`  ${dot} ${catName.padEnd(16)}${displayName.padEnd(18)} ${state}   ${presetCount} presets`);
+    }
+    lines.push('');
+  }
+
+  // ── PRESETS section ────────────────────────────────────────────────────────
+  const allPresets = [];
+  for (const [catName, catMeta] of Object.entries(config.catalogs ?? {})) {
+    for (const [pName, pMeta] of Object.entries(catMeta?.presets ?? {})) {
+      allPresets.push({ name: pName, catalog: catName, meta: pMeta, active: pName === presetName });
+    }
+  }
+
+  if (allPresets.length > 0) {
+    lines.push('PRESETS');
+    for (const p of allPresets) {
+      const marker = p.active ? '*' : ' ';
+      const pPhaseCount = Object.keys(p.meta?.phases ?? {}).length;
+      const debugLabel = p.meta?.debug_invoke?.preset
+        ? `debug: ${p.meta.debug_invoke.preset}`
+        : 'debug: disabled';
+      lines.push(`  ${marker} ${p.name.padEnd(16)}${pPhaseCount} phases   ${debugLabel}`);
+    }
+    lines.push('');
+  }
+
+  // ── SDD CONNECTIONS section ────────────────────────────────────────────────
+  const hasDebug = debugInvoke?.preset != null;
+  const hasCustomSddInvokes = customSdds.some(
+    (sdd) => sdd.phases && Object.values(sdd.phases).some(p => p?.invoke?.target)
+  );
+
+  if (hasDebug || hasCustomSddInvokes) {
+    lines.push('SDD CONNECTIONS');
+    const graphLines = buildConnectionGraph(phaseNames, debugInvoke, customSdds);
+    lines.push(...graphLines);
+    lines.push('');
+  }
+
+  // ── Footer hints ───────────────────────────────────────────────────────────
+  lines.push('  gsr route use <name>     switch preset');
+  lines.push('  gsr sync                 re-sync everything');
+  lines.push('  gsr sdd validate <name>  validate custom SDD');
+
+  return lines.join('\n');
 }

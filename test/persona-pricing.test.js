@@ -321,7 +321,7 @@ describe('pricing display in gsr status output', () => {
     assert.match(output, /multivendor/);
   });
 
-  test('gsr status --verbose with v4 actual config shows resolved routes without crashing', async () => {
+  test('gsr status --verbose with v4 actual config shows routes without crashing', async () => {
     const chunks = [];
     const originalWrite = process.stdout.write.bind(process.stdout);
     process.stdout.write = function capture(chunk) {
@@ -336,11 +336,15 @@ describe('pricing display in gsr status output', () => {
     }
 
     const output = chunks.join('');
-    assert.match(output, /Resolved routes:/);
-    assert.match(output, /orchestrator:/);
+    // New verbose format: ROUTES section replaces "Resolved routes:"
+    assert.ok(
+      output.includes('ROUTES') || output.includes('orchestrator'),
+      `Should show routes section. Got:\n${output.slice(0, 500)}`
+    );
+    assert.ok(output.includes('orchestrator'), `Should show orchestrator phase. Got:\n${output.slice(0, 500)}`);
   });
 
-  test('gsr status --verbose shows pricing for multivendor preset (orchestrator has $15\\.00/$75)', async () => {
+  test('gsr status --verbose shows pricing for multivendor preset (orchestrator has $15/$75)', async () => {
     const chunks = [];
     const originalWrite = process.stdout.write.bind(process.stdout);
     process.stdout.write = function capture(chunk) {
@@ -355,8 +359,11 @@ describe('pricing display in gsr status output', () => {
     }
 
     const output = chunks.join('');
-    // orchestrator: anthropic/claude-opus should have pricing ($15/$75)
-    assert.match(output, /orchestrator:.*\(\$15\/\$75\)/);
+    // New ROUTES format: "  orchestrator  anthropic/claude-opus   $15/$75   200K ctx"
+    assert.ok(
+      output.includes('orchestrator') && output.includes('$15/$75'),
+      `Should show orchestrator pricing. Got:\n${output.slice(0, 800)}`
+    );
   });
 
   test('gsr status --verbose shows pricing for archive phase (google/gemini-flash $0.075/$0.3)', async () => {
@@ -374,8 +381,11 @@ describe('pricing display in gsr status output', () => {
     }
 
     const output = chunks.join('');
-    // archive phase should show small pricing
-    assert.match(output, /archive:.*\(\$0\.075\/\$0\.3\)/);
+    // New ROUTES format shows archive pricing inline
+    assert.ok(
+      output.includes('archive') && (output.includes('$0.075/$0.3') || output.includes('0.075')),
+      `Should show archive pricing. Got:\n${output.slice(0, 800)}`
+    );
   });
 });
 

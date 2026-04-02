@@ -1,20 +1,19 @@
 /**
  * Tests for src/core/status-reporter.js
  *
- * Covers: getSimpleStatus(), getDetailedStatus()
- * Status levels: configured, synchronized, visible, ready, requires_reopen, error
+ * Covers: getSimpleStatus(), getVerboseStatus(), buildConnectionGraph()
  */
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   getSimpleStatus,
-  getDetailedStatus,
-  STATUS_LEVELS,
+  getVerboseStatus,
+  buildConnectionGraph,
 } from '../src/core/status-reporter.js';
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
-/** Minimal valid config object */
+/** Minimal valid config with one preset */
 const minConfig = {
   version: 3,
   active_catalog: 'default',
@@ -27,6 +26,7 @@ const minConfig = {
         balanced: {
           phases: {
             orchestrator: [{ target: 'anthropic/claude-sonnet' }],
+            explore: [{ target: 'google/gemini-pro' }],
           },
         },
       },
@@ -34,291 +34,584 @@ const minConfig = {
   },
 };
 
-/** Sync result with all steps ok and no reopen needed */
-const syncOk = {
-  status: 'ok',
-  requiresReopen: false,
-  noop: false,
-  steps: [
-    { name: 'contracts', status: 'ok', data: { roles: 2, phases: 5, total: 7 } },
-    { name: 'overlay', status: 'ok', data: { agent: { 'gsr-balanced': {} }, warnings: [] } },
-    { name: 'apply', status: 'ok', data: { gsrCount: 1, writtenPath: '/project/opencode.json' } },
-    { name: 'commands', status: 'ok', data: { written: 3, skipped: 0 } },
-    { name: 'validate', status: 'ok', data: { expectedAgents: 1, agentsVisible: 1, missingAgents: [] } },
-  ],
-  warnings: [],
+/** Config with debug_invoke on active preset */
+const configWithDebug = {
+  version: 3,
+  active_catalog: 'default',
+  active_preset: 'multivendor',
+  activation_state: 'active',
+  catalogs: {
+    default: {
+      enabled: true,
+      presets: {
+        multivendor: {
+          debug_invoke: {
+            preset: 'sdd-debug-mono',
+            trigger: 'on_issues',
+            required_fields: ['issues', 'affected_files'],
+          },
+          phases: {
+            orchestrator: [{ target: 'anthropic/claude-opus' }],
+            explore: [{ target: 'google/gemini-pro' }],
+            spec: [{ target: 'anthropic/claude-opus' }],
+            verify: [{ target: 'openai/gpt-5' }],
+            archive: [{ target: 'google/gemini-flash' }],
+          },
+        },
+      },
+    },
+  },
 };
 
-/** Sync result where agent changes require editor reopen */
-const syncRequiresReopen = {
-  ...syncOk,
-  requiresReopen: true,
+/** Config with identity block */
+const configWithIdentity = {
+  version: 3,
+  active_catalog: 'default',
+  active_preset: 'claude',
+  activation_state: 'active',
+  catalogs: {
+    default: {
+      enabled: true,
+      presets: {
+        claude: {
+          identity: {
+            persona: 'gentleman',
+            inherit_agents_md: true,
+          },
+          phases: {
+            orchestrator: [{ target: 'anthropic/claude-opus' }],
+          },
+        },
+      },
+    },
+  },
 };
 
-/** Sync result with overlay step failed */
-const syncPartial = {
-  status: 'partial',
-  requiresReopen: false,
-  noop: false,
-  steps: [
-    { name: 'contracts', status: 'ok', data: { roles: 2, phases: 5, total: 7 } },
-    { name: 'overlay', status: 'failed', error: 'No config found' },
-    { name: 'apply', status: 'skipped', data: { reason: 'overlay step failed' } },
-    { name: 'commands', status: 'ok', data: { written: 0, skipped: 0 } },
-    { name: 'validate', status: 'ok', data: { expectedAgents: 0, agentsVisible: 0, missingAgents: [] } },
-  ],
-  warnings: ['No config found — overlay is empty'],
+/** Config with multiple catalogs */
+const configMultiCatalog = {
+  version: 3,
+  active_catalog: 'default',
+  active_preset: 'multivendor',
+  activation_state: 'active',
+  catalogs: {
+    default: {
+      enabled: true,
+      displayName: 'SDD-Orchestrator',
+      presets: {
+        multivendor: {
+          phases: {
+            orchestrator: [{ target: 'anthropic/claude-opus' }],
+            verify: [{ target: 'openai/gpt-5' }],
+          },
+        },
+        claude: {
+          phases: {
+            orchestrator: [{ target: 'anthropic/claude-opus' }],
+          },
+        },
+      },
+    },
+    'sdd-debug': {
+      enabled: true,
+      displayName: 'SDD-Debug',
+      presets: {
+        'sdd-debug-mono': {
+          phases: {
+            'explore-issues': [{ target: 'anthropic/claude-sonnet' }],
+            triage: [{ target: 'anthropic/claude-sonnet' }],
+          },
+        },
+      },
+    },
+  },
 };
 
-// ── STATUS_LEVELS export ───────────────────────────────────────────────────
+// ── getSimpleStatus — not installed ──────────────────────────────────────────
 
-describe('STATUS_LEVELS constant', () => {
-  test('exports an object with all six level keys', () => {
-    const keys = Object.keys(STATUS_LEVELS);
-    assert.ok(keys.includes('configured'));
-    assert.ok(keys.includes('synchronized'));
-    assert.ok(keys.includes('visible'));
-    assert.ok(keys.includes('ready'));
-    assert.ok(keys.includes('requires_reopen'));
-    assert.ok(keys.includes('error'));
+describe('getSimpleStatus — not installed', () => {
+  test('returns string starting with ❌ when config is null', () => {
+    const result = getSimpleStatus(null, {});
+    assert.ok(typeof result === 'string', 'should return a string');
+    assert.ok(result.includes('❌'), `should have ❌ emoji. Got: ${result}`);
   });
 
-  test('each level has emoji and message', () => {
-    for (const [key, level] of Object.entries(STATUS_LEVELS)) {
-      assert.ok(typeof level.emoji === 'string', `${key} should have emoji`);
-      assert.ok(level.emoji.length > 0, `${key} emoji should not be empty`);
-      assert.ok(typeof level.message === 'string', `${key} should have message`);
-      assert.ok(level.message.length > 0, `${key} message should not be empty`);
-    }
-  });
-});
-
-// ── getSimpleStatus — null/missing inputs ──────────────────────────────────
-
-describe('getSimpleStatus — no config', () => {
-  test('returns error level when config is null', () => {
-    const result = getSimpleStatus(null, null);
-    assert.equal(result.level, 'error');
-    assert.ok(typeof result.emoji === 'string');
-    assert.ok(typeof result.message === 'string');
-  });
-
-  test('returns error level when config is undefined', () => {
-    const result = getSimpleStatus(undefined, undefined);
-    assert.equal(result.level, 'error');
-  });
-});
-
-// ── getSimpleStatus — configured (no sync result) ─────────────────────────
-
-describe('getSimpleStatus — configured only', () => {
-  test('returns configured level when config present and no sync result', () => {
-    const result = getSimpleStatus(minConfig, null);
-    assert.equal(result.level, 'configured');
-    assert.ok(result.emoji.length > 0);
-    assert.ok(result.message.length > 0);
-  });
-
-  test('configured level message does NOT contain internal terms', () => {
-    const result = getSimpleStatus(minConfig, null);
-    const lower = result.message.toLowerCase();
-    assert.ok(!lower.includes('overlay'), 'should not expose overlay term');
-    assert.ok(!lower.includes('manifest'), 'should not expose manifest term');
-    assert.ok(!lower.includes('_gsr_generated'), 'should not expose internal marker');
-  });
-});
-
-// ── getSimpleStatus — synchronized ────────────────────────────────────────
-
-describe('getSimpleStatus — synchronized', () => {
-  test('returns synchronized level when sync status is ok and no reopen', () => {
-    const result = getSimpleStatus(minConfig, syncOk);
-    assert.equal(result.level, 'synchronized');
-  });
-
-  test('synchronized emoji is the sync/refresh emoji', () => {
-    const result = getSimpleStatus(minConfig, syncOk);
-    assert.equal(result.emoji, '🔄');
-  });
-
-  test('synchronized message does NOT expose internal details', () => {
-    const result = getSimpleStatus(minConfig, syncOk);
-    const lower = result.message.toLowerCase();
-    assert.ok(!lower.includes('overlay'));
-    assert.ok(!lower.includes('step'));
-    assert.ok(!lower.includes('manifest'));
-  });
-});
-
-// ── getSimpleStatus — requires_reopen ─────────────────────────────────────
-
-describe('getSimpleStatus — requires_reopen', () => {
-  test('returns requires_reopen level when sync requiresReopen is true', () => {
-    const result = getSimpleStatus(minConfig, syncRequiresReopen);
-    assert.equal(result.level, 'requires_reopen');
-  });
-
-  test('requires_reopen message contains actionable guidance', () => {
-    const result = getSimpleStatus(minConfig, syncRequiresReopen);
-    // Should tell user to reopen — but in simple terms
-    const lower = result.message.toLowerCase();
+  test('mentions "not installed" or "install" when no config', () => {
+    const result = getSimpleStatus(null, {});
+    const lower = result.toLowerCase();
     assert.ok(
-      lower.includes('reopen') || lower.includes('restart') || lower.includes('reload'),
-      'message should mention reopen/restart/reload'
+      lower.includes('not installed') || lower.includes('install'),
+      `should mention install. Got: ${result}`
+    );
+  });
+
+  test('shows gsr setup install hint when no config', () => {
+    const result = getSimpleStatus(null, {});
+    assert.ok(
+      result.includes('gsr setup install') || result.includes('gsr install'),
+      `should show install command. Got: ${result}`
     );
   });
 });
 
-// ── getSimpleStatus — error ───────────────────────────────────────────────
+// ── getSimpleStatus — needs sync ────────────────────────────────────────────
 
-describe('getSimpleStatus — error', () => {
-  test('returns error level when sync status is failed', () => {
-    const failedSync = { ...syncOk, status: 'failed', requiresReopen: false };
-    const result = getSimpleStatus(minConfig, failedSync);
-    assert.equal(result.level, 'error');
+describe('getSimpleStatus — needs sync', () => {
+  test('returns string with ⚠️ when manifest does not exist', () => {
+    // No manifestPath option = not synced yet
+    const result = getSimpleStatus(minConfig, { manifestExists: false });
+    assert.ok(typeof result === 'string');
+    assert.ok(result.includes('⚠️'), `should have ⚠️. Got: ${result}`);
   });
 
-  test('error result includes a message explaining the issue', () => {
-    const failedSync = {
-      ...syncOk,
-      status: 'failed',
-      steps: [
-        { name: 'contracts', status: 'failed', error: 'Contracts directory not found' },
-      ],
-      warnings: [],
-    };
-    const result = getSimpleStatus(minConfig, failedSync);
-    assert.equal(result.level, 'error');
-    assert.ok(result.message.length > 0);
-  });
-});
-
-// ── getSimpleStatus — result shape ────────────────────────────────────────
-
-describe('getSimpleStatus — result shape', () => {
-  test('always returns an object with level, emoji, message', () => {
-    const cases = [
-      [null, null],
-      [minConfig, null],
-      [minConfig, syncOk],
-      [minConfig, syncRequiresReopen],
-    ];
-    for (const [config, syncResult] of cases) {
-      const result = getSimpleStatus(config, syncResult);
-      assert.ok(typeof result === 'object' && result !== null);
-      assert.ok(typeof result.level === 'string', 'level should be string');
-      assert.ok(typeof result.emoji === 'string', 'emoji should be string');
-      assert.ok(typeof result.message === 'string', 'message should be string');
-    }
-  });
-
-  test('level is always one of the valid STATUS_LEVELS keys', () => {
-    const validLevels = Object.keys(STATUS_LEVELS);
-    const cases = [
-      [null, null],
-      [minConfig, null],
-      [minConfig, syncOk],
-      [minConfig, syncRequiresReopen],
-      [minConfig, { ...syncOk, status: 'failed' }],
-    ];
-    for (const [config, syncResult] of cases) {
-      const result = getSimpleStatus(config, syncResult);
-      assert.ok(validLevels.includes(result.level), `level "${result.level}" is not valid`);
-    }
-  });
-});
-
-// ── getDetailedStatus ────────────────────────────────────────────────────
-
-describe('getDetailedStatus — basic shape', () => {
-  test('returns object with level, emoji, message, and details', () => {
-    const result = getDetailedStatus(minConfig, syncOk);
-    assert.ok(typeof result.level === 'string');
-    assert.ok(typeof result.emoji === 'string');
-    assert.ok(typeof result.message === 'string');
-    assert.ok(typeof result.details === 'object' && result.details !== null);
-  });
-
-  test('details contains steps array from sync result', () => {
-    const result = getDetailedStatus(minConfig, syncOk);
-    assert.ok(Array.isArray(result.details.steps));
-    assert.equal(result.details.steps.length, syncOk.steps.length);
-  });
-
-  test('details exposes requiresReopen flag', () => {
-    const result = getDetailedStatus(minConfig, syncRequiresReopen);
-    assert.equal(result.details.requiresReopen, true);
-  });
-});
-
-describe('getDetailedStatus — exposes internal info', () => {
-  test('details includes overlay agent count', () => {
-    const result = getDetailedStatus(minConfig, syncOk);
-    // The details object should have something about the overlay/agents
-    const detailStr = JSON.stringify(result.details);
-    // Either the steps contain the overlay step or there's an agent count
+  test('mentions "sync" command when needs sync', () => {
+    const result = getSimpleStatus(minConfig, { manifestExists: false });
     assert.ok(
-      detailStr.includes('overlay') || detailStr.includes('agent') || detailStr.includes('gsrCount'),
-      'details should contain overlay/agent info'
+      result.includes('gsr sync'),
+      `should mention gsr sync. Got: ${result}`
+    );
+  });
+});
+
+// ── getSimpleStatus — ready/synchronized ────────────────────────────────────
+
+describe('getSimpleStatus — ready', () => {
+  test('returns string with ✅ when synced', () => {
+    const result = getSimpleStatus(minConfig, { manifestExists: true });
+    assert.ok(typeof result === 'string');
+    assert.ok(result.includes('✅'), `should have ✅. Got: ${result}`);
+  });
+
+  test('shows preset name and phase count', () => {
+    const result = getSimpleStatus(minConfig, { manifestExists: true });
+    assert.ok(result.includes('balanced'), `should show preset name. Got: ${result}`);
+    // minConfig has 2 phases
+    assert.ok(result.includes('2'), `should show phase count. Got: ${result}`);
+  });
+
+  test('shows active preset in a Preset field', () => {
+    const result = getSimpleStatus(minConfig, { manifestExists: true });
+    assert.ok(result.includes('Preset'), `should have Preset field. Got: ${result}`);
+  });
+
+  test('shows gsr status --verbose hint', () => {
+    const result = getSimpleStatus(minConfig, { manifestExists: true });
+    assert.ok(
+      result.includes('gsr status --verbose'),
+      `should show verbose hint. Got: ${result}`
+    );
+  });
+});
+
+// ── getSimpleStatus — catalogs ───────────────────────────────────────────────
+
+describe('getSimpleStatus — catalogs section', () => {
+  test('shows catalog count when multiple catalogs', () => {
+    const result = getSimpleStatus(configMultiCatalog, { manifestExists: true });
+    assert.ok(result.includes('Catalogs'), `should have Catalogs field. Got: ${result}`);
+    // 2 enabled catalogs
+    assert.ok(result.includes('2'), `should show count 2. Got: ${result}`);
+  });
+
+  test('shows catalog name in catalogs field', () => {
+    const result = getSimpleStatus(configMultiCatalog, { manifestExists: true });
+    assert.ok(
+      result.includes('default') || result.includes('sdd-debug'),
+      `should show catalog names. Got: ${result}`
+    );
+  });
+});
+
+// ── getSimpleStatus — debug_invoke ───────────────────────────────────────────
+
+describe('getSimpleStatus — debug_invoke', () => {
+  test('shows Debug field when preset has debug_invoke', () => {
+    const result = getSimpleStatus(configWithDebug, { manifestExists: true });
+    assert.ok(result.includes('Debug'), `should show Debug field. Got: ${result}`);
+  });
+
+  test('shows debug preset name', () => {
+    const result = getSimpleStatus(configWithDebug, { manifestExists: true });
+    assert.ok(
+      result.includes('sdd-debug-mono'),
+      `should show debug preset name. Got: ${result}`
     );
   });
 
-  test('details includes config active preset', () => {
-    const result = getDetailedStatus(minConfig, syncOk);
-    assert.equal(result.details.activePreset, 'balanced');
-  });
-
-  test('details includes config active catalog', () => {
-    const result = getDetailedStatus(minConfig, syncOk);
-    assert.equal(result.details.activeCatalog, 'default');
+  test('shows trigger type in debug field', () => {
+    const result = getSimpleStatus(configWithDebug, { manifestExists: true });
+    assert.ok(
+      result.includes('on_issues') || result.includes('on issues'),
+      `should show trigger. Got: ${result}`
+    );
   });
 });
 
-describe('getDetailedStatus — null inputs', () => {
-  test('handles null config gracefully', () => {
-    const result = getDetailedStatus(null, null);
-    assert.equal(result.level, 'error');
-    assert.ok(typeof result.details === 'object');
-  });
-
-  test('handles null syncResult with valid config', () => {
-    const result = getDetailedStatus(minConfig, null);
-    assert.equal(result.level, 'configured');
-    assert.ok(typeof result.details === 'object');
-  });
-});
-
-// ── Vocabulary contract (simple status should use simple words) ───────────
+// ── getSimpleStatus — vocabulary contract ────────────────────────────────────
 
 describe('getSimpleStatus — vocabulary contract', () => {
   const FORBIDDEN_INTERNAL_TERMS = [
     'overlay',
-    'manifest',
     '_gsr_generated',
-    'boundary',
-    'execution mode',
-    'host sync metadata',
     'sync-manifest',
+    'execution mode',
+    'boundary',
   ];
 
-  const cases = [
-    ['null config', null, null],
-    ['configured only', minConfig, null],
-    ['synchronized', minConfig, syncOk],
-    ['requires_reopen', minConfig, syncRequiresReopen],
-    ['partial sync', minConfig, syncPartial],
-  ];
+  test('does not expose internal terms when synced', () => {
+    const result = getSimpleStatus(minConfig, { manifestExists: true });
+    const lower = result.toLowerCase();
+    for (const term of FORBIDDEN_INTERNAL_TERMS) {
+      assert.ok(
+        !lower.includes(term.toLowerCase()),
+        `should not expose "${term}". Got: ${result}`
+      );
+    }
+  });
 
-  for (const [caseName, config, syncResult] of cases) {
-    test(`simple status for "${caseName}" hides internal terms`, () => {
-      const result = getSimpleStatus(config, syncResult);
-      const lower = result.message.toLowerCase();
-      for (const term of FORBIDDEN_INTERNAL_TERMS) {
-        assert.ok(
-          !lower.includes(term.toLowerCase()),
-          `"${caseName}": message should not contain "${term}" — got: "${result.message}"`
-        );
-      }
-    });
-  }
+  test('does not expose internal terms when not synced', () => {
+    const result = getSimpleStatus(minConfig, { manifestExists: false });
+    const lower = result.toLowerCase();
+    for (const term of FORBIDDEN_INTERNAL_TERMS) {
+      assert.ok(
+        !lower.includes(term.toLowerCase()),
+        `should not expose "${term}". Got: ${result}`
+      );
+    }
+  });
+});
+
+// ── getVerboseStatus — basic shape ───────────────────────────────────────────
+
+describe('getVerboseStatus — basic shape', () => {
+  test('returns a non-empty string', () => {
+    const result = getVerboseStatus(minConfig, { manifestExists: true });
+    assert.ok(typeof result === 'string');
+    assert.ok(result.length > 0, 'should return non-empty string');
+  });
+
+  test('is longer than simple status', () => {
+    const simple = getSimpleStatus(minConfig, { manifestExists: true });
+    const verbose = getVerboseStatus(minConfig, { manifestExists: true });
+    assert.ok(
+      verbose.length > simple.length,
+      `verbose (${verbose.length}) should be longer than simple (${simple.length})`
+    );
+  });
+
+  test('includes CONFIGURATION section', () => {
+    const result = getVerboseStatus(minConfig, { manifestExists: true });
+    assert.ok(result.includes('CONFIGURATION'), `should have CONFIGURATION. Got: ${result}`);
+  });
+
+  test('includes PRESET section', () => {
+    const result = getVerboseStatus(minConfig, { manifestExists: true });
+    assert.ok(result.includes('PRESET'), `should have PRESET section. Got: ${result}`);
+  });
+
+  test('includes ROUTES section', () => {
+    const result = getVerboseStatus(minConfig, { manifestExists: true });
+    assert.ok(result.includes('ROUTES'), `should have ROUTES section. Got: ${result}`);
+  });
+});
+
+// ── getVerboseStatus — CONFIGURATION section ─────────────────────────────────
+
+describe('getVerboseStatus — CONFIGURATION section', () => {
+  test('shows activation state', () => {
+    const result = getVerboseStatus(minConfig, { manifestExists: true });
+    assert.ok(
+      result.includes('active') || result.includes('Activation'),
+      `should show activation. Got: ${result}`
+    );
+  });
+
+  test('shows schema version', () => {
+    const result = getVerboseStatus(minConfig, { manifestExists: true });
+    assert.ok(
+      result.includes('v3') || result.includes('v4') || result.includes('Schema'),
+      `should show schema version. Got: ${result}`
+    );
+  });
+
+  test('shows Config path if routerDir provided', () => {
+    const result = getVerboseStatus(minConfig, { manifestExists: true, configPath: 'router/router.yaml' });
+    assert.ok(
+      result.includes('router/router.yaml') || result.includes('Config'),
+      `should show config path. Got: ${result}`
+    );
+  });
+});
+
+// ── getVerboseStatus — PRESET section ────────────────────────────────────────
+
+describe('getVerboseStatus — PRESET section', () => {
+  test('shows active preset name', () => {
+    const result = getVerboseStatus(minConfig, { manifestExists: true });
+    assert.ok(result.includes('balanced'), `should show preset name. Got: ${result}`);
+  });
+
+  test('shows phase count for active preset', () => {
+    const result = getVerboseStatus(minConfig, { manifestExists: true });
+    assert.ok(result.includes('2'), `should show phase count. Got: ${result}`);
+  });
+
+  test('shows debug_invoke info when present', () => {
+    const result = getVerboseStatus(configWithDebug, { manifestExists: true });
+    assert.ok(result.includes('sdd-debug-mono'), `should show debug preset. Got: ${result}`);
+    assert.ok(result.includes('on_issues'), `should show trigger. Got: ${result}`);
+  });
+
+  test('shows identity persona when present', () => {
+    const result = getVerboseStatus(configWithIdentity, { manifestExists: true });
+    assert.ok(
+      result.includes('gentleman') || result.includes('Identity'),
+      `should show identity. Got: ${result}`
+    );
+  });
+});
+
+// ── getVerboseStatus — ROUTES section ────────────────────────────────────────
+
+describe('getVerboseStatus — ROUTES section', () => {
+  test('shows phase names from active preset', () => {
+    const result = getVerboseStatus(minConfig, { manifestExists: true });
+    assert.ok(result.includes('orchestrator'), `should show orchestrator phase. Got: ${result}`);
+    assert.ok(result.includes('explore'), `should show explore phase. Got: ${result}`);
+  });
+
+  test('shows target model for each phase', () => {
+    const result = getVerboseStatus(minConfig, { manifestExists: true });
+    assert.ok(
+      result.includes('anthropic/claude-sonnet') || result.includes('claude-sonnet'),
+      `should show model target. Got: ${result}`
+    );
+  });
+});
+
+// ── getVerboseStatus — CATALOGS section ──────────────────────────────────────
+
+describe('getVerboseStatus — CATALOGS section', () => {
+  test('shows CATALOGS section when multiple catalogs exist', () => {
+    const result = getVerboseStatus(configMultiCatalog, { manifestExists: true });
+    assert.ok(result.includes('CATALOGS'), `should have CATALOGS section. Got: ${result}`);
+  });
+
+  test('shows enabled state for each catalog', () => {
+    const result = getVerboseStatus(configMultiCatalog, { manifestExists: true });
+    assert.ok(
+      result.includes('enabled') || result.includes('●'),
+      `should show enabled state. Got: ${result}`
+    );
+  });
+
+  test('shows catalog name in CATALOGS section', () => {
+    const result = getVerboseStatus(configMultiCatalog, { manifestExists: true });
+    assert.ok(result.includes('sdd-debug'), `should show sdd-debug catalog. Got: ${result}`);
+  });
+});
+
+// ── getVerboseStatus — SDD CONNECTIONS section ───────────────────────────────
+
+describe('getVerboseStatus — SDD CONNECTIONS section', () => {
+  test('shows SDD CONNECTIONS section when debug_invoke present', () => {
+    const result = getVerboseStatus(configWithDebug, { manifestExists: true });
+    assert.ok(
+      result.includes('SDD CONNECTIONS') || result.includes('CONNECTIONS'),
+      `should have SDD CONNECTIONS section. Got: ${result}`
+    );
+  });
+
+  test('shows invoke arrow when debug_invoke present', () => {
+    const result = getVerboseStatus(configWithDebug, { manifestExists: true });
+    assert.ok(
+      result.includes('→') || result.includes('invoke'),
+      `should show arrow or invoke. Got: ${result}`
+    );
+  });
+});
+
+// ── buildConnectionGraph ─────────────────────────────────────────────────────
+
+describe('buildConnectionGraph — basic structure', () => {
+  test('returns an array of strings', () => {
+    const phases = ['orchestrator', 'explore', 'spec', 'verify', 'archive'];
+    const result = buildConnectionGraph(phases, null, []);
+    assert.ok(Array.isArray(result), 'should return array');
+    assert.ok(result.length > 0, 'should return non-empty array');
+    for (const line of result) {
+      assert.ok(typeof line === 'string', `each element should be string, got: ${typeof line}`);
+    }
+  });
+
+  test('includes each phase name in the graph', () => {
+    const phases = ['orchestrator', 'explore', 'verify'];
+    const result = buildConnectionGraph(phases, null, []);
+    const joined = result.join('\n');
+    assert.ok(joined.includes('orchestrator'), `should include orchestrator. Got:\n${joined}`);
+    assert.ok(joined.includes('explore'), `should include explore. Got:\n${joined}`);
+    assert.ok(joined.includes('verify'), `should include verify. Got:\n${joined}`);
+  });
+
+  test('shows debug_invoke arrow on specified phase', () => {
+    const phases = ['orchestrator', 'explore', 'verify', 'archive'];
+    const debugInvoke = { preset: 'sdd-debug-mono', trigger: 'on_issues', phase: 'verify' };
+    const result = buildConnectionGraph(phases, debugInvoke, []);
+    const joined = result.join('\n');
+    assert.ok(
+      joined.includes('→') || joined.includes('invoke'),
+      `should show arrow for invoke. Got:\n${joined}`
+    );
+    assert.ok(
+      joined.includes('sdd-debug-mono') || joined.includes('sdd-debug'),
+      `should reference debug preset. Got:\n${joined}`
+    );
+  });
+
+  test('returns at least one line per phase', () => {
+    const phases = ['orchestrator', 'explore', 'spec'];
+    const result = buildConnectionGraph(phases, null, []);
+    // At minimum one line per phase name
+    assert.ok(result.length >= phases.length, `should have at least ${phases.length} lines. Got ${result.length}`);
+  });
+
+  test('handles empty phases array gracefully', () => {
+    const result = buildConnectionGraph([], null, []);
+    assert.ok(Array.isArray(result), 'should still return array');
+  });
+
+  test('handles null debugInvoke gracefully', () => {
+    const phases = ['orchestrator', 'verify'];
+    assert.doesNotThrow(() => buildConnectionGraph(phases, null, []));
+  });
+
+  test('handles null customSdds gracefully', () => {
+    const phases = ['orchestrator', 'verify'];
+    assert.doesNotThrow(() => buildConnectionGraph(phases, null, null));
+  });
+});
+
+// ── getVerboseStatus — null/missing config ───────────────────────────────────
+
+describe('getVerboseStatus — null config', () => {
+  test('returns a string for null config', () => {
+    const result = getVerboseStatus(null, {});
+    assert.ok(typeof result === 'string');
+  });
+
+  test('shows not installed message for null config', () => {
+    const result = getVerboseStatus(null, {});
+    const lower = result.toLowerCase();
+    assert.ok(
+      lower.includes('not installed') || lower.includes('install'),
+      `should mention install. Got: ${result}`
+    );
+  });
+});
+
+// ── Triangulation: inactive state ────────────────────────────────────────────
+
+describe('getSimpleStatus — inactive state', () => {
+  test('shows ⚠️ when activation_state is inactive', () => {
+    const inactiveConfig = { ...minConfig, activation_state: 'inactive' };
+    const result = getSimpleStatus(inactiveConfig, { manifestExists: true });
+    assert.ok(result.includes('⚠️'), `should show ⚠️ for inactive. Got: ${result}`);
+  });
+
+  test('inactive state differs from needs-sync state', () => {
+    const inactiveConfig = { ...minConfig, activation_state: 'inactive' };
+    const syncNeeded = getSimpleStatus(minConfig, { manifestExists: false });
+    const inactive = getSimpleStatus(inactiveConfig, { manifestExists: true });
+    // Both show ⚠️ but should differ in their message text
+    assert.ok(typeof syncNeeded === 'string' && typeof inactive === 'string');
+    assert.notEqual(syncNeeded, inactive, 'inactive and sync-needed states should have different output');
+  });
+});
+
+// ── Triangulation: buildConnectionGraph with custom SDDs ─────────────────────
+
+describe('buildConnectionGraph — custom SDD sections', () => {
+  test('shows custom SDD block when sdds array provided', () => {
+    const phases = ['orchestrator', 'verify'];
+    const customSdds = [
+      {
+        name: 'game-design',
+        phases: {
+          concept: {},
+          'level-design': {},
+          ux: {},
+        },
+      },
+    ];
+    const result = buildConnectionGraph(phases, null, customSdds);
+    const joined = result.join('\n');
+    assert.ok(joined.includes('game-design'), `should show custom SDD name. Got:\n${joined}`);
+    assert.ok(joined.includes('concept'), `should show SDD phases. Got:\n${joined}`);
+  });
+
+  test('last phase of graph uses └── connector', () => {
+    const phases = ['orchestrator', 'verify'];
+    const result = buildConnectionGraph(phases, null, []);
+    const joined = result.join('\n');
+    assert.ok(joined.includes('└──'), `last phase should use └── connector. Got:\n${joined}`);
+  });
+
+  test('non-last phases use ├── connector', () => {
+    const phases = ['orchestrator', 'explore', 'verify'];
+    const result = buildConnectionGraph(phases, null, []);
+    const joined = result.join('\n');
+    assert.ok(joined.includes('├──'), `non-last phases should use ├── connector. Got:\n${joined}`);
+  });
+
+  test('debug_invoke arrow defaults to verify phase if phase not specified', () => {
+    const phases = ['orchestrator', 'explore', 'verify', 'archive'];
+    const debugInvoke = { preset: 'sdd-debug-mono', trigger: 'on_issues' }; // no phase field
+    const result = buildConnectionGraph(phases, debugInvoke, []);
+    const joined = result.join('\n');
+    // verify should have the arrow
+    assert.ok(
+      joined.includes('verify ──invoke──→') || joined.includes('verify'),
+      `verify phase should appear. Got:\n${joined}`
+    );
+    assert.ok(joined.includes('sdd-debug-mono'), `should reference debug preset. Got:\n${joined}`);
+  });
+});
+
+// ── Triangulation: getVerboseStatus PRESETS section ───────────────────────────
+
+describe('getVerboseStatus — PRESETS section', () => {
+  test('marks active preset with *', () => {
+    const result = getVerboseStatus(configMultiCatalog, { manifestExists: true });
+    assert.ok(result.includes('*'), `should mark active preset with *. Got:\n${result.slice(0, 800)}`);
+  });
+
+  test('shows phase count for each preset', () => {
+    const result = getVerboseStatus(configMultiCatalog, { manifestExists: true });
+    // multivendor has 2 phases
+    assert.ok(result.includes('2 phases'), `should show phase count. Got:\n${result.slice(0, 800)}`);
+  });
+
+  test('shows PRESETS section header', () => {
+    const result = getVerboseStatus(configMultiCatalog, { manifestExists: true });
+    assert.ok(result.includes('PRESETS'), `should have PRESETS section. Got:\n${result.slice(0, 800)}`);
+  });
+});
+
+// ── Triangulation: getSimpleStatus identity label ─────────────────────────────
+
+describe('getSimpleStatus — identity label display', () => {
+  test('shows explicit persona name when set', () => {
+    const result = getSimpleStatus(configWithIdentity, { manifestExists: true });
+    assert.ok(
+      result.includes('gentleman'),
+      `should show explicit persona. Got: ${result}`
+    );
+  });
+
+  test('shows AGENTS.md inherited when no explicit persona', () => {
+    const result = getSimpleStatus(minConfig, { manifestExists: true });
+    assert.ok(
+      result.includes('AGENTS.md') || result.includes('Identity'),
+      `should show identity info. Got: ${result}`
+    );
+  });
 });

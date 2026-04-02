@@ -63,7 +63,7 @@ import {
 } from './router-config.js';
 import { resolveControllerLabel, resolvePersona } from './core/controller.js';
 import { resolveIdentity, resetIdentityCache } from './core/agent-identity.js';
-import { getSimpleStatus } from './core/status-reporter.js';
+import { getSimpleStatus, getVerboseStatus } from './core/status-reporter.js';
 
 const CURRENT_SCHEMA_VERSION = 4;
 let wizardEntrypointForTesting = null;
@@ -333,30 +333,42 @@ function runStatus(args = []) {
 
   if (!configPath) {
     if (verbose) {
-      process.stdout.write(renderMissingStatus());
+      process.stdout.write(getVerboseStatus(null, {}) + '\n');
     } else {
-      const simple = getSimpleStatus(null, null);
-      process.stdout.write(renderSimpleStatus(simple, null, null) + '\n');
+      process.stdout.write(getSimpleStatus(null, {}) + '\n');
     }
     return;
   }
 
   try {
     const config = loadRouterConfig(configPath);
-    const state = resolveRouterState(config);
+    const routerDir = path.dirname(configPath);
+    const catalogsDir = path.join(routerDir, 'catalogs');
+    const manifestPath = path.join(routerDir, 'contracts', '.sync-manifest.json');
+    const manifestExists = fs.existsSync(manifestPath);
+
+    // Load custom SDDs for verbose SDD CONNECTIONS graph
+    let customSdds = [];
+    try {
+      customSdds = loadCustomSdds(catalogsDir);
+    } catch {
+      // tolerate missing catalogs dir
+    }
+
+    const statusOptions = {
+      manifestExists,
+      configPath: formatConfigPathForDisplay(configPath),
+      routerDir,
+      customSdds,
+    };
 
     if (verbose) {
-      process.stdout.write(renderStatus(state, configPath, config));
+      process.stdout.write(getVerboseStatus(config, statusOptions) + '\n');
     } else {
-      const simple = getSimpleStatus(config, null);
-      process.stdout.write(renderSimpleStatus(simple, configPath, config) + '\n');
+      process.stdout.write(getSimpleStatus(config, statusOptions) + '\n');
     }
   } catch (error) {
-    if (verbose) {
-      process.stdout.write(renderInvalidStatus(configPath, error));
-    } else {
-      process.stdout.write(`❌ Configuration error: ${error.message}\n`);
-    }
+    process.stdout.write(`❌ Configuration error: ${error.message}\n`);
   }
 }
 
