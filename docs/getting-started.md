@@ -454,6 +454,8 @@ Adds or updates the invoke declaration on a specific phase in a custom SDD. Trig
 
 Cross-catalog invocations let one SDD declare its intent to launch another. `gsr` writes a record — the host executes.
 
+> **Built-in example: sdd-debug** — GSR ships with a working cross-catalog invocation. When the default SDD-Orchestrator's verify phase finds issues, it automatically invokes the `sdd-debug` catalog (7 phases: explore-issues → triage → diagnose → propose-fix → apply-fix → validate-fix → archive-debug). Every built-in preset has a `debug_invoke` block pre-configured — no manual wiring needed. You can do the same for your own SDDs using `gsr phase invoke` or by editing `sdd.yaml` directly. See the README for the full sdd-debug architecture.
+
 #### 1. Declare invoke in sdd.yaml
 
 ```yaml

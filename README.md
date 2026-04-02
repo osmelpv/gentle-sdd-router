@@ -323,37 +323,109 @@ gsr sdd invocations [--status pending|completed|failed]
 
 **Non-executing boundary**: `gsr` writes the record. The record declares intent. Execution belongs to the host.
 
-#### Department-Style Collaboration
+#### Built-in Example: sdd-debug — How GSR Uses Its Own Invocation System
 
-Cross-catalog invocation enables department workflows: `game-design` invokes `art-production`, which invokes `sound-design`. Each catalog is a team. Each invocation record is a work order. `gsr` manages the records — your orchestrator manages the work.
+GSR ships with a real cross-catalog invocation out of the box: **sdd-debug**. This is not a toy example — it's how the default SDD-Orchestrator handles bugs found during verify.
 
-> **Example**: Full department collaboration flow:
+**How it works:**
+
+```
+SDD-Orchestrator (default)
+  └─ verify phase finds issues
+       └─ debug_invoke.trigger = on_issues → INVOKES sdd-debug
+            └─ sdd-debug runs 7 phases:
+                 explore-issues → triage → diagnose → propose-fix
+                 → apply-fix → validate-fix → archive-debug
+            └─ returns standardized debug_result
+       └─ verify re-runs
+            └─ PASS → continue to archive ✅
+            └─ FAIL → judge evaluates: revert | escalate | retry (max 2 cycles)
+```
+
+**The sdd-debug catalog** (`router/catalogs/sdd-debug/`) ships globally with GSR and includes:
+- **7 phases** with a strict dependency chain — no shortcuts
+- **7 role contracts** (explorer, triager, diagnostician, fix-proposer, fix-implementer, fix-validator, debug-archiver) — each with professional constraints, red lines, and security-first rules
+- **7 phase contracts** with input/output specifications and required skills
+- **Standardized `debug_result` output** so the caller knows exactly what happened
+
+**Two preset variants** ship with GSR:
+
+| Preset | Agents per phase | Judge | Models |
+|--------|-----------------|-------|--------|
+| `sdd-debug-mono` | 1 | No | GPT-5.4 across all phases |
+| `sdd-debug-multi` | 2 + judge | Yes (mandatory, reasoning model) | GPT-5.4 + Claude + Gemini judge |
+
+> **Key constraint**: `apply-fix` is ALWAYS 1 agent — even in multi mode. No parallel code writing during debug.
+
+Every built-in preset (multivendor, claude, local-hybrid, etc.) comes with a `debug_invoke` block pre-wired:
+
+```yaml
+# Inside multivendor.router.yaml
+debug_invoke:
+  preset: sdd-debug-mono       # which debug variant to use
+  trigger: on_issues            # only when verify finds problems
+  input_from: verify_output     # payload comes from verify's findings
+  required_fields:              # mandatory fields — missing any = no invoke
+    - issues
+    - affected_files
+    - last_change_files
+    - test_baseline
+```
+
+**You don't configure this.** It works out of the box. Install GSR → verify finds a bug → sdd-debug runs automatically.
+
+#### Do the Same for Your Own SDDs
+
+The sdd-debug pattern is exactly what you'd build for any cross-catalog workflow. You can connect any SDD to any other SDD from any phase:
+
+> **Example**: A game studio with department collaboration:
 > ```bash
 > # 1. Create department catalogs
 > gsr sdd create game-design
 > gsr sdd create art-production
 > gsr sdd create sound-design
 >
-> # 2. In game-design/sdd.yaml, level-design phase invokes art-production:
+> # 2. Connect level-design → art-production
+> gsr phase invoke level-design \
+>   --sdd game-design \
+>   --target art-production/asset-pipeline \
+>   --trigger always \
+>   --input-from phase_output \
+>   --required-fields "level_name,art_style,faction"
+>
+> # 3. Add rich context to the invocation (in sdd.yaml):
 > #    invoke:
 > #      catalog: art-production
 > #      sdd: asset-pipeline
 > #      payload_from: output
 > #      await: true
+> #      on_failure: escalate
+> #      input_context:
+> #        - artifact: level-layout
+> #          field: zones.north
+> #      output_expected:
+> #        - artifact: fbx-model
+> #          format: "FBX rigged"
 >
-> # 3. During execution, the sub-agent creates the invocation:
+> # 4. During execution, the sub-agent creates the invocation:
 > gsr sdd invoke art-production/asset-pipeline \
 >   --from game-design/game-design \
 >   --phase level-design \
 >   --payload "Forest level — bioluminescent trees, Nature faction style"
 > # → Invocation created: inv-a1b2c3d4-...
 >
-> # 4. When art-production completes all its phases:
+> # 5. When art-production completes:
 > gsr sdd invoke-complete inv-a1b2c3d4-... \
 >   --result "Assets delivered: tree_bioluminescent.fbx, forest_ground.png"
 >
-> # 5. The caller reads the result and continues its phase
+> # 6. See all declared connections for an SDD:
+> gsr sdd invocations game-design
+>
+> # 7. Validate everything is wired correctly:
+> gsr sdd validate game-design
 > ```
+
+The pattern is always the same: **declare the intent in sdd.yaml → GSR writes the record → the host executes**. Whether it's the built-in sdd-debug or your own department workflows.
 
 Start here if you want **named development workflows** with **cross-team coordination**.
 
