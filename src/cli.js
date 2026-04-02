@@ -8,6 +8,8 @@ import {
   deleteCustomSdd,
   scaffoldPhaseContract,
   addPhaseInvoke,
+  validateSddFull,
+  listDeclaredInvocations,
 } from './core/sdd-catalog-io.js';
 import {
   createInvocation,
@@ -678,6 +680,9 @@ function printSyncSummary(result, dryRun = false) {
     if (contractsStep.data.manifestPath) {
       process.stdout.write(`${prefix}Manifest: ${contractsStep.data.manifestPath}\n`);
     }
+  } else if (contractsStep?.status === 'skipped') {
+    // Fix 1: contracts dir missing → graceful skip with warning
+    process.stdout.write(`${prefix}Warning: ${contractsStep.data?.reason ?? 'Contracts directory not found — skipping global contracts'}\n`);
   }
 
   // Apply step — agent count and breakdown
@@ -2575,8 +2580,29 @@ export function runSddCommand(args) {
       return runSddInvokeStatus(rest, getInvocationsDir(projectRoot));
     }
     case 'invocations': {
+      // Fix 4: if a positional name arg is provided, show DECLARED invocations from sdd.yaml
+      const positionalName = rest.find(a => !a.startsWith('--'));
+      if (positionalName) {
+        const configPath = discoverConfigPath();
+        if (!configPath) {
+          process.stdout.write('No router config found. Run `gsr install` first.\n');
+          return;
+        }
+        const catalogsDir = path.join(path.dirname(configPath), 'catalogs');
+        return runSddDeclaredInvocations(rest, catalogsDir);
+      }
+      // No name: list RUNTIME invocation records (existing behavior)
       const projectRoot = process.cwd();
       return runSddInvocations(rest, getInvocationsDir(projectRoot));
+    }
+    case 'validate': {
+      const configPath = discoverConfigPath();
+      if (!configPath) {
+        process.stdout.write('No router config found. Run `gsr install` first.\n');
+        return;
+      }
+      const catalogsDir = path.join(path.dirname(configPath), 'catalogs');
+      return runSddValidate(rest, catalogsDir);
     }
     default:
       if (sub === 'help' || sub === '--help' || !sub) {
@@ -2747,6 +2773,135 @@ export function runSddDelete(args, catalogsDir) {
 
   const result = deleteCustomSdd(catalogsDir, name);
   process.stdout.write(`Deleted SDD '${result.name}' from ${result.path}\n`);
+}
+
+/**
+ * Validate a custom SDD: checks sdd.yaml, phase/role contracts, deps, invoke targets.
+ * gsr sdd validate <name>
+ * @param {string[]} args
+ * @param {string} catalogsDir
+ */
+export function runSddValidate(args, catalogsDir) {
+  const name = args.find((a) => !a.startsWith('--'));
+  if (!name) {
+    throw new Error('gsr sdd validate requires a name.');
+  }
+
+  let result;
+  try {
+    result = validateSddFull(catalogsDir, name);
+  } catch (err) {
+    process.stdout.write(`Validating SDD: ${name}\n`);
+    process.stdout.write(`  ❌ sdd.yaml — ${err.message}\n`);
+    process.stdout.write('SDD is invalid.\n');
+    return;
+  }
+
+  const phaseCount = result.details.phases.total;
+  process.stdout.write(`Validating SDD: ${name}\n`);
+
+  // sdd.yaml line
+  process.stdout.write(`  ✅ sdd.yaml — valid (${phaseCount} phases)\n`);
+
+  // Phase contracts
+  const { phases } = result.details;
+  if (phases.missing.length === 0) {
+    process.stdout.write(`  ✅ Phase contracts — ${phases.present}/${phases.total} present\n`);
+  } else {
+    process.stdout.write(
+      `  ❌ Phase contracts — ${phases.present}/${phases.total} present ` +
+      `(missing: ${phases.missing.join(', ')})\n`
+    );
+  }
+
+  // Role contracts
+  const { roles } = result.details;
+  if (roles.total > 0) {
+    if (roles.missing.length === 0) {
+      process.stdout.write(`  ✅ Role contracts — ${roles.present}/${roles.total} present\n`);
+    } else {
+      process.stdout.write(
+        `  ⚠️ Role contracts — ${roles.present}/${roles.total} present ` +
+        `(missing: ${roles.missing.join(', ')})\n`
+      );
+    }
+  }
+
+  // Dependency graph
+  process.stdout.write(
+    `  ✅ Dependency graph — ${result.details.deps.hasCycles ? 'CYCLES DETECTED' : 'no cycles'}\n`
+  );
+
+  // Invoke declarations
+  const { invokes } = result.details;
+  const invokeWarningCount = invokes.warnings.length;
+  if (invokeWarningCount > 0) {
+    process.stdout.write(
+      `  ⚠️ Invoke declarations — ${invokes.valid} valid targets ` +
+      `(${invokeWarningCount} warning(s))\n`
+    );
+    for (const w of invokes.warnings) {
+      process.stdout.write(`    ⚠️ ${w}\n`);
+    }
+  } else if (invokes.valid > 0) {
+    process.stdout.write(`  ✅ Invoke declarations — ${invokes.valid} valid targets\n`);
+  }
+
+  // Summary
+  const totalWarnings = result.warnings.length;
+  const totalErrors = result.errors.length;
+
+  if (totalErrors > 0) {
+    process.stdout.write(`  ❌ ${totalErrors} error(s) found\n`);
+    process.stdout.write('SDD is invalid.\n');
+  } else if (totalWarnings > 0) {
+    process.stdout.write(`  ⚠️ ${totalWarnings} warning(s) found\n`);
+    process.stdout.write('SDD is valid with warnings.\n');
+  } else {
+    process.stdout.write('SDD is valid.\n');
+  }
+}
+
+/**
+ * List DECLARED invocations from a custom SDD's sdd.yaml.
+ * gsr sdd invocations <name>
+ * @param {string[]} args
+ * @param {string} catalogsDir
+ */
+export function runSddDeclaredInvocations(args, catalogsDir) {
+  const name = args.find((a) => !a.startsWith('--'));
+  if (!name) {
+    throw new Error('gsr sdd invocations <name> requires a name.');
+  }
+
+  let invocations;
+  try {
+    invocations = listDeclaredInvocations(catalogsDir, name);
+  } catch (err) {
+    process.stdout.write(`Error: ${err.message}\n`);
+    return;
+  }
+
+  if (invocations.length === 0) {
+    process.stdout.write(`Declared invocations for ${name}: none\n`);
+    return;
+  }
+
+  process.stdout.write(`Declared invocations for ${name}:\n`);
+  for (const inv of invocations) {
+    const awaitStr = inv.await ? 'await' : 'no-await';
+    const onFailureStr = `on_failure: ${inv.on_failure}`;
+    process.stdout.write(`  ${inv.phase} → ${inv.catalog}/${inv.sdd} (${awaitStr}, ${onFailureStr})\n`);
+
+    if (inv.input_context && inv.input_context.length > 0) {
+      const inputs = inv.input_context.map(c => c.field ? `${c.artifact}.${c.field}` : c.artifact).join(', ');
+      process.stdout.write(`    input: ${inputs}\n`);
+    }
+    if (inv.output_expected && inv.output_expected.length > 0) {
+      const outputs = inv.output_expected.map(o => o.format ? `${o.artifact} (${o.format})` : o.artifact).join(', ');
+      process.stdout.write(`    output: ${outputs}\n`);
+    }
+  }
 }
 
 // === ROLE CONTRACT TEMPLATE ===================================================

@@ -911,7 +911,7 @@ test('gsr sync --dry-run — does not write opencode.json (REQ-4)', async () => 
   assert.match(output, /dry.run/i, 'output must mention dry-run');
 });
 
-test('gsr sync -- missing contracts dir exits with failure message (REQ-1)', async () => {
+test('gsr sync -- missing contracts dir skips gracefully with warning (Fix 1)', async () => {
   const { tempDir } = makeSyncTempDir({ withContracts: false });
 
   const originalCwd = process.cwd();
@@ -932,7 +932,9 @@ test('gsr sync -- missing contracts dir exits with failure message (REQ-1)', asy
   }
 
   const output = chunks.join('');
-  assert.match(output, /Sync failed|failed/i, 'must report failure when contracts dir is missing');
+  // Fix 1: missing contracts dir should produce a warning, not a fatal failure
+  assert.doesNotMatch(output, /Sync failed:/i, 'must NOT report fatal failure when contracts dir is missing');
+  assert.match(output, /warning|skip|contracts/i, 'must warn about missing contracts dir');
 });
 
 test('gsr sync summary includes agent count from unified result (REQ-8)', async () => {

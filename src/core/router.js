@@ -561,7 +561,10 @@ export function parseYaml(text) {
   }
 
   function looksLikeRouteObjectLine(text) {
-    return /^(kind|target|metadata):(?:\s+.*)?$/.test(text);
+    // Detect list items that are YAML objects (key: value pairs).
+    // Original: kind|target|metadata for routing lanes.
+    // Extended: artifact|format|field for invoke input_context/output_expected objects.
+    return /^(kind|target|metadata|artifact|format|field):(?:\s+.*)?$/.test(text);
   }
 
   function parseInlineMapping(text, itemIndent) {

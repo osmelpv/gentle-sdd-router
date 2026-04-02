@@ -24,6 +24,8 @@ import {
   runSddDelete,
   runRoleCreate,
   runPhaseCreate,
+  runSddValidate,
+  runSddDeclaredInvocations,
 } from '../src/cli.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -792,6 +794,153 @@ describe('runSddInvocations', () => {
       assert.ok(
         output.toLowerCase().includes('no') || output.toLowerCase().includes('empty') || output.length >= 0,
         `Expected empty state message: ${output}`
+      );
+    } finally {
+      cleanup(tmp);
+    }
+  });
+});
+
+// ─── runSddValidate ───────────────────────────────────────────────────────────
+
+describe('runSddValidate — Fix 2', () => {
+  const VALID_SDD = `name: game-design
+version: 1
+phases:
+  concept:
+    intent: "Define concept"
+  level-design:
+    intent: "Design levels"
+`;
+
+  test('outputs ✅ for fully valid SDD with all contracts', async () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(path.join(sddDir, 'contracts', 'phases'), { recursive: true });
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), VALID_SDD, 'utf8');
+      fs.writeFileSync(path.join(sddDir, 'contracts', 'phases', 'concept.md'), '# Phase\n', 'utf8');
+      fs.writeFileSync(path.join(sddDir, 'contracts', 'phases', 'level-design.md'), '# Phase\n', 'utf8');
+
+      const output = await captureStdout(() => runSddValidate(['game-design'], catalogsDir));
+      assert.ok(output.includes('game-design'), 'output must mention SDD name');
+      assert.ok(output.includes('valid'), 'output must say valid');
+      assert.ok(output.includes('✅'), 'output must have checkmarks');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('outputs ❌ for SDD with missing phase contracts', async () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(path.join(sddDir, 'contracts', 'phases'), { recursive: true });
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), VALID_SDD, 'utf8');
+      // Only one of two contracts present
+      fs.writeFileSync(path.join(sddDir, 'contracts', 'phases', 'concept.md'), '# Phase\n', 'utf8');
+
+      const output = await captureStdout(() => runSddValidate(['game-design'], catalogsDir));
+      assert.ok(output.includes('❌'), 'output must have error mark');
+      assert.ok(output.includes('level-design'), 'output must mention missing phase');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('throws when name is missing', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      fs.mkdirSync(catalogsDir, { recursive: true });
+      assert.throws(
+        () => runSddValidate([], catalogsDir),
+        /requires a name/i
+      );
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('outputs error message for non-existent SDD', async () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      fs.mkdirSync(catalogsDir, { recursive: true });
+      const output = await captureStdout(() => runSddValidate(['nonexistent'], catalogsDir));
+      assert.ok(output.includes('nonexistent') || output.includes('invalid'), 'output must indicate error');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+});
+
+// ─── runSddDeclaredInvocations — Fix 4 ───────────────────────────────────────
+
+describe('runSddDeclaredInvocations — Fix 4', () => {
+  const SDD_WITH_INVOKES = `name: game-design
+version: 1
+phases:
+  concept:
+    intent: "Define concept"
+  level-design:
+    intent: "Design levels"
+    invoke:
+      catalog: art-production
+      sdd: asset-pipeline
+      payload_from: output
+      await: true
+      on_failure: block
+`;
+
+  test('outputs declared invocations for SDD with invoke blocks', async () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(sddDir, { recursive: true });
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), SDD_WITH_INVOKES, 'utf8');
+
+      const output = await captureStdout(() => runSddDeclaredInvocations(['game-design'], catalogsDir));
+      assert.ok(output.includes('game-design'), 'output must mention SDD name');
+      assert.ok(output.includes('level-design'), 'output must mention phase with invoke');
+      assert.ok(output.includes('art-production'), 'output must mention target catalog');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('outputs "none" for SDD with no invocations', async () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(sddDir, { recursive: true });
+      const noInvokes = `name: game-design
+version: 1
+phases:
+  concept:
+    intent: "Define concept"
+`;
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), noInvokes, 'utf8');
+
+      const output = await captureStdout(() => runSddDeclaredInvocations(['game-design'], catalogsDir));
+      assert.ok(output.includes('none') || output.includes('0'), 'output must indicate no invocations');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('throws when name is missing', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      fs.mkdirSync(catalogsDir, { recursive: true });
+      assert.throws(
+        () => runSddDeclaredInvocations([], catalogsDir),
+        /requires a name/i
       );
     } finally {
       cleanup(tmp);

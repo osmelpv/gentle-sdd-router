@@ -264,7 +264,7 @@ describe('unifiedSync — default-only sync (REQ-10)', () => {
 
 // ── Partial failure (REQ-1 spec scenario) ────────────────────────────────────
 
-describe('unifiedSync — missing contracts dir (fatal failure)', () => {
+describe('unifiedSync — missing contracts dir (graceful skip)', () => {
   test('returns failed status when configPath is missing', async () => {
     const result = await unifiedSync({
       configPath: '/nonexistent/path/router.yaml',
@@ -273,7 +273,7 @@ describe('unifiedSync — missing contracts dir (fatal failure)', () => {
     assert.equal(result.status, 'failed', 'must return failed status for missing config');
   });
 
-  test('returns failed status when contracts dir is missing', async () => {
+  test('skips contracts step gracefully when contracts dir is missing', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-us-nocontracts-'));
     const routerDir = path.join(tmpDir, 'router');
     fs.mkdirSync(routerDir, { recursive: true });
@@ -283,7 +283,48 @@ describe('unifiedSync — missing contracts dir (fatal failure)', () => {
 
     try {
       const result = await unifiedSync({ configPath, dryRun: true });
-      assert.equal(result.status, 'failed', 'must return failed when contracts dir missing');
+      // Fix 1: contracts dir missing → skip gracefully, pipeline continues
+      const contractsStep = result.steps.find(s => s.name === 'contracts');
+      assert.equal(contractsStep.status, 'skipped', 'contracts step must be skipped, not failed');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test('pipeline continues past contracts when dir is missing', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-us-nocontracts2-'));
+    const routerDir = path.join(tmpDir, 'router');
+    fs.mkdirSync(routerDir, { recursive: true });
+
+    const configPath = path.join(routerDir, 'router.yaml');
+    fs.writeFileSync(configPath, 'version: 4\n', 'utf8');
+
+    try {
+      const result = await unifiedSync({ configPath, dryRun: true });
+      // overlay, apply, commands, validate steps must be present (not all skipped due to contracts)
+      const stepNames = result.steps.map(s => s.name);
+      assert.ok(stepNames.includes('overlay'), 'overlay step must be present');
+      assert.ok(stepNames.includes('apply'), 'apply step must be present');
+      assert.ok(stepNames.includes('validate'), 'validate step must be present');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test('overall status is ok or partial (not failed) when contracts dir is missing', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-us-nocontracts3-'));
+    const routerDir = path.join(tmpDir, 'router');
+    fs.mkdirSync(routerDir, { recursive: true });
+
+    const configPath = path.join(routerDir, 'router.yaml');
+    fs.writeFileSync(configPath, 'version: 4\n', 'utf8');
+
+    try {
+      const result = await unifiedSync({ configPath, dryRun: true });
+      assert.ok(
+        result.status !== 'failed',
+        `pipeline should not fail when contracts dir is missing, got: ${result.status}`
+      );
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

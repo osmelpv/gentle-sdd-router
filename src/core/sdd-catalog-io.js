@@ -36,6 +36,9 @@ const VALID_PAYLOAD_FROM_VALUES = new Set(['output', 'input', 'custom']);
 /** Valid trigger values for per-phase invoke declarations. */
 const VALID_INVOKE_TRIGGERS = new Set(['on_issues', 'always', 'never', 'manual']);
 
+/** Valid on_failure values for per-phase invoke declarations. */
+const VALID_ON_FAILURE_VALUES = new Set(['block', 'escalate', 'continue']);
+
 // ─── validateSddYaml ─────────────────────────────────────────────────────────
 
 /**
@@ -207,12 +210,76 @@ function normalizeInvoke(raw, phaseName, filePath) {
     );
   }
 
+  // on_failure: optional, must be valid enum, defaults to 'block'
+  const onFailure = raw.on_failure !== undefined ? raw.on_failure : 'block';
+  if (!VALID_ON_FAILURE_VALUES.has(onFailure)) {
+    throw new Error(
+      `[${filePath}] Phase '${phaseName}' invoke.on_failure "${onFailure}" is invalid. ` +
+      `Allowed values: block, escalate, continue.`
+    );
+  }
+
+  // input_context: optional array of { artifact, field? } objects — declarative, not evaluated
+  let inputContext = null;
+  if (raw.input_context != null) {
+    if (!Array.isArray(raw.input_context)) {
+      throw new Error(
+        `[${filePath}] Phase '${phaseName}' invoke.input_context must be an array.`
+      );
+    }
+    inputContext = raw.input_context.map((item, i) => {
+      if (!item || typeof item !== 'object') {
+        throw new Error(
+          `[${filePath}] Phase '${phaseName}' invoke.input_context[${i}] must be an object.`
+        );
+      }
+      if (!item.artifact || typeof item.artifact !== 'string') {
+        throw new Error(
+          `[${filePath}] Phase '${phaseName}' invoke.input_context[${i}].artifact is required.`
+        );
+      }
+      return {
+        artifact: item.artifact,
+        ...(typeof item.field === 'string' ? { field: item.field } : {}),
+      };
+    });
+  }
+
+  // output_expected: optional array of { artifact, format? } objects — declarative, not evaluated
+  let outputExpected = null;
+  if (raw.output_expected != null) {
+    if (!Array.isArray(raw.output_expected)) {
+      throw new Error(
+        `[${filePath}] Phase '${phaseName}' invoke.output_expected must be an array.`
+      );
+    }
+    outputExpected = raw.output_expected.map((item, i) => {
+      if (!item || typeof item !== 'object') {
+        throw new Error(
+          `[${filePath}] Phase '${phaseName}' invoke.output_expected[${i}] must be an object.`
+        );
+      }
+      if (!item.artifact || typeof item.artifact !== 'string') {
+        throw new Error(
+          `[${filePath}] Phase '${phaseName}' invoke.output_expected[${i}].artifact is required.`
+        );
+      }
+      return {
+        artifact: item.artifact,
+        ...(typeof item.format === 'string' ? { format: item.format } : {}),
+      };
+    });
+  }
+
   return {
     catalog: raw.catalog,
     sdd: typeof raw.sdd === 'string' && raw.sdd.trim() ? raw.sdd : raw.catalog,
     payload_from: raw.payload_from,
     await: awaitValue,
     result_field: typeof raw.result_field === 'string' ? raw.result_field : null,
+    on_failure: onFailure,
+    ...(inputContext != null ? { input_context: inputContext } : {}),
+    ...(outputExpected != null ? { output_expected: outputExpected } : {}),
   };
 }
 
@@ -603,4 +670,176 @@ export function resolveContract(type, name, sddName, catalogsDir, globalContract
 
   // 3. Not found
   return null;
+}
+
+// ─── validateSddFull ─────────────────────────────────────────────────────────
+
+/**
+ * Full validation of a custom SDD: checks sdd.yaml validity, phase contract presence,
+ * role contract presence (warnings), dependency cycles, and invoke target existence.
+ *
+ * GSR boundary: all checks are declarative and report-only. No execution occurs.
+ *
+ * @param {string} catalogsDir - Path to router/catalogs/
+ * @param {string} name - SDD name to validate
+ * @returns {{
+ *   valid: boolean,
+ *   warnings: string[],
+ *   errors: string[],
+ *   details: {
+ *     phases: { present: number, total: number, missing: string[] },
+ *     roles: { present: number, total: number, missing: string[] },
+ *     deps: { hasCycles: boolean },
+ *     invokes: { valid: number, warnings: string[] }
+ *   }
+ * }}
+ */
+export function validateSddFull(catalogsDir, name) {
+  // Load and validate the sdd.yaml (throws on invalid YAML or schema errors)
+  const sdd = loadCustomSdd(catalogsDir, name);
+  const sddDir = join(catalogsDir, name);
+  const sddYamlPath = join(sddDir, 'sdd.yaml');
+
+  // Also read the raw YAML for fields not preserved by validateSddYaml (e.g. roles array)
+  const rawParsed = parseYaml(readFileSync(sddYamlPath, 'utf8'));
+
+  const errors = [];
+  const warnings = [];
+
+  // ── Phase contracts ────────────────────────────────────────────────────────
+  const phaseNames = Object.keys(sdd.phases);
+  const phasesContractsDir = join(sddDir, 'contracts', 'phases');
+  const missingPhaseContracts = [];
+  let presentPhaseContracts = 0;
+
+  for (const phaseName of phaseNames) {
+    const contractPath = join(phasesContractsDir, `${phaseName}.md`);
+    if (existsSync(contractPath)) {
+      presentPhaseContracts++;
+    } else {
+      missingPhaseContracts.push(phaseName);
+    }
+  }
+
+  for (const missing of missingPhaseContracts) {
+    errors.push(`Phase contract missing: contracts/phases/${missing}.md`);
+  }
+
+  // ── Role contracts (warnings, not errors) ─────────────────────────────────
+  // Roles may be referenced as a top-level array in sdd.yaml (optional extension).
+  // Since validateSddYaml doesn't preserve the top-level 'roles' field, we read from rawParsed.
+  const rolesContractsDir = join(sddDir, 'contracts', 'roles');
+  const roleNames = Array.isArray(rawParsed.roles) ? rawParsed.roles.filter(r => typeof r === 'string') : [];
+  const missingRoleContracts = [];
+  let presentRoleContracts = 0;
+
+  for (const roleName of roleNames) {
+    const contractPath = join(rolesContractsDir, `${roleName}.md`);
+    if (existsSync(contractPath)) {
+      presentRoleContracts++;
+    } else {
+      missingRoleContracts.push(roleName);
+    }
+  }
+
+  for (const missing of missingRoleContracts) {
+    warnings.push(`Role contract missing: contracts/roles/${missing}.md`);
+  }
+
+  // ── Dependency graph — already checked by validateSddYaml (no cycles) ─────
+  // If we reach here, validateSddYaml already ran without throwing, so no cycles.
+  const hasCycles = false;
+
+  // ── Invoke target existence (warnings) ────────────────────────────────────
+  const invokeWarnings = [];
+  let validInvokes = 0;
+
+  for (const [phaseName, phase] of Object.entries(sdd.phases)) {
+    if (!phase.invoke) continue;
+
+    const targetCatalog = phase.invoke.catalog;
+    const targetCatalogDir = join(catalogsDir, targetCatalog);
+    if (!existsSync(targetCatalogDir)) {
+      invokeWarnings.push(
+        `Phase '${phaseName}' invokes catalog '${targetCatalog}' which does not exist in router/catalogs/`
+      );
+    } else {
+      validInvokes++;
+    }
+  }
+
+  warnings.push(...invokeWarnings);
+
+  const valid = errors.length === 0;
+
+  return {
+    valid,
+    warnings,
+    errors,
+    details: {
+      phases: {
+        present: presentPhaseContracts,
+        total: phaseNames.length,
+        missing: missingPhaseContracts,
+      },
+      roles: {
+        present: presentRoleContracts,
+        total: roleNames.length,
+        missing: missingRoleContracts,
+      },
+      deps: { hasCycles },
+      invokes: {
+        valid: validInvokes,
+        warnings: invokeWarnings,
+      },
+    },
+  };
+}
+
+// ─── listDeclaredInvocations ──────────────────────────────────────────────────
+
+/**
+ * List all DECLARED invocations from a custom SDD's phases.
+ * Returns phases that have an invoke block, with the invoke details.
+ *
+ * GSR boundary: report-only. Does NOT execute anything.
+ *
+ * @param {string} catalogsDir - Path to router/catalogs/
+ * @param {string} sddName - SDD name
+ * @returns {Array<{
+ *   phase: string,
+ *   catalog: string,
+ *   sdd: string,
+ *   await: boolean,
+ *   on_failure: string,
+ *   input_context?: Array<{artifact: string, field?: string}>,
+ *   output_expected?: Array<{artifact: string, format?: string}>
+ * }>}
+ */
+export function listDeclaredInvocations(catalogsDir, sddName) {
+  const sdd = loadCustomSdd(catalogsDir, sddName);
+  const invocations = [];
+
+  for (const [phaseName, phase] of Object.entries(sdd.phases)) {
+    if (!phase.invoke) continue;
+
+    const entry = {
+      phase: phaseName,
+      catalog: phase.invoke.catalog,
+      sdd: phase.invoke.sdd,
+      await: phase.invoke.await,
+      on_failure: phase.invoke.on_failure,
+    };
+
+    if (phase.invoke.input_context != null) {
+      entry.input_context = phase.invoke.input_context;
+    }
+    if (phase.invoke.output_expected != null) {
+      entry.output_expected = phase.invoke.output_expected;
+    }
+
+    invocations.push(entry);
+  }
+
+  return invocations;
 }

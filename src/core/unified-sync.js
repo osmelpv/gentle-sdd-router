@@ -92,10 +92,16 @@ async function runContractsStep(opts) {
     // Derive contractsDir from configPath when available
     let contractsDir;
     if (configPath) {
+      // configPath itself must exist (we need a valid router root to operate)
+      if (!existsSync(configPath)) {
+        return stepFailed('contracts', 'Config file not found at ' + configPath);
+      }
       const routerDir = dirname(configPath);
       const candidateDir = join(routerDir, 'contracts');
       if (!existsSync(candidateDir)) {
-        return stepFailed('contracts', 'Contracts directory not found at ' + candidateDir);
+        // Fix 1: graceful skip — contracts dir missing is not fatal.
+        // Projects that only have catalogs in router/catalogs/ can still sync catalogs.
+        return stepSkipped('contracts', 'Contracts directory not found at ' + candidateDir + ' — skipping global contracts');
       }
       contractsDir = candidateDir;
     } else {
@@ -103,7 +109,8 @@ async function runContractsStep(opts) {
       const { findContractsDir } = await import('./sync.js');
       contractsDir = findContractsDir();
       if (!contractsDir) {
-        return stepFailed('contracts', 'Contracts directory not found. Expected at router/contracts/');
+        // Fix 1: graceful skip — contracts dir missing is not fatal
+        return stepSkipped('contracts', 'Contracts directory not found. Expected at router/contracts/ — skipping global contracts');
       }
     }
 
@@ -394,7 +401,7 @@ export async function unifiedSync(options = {}) {
   const contractsStep = await runContractsStep({ dryRun, configPath });
   steps.push(contractsStep);
 
-  // Contracts failure is fatal — skip the rest
+  // Contracts FAILURE (not skip) is fatal — skip the rest
   if (contractsStep.status === 'failed') {
     // Add placeholder steps in skipped state for clarity
     steps.push(stepSkipped('overlay', 'contracts step failed'));
@@ -409,6 +416,7 @@ export async function unifiedSync(options = {}) {
       requiresReopen: false,
     };
   }
+  // Contracts SKIPPED (dir missing) is non-fatal — pipeline continues
 
   // Step 2: overlay
   const overlayStep = await runOverlayStep({ configPath, cwd });

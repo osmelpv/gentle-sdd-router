@@ -16,6 +16,8 @@ import {
   deleteCustomSdd,
   resolveContract,
   scaffoldPhaseContract,
+  validateSddFull,
+  listDeclaredInvocations,
 } from '../src/core/sdd-catalog-io.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -877,6 +879,461 @@ describe('createCustomSdd — auto-generates phase contracts', () => {
       createCustomSdd(catalogsDir, 'my-sdd');
       const contractPath = path.join(catalogsDir, 'my-sdd', 'contracts', 'phases', 'main.md');
       assert.ok(fs.existsSync(contractPath), 'Contract for default main phase must be created');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+});
+
+// ─── validateSddFull ──────────────────────────────────────────────────────────
+
+describe('validateSddFull — sdd.yaml + contract presence checks', () => {
+  const SDD_WITH_INVOKES = `name: game-design
+version: 1
+phases:
+  concept:
+    intent: "Define concept"
+  level-design:
+    intent: "Design levels"
+    invoke:
+      catalog: art-production
+      payload_from: output
+      await: true
+`;
+
+  test('returns valid:true and no errors for a fully valid SDD with all phase contracts present', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      // Create SDD
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(path.join(sddDir, 'contracts', 'phases'), { recursive: true });
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), SDD_WITH_INVOKES, 'utf8');
+      // Create contracts for all phases
+      fs.writeFileSync(path.join(sddDir, 'contracts', 'phases', 'concept.md'), '# Phase: concept\n', 'utf8');
+      fs.writeFileSync(path.join(sddDir, 'contracts', 'phases', 'level-design.md'), '# Phase: level-design\n', 'utf8');
+
+      const result = validateSddFull(catalogsDir, 'game-design');
+      assert.equal(result.valid, true, 'should be valid when all contracts are present');
+      assert.equal(result.errors.length, 0, 'should have no errors');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('returns valid:false when phase contracts are missing', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(path.join(sddDir, 'contracts', 'phases'), { recursive: true });
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), SDD_WITH_INVOKES, 'utf8');
+      // Only create contract for 'concept', missing 'level-design'
+      fs.writeFileSync(path.join(sddDir, 'contracts', 'phases', 'concept.md'), '# Phase: concept\n', 'utf8');
+
+      const result = validateSddFull(catalogsDir, 'game-design');
+      assert.equal(result.valid, false, 'should be invalid when phase contracts are missing');
+      assert.ok(result.errors.length > 0, 'should have at least one error');
+      assert.ok(result.errors.some(e => e.includes('level-design')), 'error should mention missing phase');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('result includes details.phases with present/missing contract info', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(path.join(sddDir, 'contracts', 'phases'), { recursive: true });
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), SDD_WITH_INVOKES, 'utf8');
+      fs.writeFileSync(path.join(sddDir, 'contracts', 'phases', 'concept.md'), '# Phase\n', 'utf8');
+      // level-design contract missing
+
+      const result = validateSddFull(catalogsDir, 'game-design');
+      assert.ok(result.details, 'result must have details');
+      assert.ok(typeof result.details.phases === 'object', 'details.phases must be an object');
+      assert.equal(result.details.phases.present, 1, '1 phase contract present');
+      assert.equal(result.details.phases.missing.length, 1, '1 phase contract missing');
+      assert.ok(result.details.phases.missing.includes('level-design'), 'missing array has level-design');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('returns warnings for missing role contracts (not errors)', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(path.join(sddDir, 'contracts', 'phases'), { recursive: true });
+      fs.mkdirSync(path.join(sddDir, 'contracts', 'roles'), { recursive: true });
+      // SDD with roles referenced
+      const sddWithRoles = `name: game-design
+version: 1
+phases:
+  concept:
+    intent: "Define concept"
+    agents: 2
+roles:
+  - balance-designer
+  - art-director
+`;
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), sddWithRoles, 'utf8');
+      fs.writeFileSync(path.join(sddDir, 'contracts', 'phases', 'concept.md'), '# Phase\n', 'utf8');
+      // Create only one role contract, missing the other
+      fs.writeFileSync(path.join(sddDir, 'contracts', 'roles', 'balance-designer.md'), '# Role\n', 'utf8');
+
+      const result = validateSddFull(catalogsDir, 'game-design');
+      assert.ok(result.warnings.some(w => w.includes('art-director')), 'warning must mention missing role');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('detects invoke references to non-existent catalogs', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(path.join(sddDir, 'contracts', 'phases'), { recursive: true });
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), SDD_WITH_INVOKES, 'utf8');
+      fs.writeFileSync(path.join(sddDir, 'contracts', 'phases', 'concept.md'), '# Phase\n', 'utf8');
+      fs.writeFileSync(path.join(sddDir, 'contracts', 'phases', 'level-design.md'), '# Phase\n', 'utf8');
+      // 'art-production' catalog does NOT exist in catalogsDir
+
+      const result = validateSddFull(catalogsDir, 'game-design');
+      assert.ok(
+        result.warnings.some(w => w.includes('art-production')),
+        'should warn about missing catalog for invoke target'
+      );
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('throws when SDD does not exist', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      fs.mkdirSync(catalogsDir, { recursive: true });
+      assert.throws(
+        () => validateSddFull(catalogsDir, 'nonexistent'),
+        /nonexistent/,
+        'must throw for missing SDD'
+      );
+    } finally {
+      cleanup(tmp);
+    }
+  });
+});
+
+// ─── Fix 3: normalizeInvoke — new fields ─────────────────────────────────────
+
+describe('normalizeInvoke — input_context, output_expected, on_failure (Fix 3)', () => {
+  const makeSddWithInvoke = (invokeExtra = '') => `name: game-design
+version: 1
+phases:
+  level-design:
+    intent: "Design levels"
+    invoke:
+      catalog: art-production
+      payload_from: output
+      await: true
+${invokeExtra}`;
+
+  test('normalizes invoke with input_context as array of objects', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(sddDir, { recursive: true });
+      const yaml = makeSddWithInvoke(`      input_context:
+        - artifact: balance-sheet
+          field: "unit.stats"
+        - artifact: level-layout
+          field: "zones.north"
+`);
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), yaml, 'utf8');
+      const sdd = loadCustomSdds(catalogsDir)[0];
+      const invoke = sdd.phases['level-design'].invoke;
+      assert.ok(Array.isArray(invoke.input_context), 'input_context must be an array');
+      assert.equal(invoke.input_context.length, 2, 'should have 2 input_context entries');
+      assert.equal(invoke.input_context[0].artifact, 'balance-sheet');
+      assert.equal(invoke.input_context[0].field, 'unit.stats');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('normalizes invoke with output_expected as array of objects', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(sddDir, { recursive: true });
+      const yaml = makeSddWithInvoke(`      output_expected:
+        - artifact: fbx-model
+          format: "FBX rigged"
+        - artifact: texture-set
+          format: "PNG 2048x2048"
+`);
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), yaml, 'utf8');
+      const sdd = loadCustomSdds(catalogsDir)[0];
+      const invoke = sdd.phases['level-design'].invoke;
+      assert.ok(Array.isArray(invoke.output_expected), 'output_expected must be an array');
+      assert.equal(invoke.output_expected.length, 2, 'should have 2 output_expected entries');
+      assert.equal(invoke.output_expected[0].artifact, 'fbx-model');
+      assert.equal(invoke.output_expected[0].format, 'FBX rigged');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('normalizes on_failure: block', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(sddDir, { recursive: true });
+      const yaml = makeSddWithInvoke(`      on_failure: block\n`);
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), yaml, 'utf8');
+      const sdd = loadCustomSdds(catalogsDir)[0];
+      assert.equal(sdd.phases['level-design'].invoke.on_failure, 'block');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('normalizes on_failure: escalate', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(sddDir, { recursive: true });
+      const yaml = makeSddWithInvoke(`      on_failure: escalate\n`);
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), yaml, 'utf8');
+      const sdd = loadCustomSdds(catalogsDir)[0];
+      assert.equal(sdd.phases['level-design'].invoke.on_failure, 'escalate');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('normalizes on_failure: continue', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(sddDir, { recursive: true });
+      const yaml = makeSddWithInvoke(`      on_failure: continue\n`);
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), yaml, 'utf8');
+      const sdd = loadCustomSdds(catalogsDir)[0];
+      assert.equal(sdd.phases['level-design'].invoke.on_failure, 'continue');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('on_failure defaults to block when absent', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(sddDir, { recursive: true });
+      const yaml = makeSddWithInvoke('');
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), yaml, 'utf8');
+      const sdd = loadCustomSdds(catalogsDir)[0];
+      assert.equal(sdd.phases['level-design'].invoke.on_failure, 'block', 'default on_failure must be block');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('throws on invalid on_failure value', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(sddDir, { recursive: true });
+      const yaml = makeSddWithInvoke(`      on_failure: retry\n`);
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), yaml, 'utf8');
+      assert.throws(
+        () => loadCustomSdds(catalogsDir),
+        /on_failure.*retry|retry.*on_failure|invalid/i,
+        'must throw for invalid on_failure value'
+      );
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('input_context and output_expected are included in manifest v3 round-trip', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(sddDir, { recursive: true });
+      const yaml = makeSddWithInvoke(`      input_context:
+        - artifact: spec-doc
+          field: summary
+      output_expected:
+        - artifact: design-doc
+          format: "Markdown"
+      on_failure: escalate
+`);
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), yaml, 'utf8');
+      const sdd = loadCustomSdds(catalogsDir)[0];
+      const invoke = sdd.phases['level-design'].invoke;
+      // Round-trip checks
+      assert.ok(Array.isArray(invoke.input_context), 'input_context must survive round-trip');
+      assert.ok(Array.isArray(invoke.output_expected), 'output_expected must survive round-trip');
+      assert.equal(invoke.on_failure, 'escalate', 'on_failure must survive round-trip');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+});
+
+// ─── Fix 4: listDeclaredInvocations ──────────────────────────────────────────
+
+describe('listDeclaredInvocations — declared invocations from sdd.yaml', () => {
+  const SDD_NO_INVOKES = `name: basic-sdd
+version: 1
+phases:
+  explore:
+    intent: "Explore the problem"
+  spec:
+    intent: "Write specs"
+`;
+
+  const SDD_WITH_INVOKES = `name: game-design
+version: 1
+phases:
+  concept:
+    intent: "Define concept"
+  level-design:
+    intent: "Design levels"
+    invoke:
+      catalog: art-production
+      sdd: asset-pipeline
+      payload_from: output
+      await: true
+      on_failure: block
+  multiplayer:
+    intent: "Design multiplayer"
+    invoke:
+      catalog: engineering
+      sdd: backend-spec
+      payload_from: output
+      await: true
+      on_failure: escalate
+      input_context:
+        - artifact: game-spec
+          field: multiplayer.requirements
+      output_expected:
+        - artifact: backend-api
+          format: "OpenAPI 3.0"
+`;
+
+  test('returns empty array when SDD has no invokes', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'basic-sdd');
+      fs.mkdirSync(sddDir, { recursive: true });
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), SDD_NO_INVOKES, 'utf8');
+
+      const result = listDeclaredInvocations(catalogsDir, 'basic-sdd');
+      assert.ok(Array.isArray(result), 'must return an array');
+      assert.equal(result.length, 0, 'must be empty when no invokes defined');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('returns invocations for each phase with an invoke block', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(sddDir, { recursive: true });
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), SDD_WITH_INVOKES, 'utf8');
+
+      const result = listDeclaredInvocations(catalogsDir, 'game-design');
+      assert.equal(result.length, 2, 'must return 2 invocations');
+      const phaseNames = result.map(r => r.phase);
+      assert.ok(phaseNames.includes('level-design'), 'must include level-design');
+      assert.ok(phaseNames.includes('multiplayer'), 'must include multiplayer');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('each invocation entry has phase, catalog, sdd, and on_failure fields', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(sddDir, { recursive: true });
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), SDD_WITH_INVOKES, 'utf8');
+
+      const result = listDeclaredInvocations(catalogsDir, 'game-design');
+      const levelDesign = result.find(r => r.phase === 'level-design');
+      assert.ok(levelDesign, 'level-design entry must exist');
+      assert.equal(levelDesign.catalog, 'art-production', 'catalog must match');
+      assert.equal(levelDesign.sdd, 'asset-pipeline', 'sdd must match');
+      assert.equal(levelDesign.on_failure, 'block', 'on_failure must be block');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('invocation with input_context includes it in the entry', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(sddDir, { recursive: true });
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), SDD_WITH_INVOKES, 'utf8');
+
+      const result = listDeclaredInvocations(catalogsDir, 'game-design');
+      const multiplayer = result.find(r => r.phase === 'multiplayer');
+      assert.ok(Array.isArray(multiplayer.input_context), 'input_context must be an array');
+      assert.equal(multiplayer.input_context[0].artifact, 'game-spec');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('invocation with output_expected includes it in the entry', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddDir = path.join(catalogsDir, 'game-design');
+      fs.mkdirSync(sddDir, { recursive: true });
+      fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), SDD_WITH_INVOKES, 'utf8');
+
+      const result = listDeclaredInvocations(catalogsDir, 'game-design');
+      const multiplayer = result.find(r => r.phase === 'multiplayer');
+      assert.ok(Array.isArray(multiplayer.output_expected), 'output_expected must be an array');
+      assert.equal(multiplayer.output_expected[0].artifact, 'backend-api');
+      assert.equal(multiplayer.output_expected[0].format, 'OpenAPI 3.0');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('throws when SDD does not exist', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      fs.mkdirSync(catalogsDir, { recursive: true });
+      assert.throws(
+        () => listDeclaredInvocations(catalogsDir, 'nonexistent'),
+        /nonexistent/,
+        'must throw for missing SDD'
+      );
     } finally {
       cleanup(tmp);
     }
