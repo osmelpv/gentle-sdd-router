@@ -1,4 +1,7 @@
 name: safety
+debug_invoke:
+  preset: sdd-debug-mono
+  trigger: never
 phases:
   orchestrator:
     - target: anthropic/claude-opus

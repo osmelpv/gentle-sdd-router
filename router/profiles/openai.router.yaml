@@ -1,6 +1,15 @@
 name: openai
 availability: stable
 complexity: medium
+debug_invoke:
+  preset: sdd-debug-mono
+  trigger: on_issues
+  input_from: verify_output
+  required_fields:
+    - issues
+    - affected_files
+    - last_change_files
+    - test_baseline
 phases:
   orchestrator:
     - target: openai/gpt-5

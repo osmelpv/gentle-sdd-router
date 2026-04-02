@@ -18,6 +18,8 @@ const EXECUTION_HINT_FIELDS = new Set([
 
 const ALLOWED_IDENTITY_KEYS = new Set(['context', 'prompt', 'inherit_agents_md', 'persona']);
 
+const VALID_DEBUG_INVOKE_TRIGGERS = new Set(['on_issues', 'always', 'never', 'manual']);
+
 const ALLOWED_PERMISSION_KEYS = new Set(['read', 'write', 'edit', 'bash', 'delegate']);
 
 function isObject(value) {
@@ -61,6 +63,52 @@ function validateIdentity(identity, filePath) {
       throw new Error(
         `Profile file "${filePath}" has identity.prompt but it must be a string or null.`
       );
+    }
+  }
+}
+
+function validateDebugInvoke(debugInvoke, filePath) {
+  if (!isObject(debugInvoke)) {
+    throw new Error(`Profile file "${filePath}" has "debug_invoke" but it must be an object.`);
+  }
+
+  // preset is required and must be a non-empty string
+  if (typeof debugInvoke.preset !== 'string' || !debugInvoke.preset.trim()) {
+    throw new Error(
+      `Profile file "${filePath}" debug_invoke.preset must be a non-empty string.`
+    );
+  }
+
+  // trigger is required and must be one of the valid values
+  if (debugInvoke.trigger !== undefined) {
+    if (!VALID_DEBUG_INVOKE_TRIGGERS.has(debugInvoke.trigger)) {
+      throw new Error(
+        `Profile file "${filePath}" debug_invoke.trigger "${debugInvoke.trigger}" is invalid. ` +
+        `Must be one of: on_issues, always, never, manual.`
+      );
+    }
+  }
+
+  // input_from must be a string if present
+  if (debugInvoke.input_from !== undefined && typeof debugInvoke.input_from !== 'string') {
+    throw new Error(
+      `Profile file "${filePath}" debug_invoke.input_from must be a string.`
+    );
+  }
+
+  // required_fields must be an array of strings if present
+  if (debugInvoke.required_fields !== undefined) {
+    if (!Array.isArray(debugInvoke.required_fields)) {
+      throw new Error(
+        `Profile file "${filePath}" debug_invoke.required_fields must be an array of strings.`
+      );
+    }
+    for (const field of debugInvoke.required_fields) {
+      if (typeof field !== 'string') {
+        throw new Error(
+          `Profile file "${filePath}" debug_invoke.required_fields must contain only strings.`
+        );
+      }
     }
   }
 }
@@ -112,6 +160,10 @@ export function validateProfileFile(profile, filePath) {
 
   if (profile.identity !== undefined) {
     validateIdentity(profile.identity, filePath);
+  }
+
+  if (profile.debug_invoke !== undefined) {
+    validateDebugInvoke(profile.debug_invoke, filePath);
   }
 
   // Validate contextWindow on each lane if present

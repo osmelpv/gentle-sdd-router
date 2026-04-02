@@ -4,6 +4,15 @@ name: local-hybrid
 # Based on the ArchonLord ollama-archon preset pattern.
 availability: stable
 complexity: medium
+debug_invoke:
+  preset: sdd-debug-mono
+  trigger: on_issues
+  input_from: verify_output
+  required_fields:
+    - issues
+    - affected_files
+    - last_change_files
+    - test_baseline
 identity:
   inherit_agents_md: true
   persona: gentleman

@@ -40,20 +40,25 @@ Default: `parallel` — Multiple verification agents work simultaneously. Judge 
 
 ## sdd-debug Invocation
 
+### Selecting the sdd-debug Variant
+Read the active preset's `debug_invoke.preset` field to determine which sdd-debug variant to use.
+Do NOT hardcode `sdd-debug-mono` or `sdd-debug-multi` — use the configured value:
+
+```
+active_preset.debug_invoke.preset  →  "sdd-debug-mono" | "sdd-debug-multi"
+```
+
 ### When Issues Found
-If verify finds failing tests, spec gaps, or security/risk findings, it MUST invoke the
-`sdd-debug` catalog via the cross-catalog mechanism:
+If verify finds failing tests, spec gaps, or security/risk findings, consult the active preset's
+`debug_invoke` block to determine whether invocation is required (trigger, required_fields).
+When invocation is warranted, use the cross-catalog mechanism:
 
 ```
-gsr sdd invoke sdd-debug/sdd-debug-mono --from <caller> --phase verify --payload "<issues JSON>"
+gsr sdd invoke sdd-debug/<debug_invoke.preset> --from <caller> --phase verify --payload "<issues JSON>"
 ```
 
-Or with multi-agent variant for complex issues:
-```
-gsr sdd invoke sdd-debug/sdd-debug-multi --from <caller> --phase verify --payload "<issues JSON>"
-```
-
-The `--payload` carries the issues array from the verification report as JSON.
+The `--payload` carries the verify output (issues array, affected_files, last_change_files,
+test_baseline) as JSON. Only invoke if all `required_fields` are present in the payload.
 
 ### When No Issues Found
 If verify finds NO issues (all spec requirements met, all tests passing, no security flags),
