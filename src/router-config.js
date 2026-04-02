@@ -28,6 +28,14 @@ export {
   resolveContract,
 } from './core/sdd-catalog-io.js';
 
+export {
+  createInvocation,
+  readInvocation,
+  listInvocations,
+  completeInvocation,
+  getInvocationsDir,
+} from './core/sdd-invocation-io.js';
+
 export { loadPhaseMetadataForCatalog } from './core/phases.js';
 
 export {

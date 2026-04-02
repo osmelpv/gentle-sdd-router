@@ -395,6 +395,50 @@ gsr role create <name> --sdd <sdd>   Create role contract
 gsr phase create <name> --sdd <sdd>  Create phase contract
 ```
 
+### Cross-Catalog Invocations
+
+Cross-catalog invocations let one SDD declare its intent to launch another. `gsr` writes a record — the host executes.
+
+#### 1. Declare invoke in sdd.yaml
+
+```yaml
+phases:
+  level-design:
+    intent: "Design levels and encounters"
+    invoke:
+      catalog: art-production
+      sdd: asset-pipeline     # optional — defaults to catalog name
+      payload_from: output    # output | input | custom
+      await: true
+```
+
+#### 2. Create the invocation record
+
+```bash
+gsr sdd invoke art-production/asset-pipeline \
+  --from game-design/game-design \
+  --phase level-design \
+  --payload "Level 3 assets needed"
+# Output: Invocation created: 550e8400-e29b-41d4-a716-446655440000
+```
+
+#### 3. Complete the invocation when the callee finishes
+
+```bash
+gsr sdd invoke-complete 550e8400-e29b-41d4-a716-446655440000 \
+  --result "All assets delivered"
+```
+
+#### 4. Check status
+
+```bash
+gsr sdd invoke-status 550e8400-e29b-41d4-a716-446655440000
+gsr sdd invocations                        # list all
+gsr sdd invocations --status pending       # filter by status
+```
+
+**Important**: `gsr` writes the invocation record to `.gsr/invocations/{id}.json`. It never executes the callee. Your orchestrator reads the record and launches the target SDD.
+
 ### Flags
 
 ```
@@ -413,5 +457,5 @@ gsr phase create <name> --sdd <sdd>  Create phase contract
 - [Presets Guide](presets-guide.md) — understand and customize presets
 - [Import/Export Guide](import-export.md) — share, package, and import presets
 - [Migration Guide](migration-guide.md) — upgrading from older schema versions
-- [Architecture](architecture.md) — how gsr works under the hood
+- [Architecture](architecture.md) — how gsr works under the hood, including invocation flow
 - [Host Adoption (EN)](host-adoption.en.md) — integrating gsr with OpenCode

@@ -2,7 +2,7 @@
  * SDD Phase Editor — CRUD for phases within a custom SDD.
  *
  * Allows:
- *   - Adding a new phase (name + intent)
+ *   - Adding a new phase (name + intent + optional invoke config)
  *   - Deleting a phase (warns about broken dependencies)
  *   - ESC returns to sdd-detail
  */
@@ -14,6 +14,28 @@ import { colors } from '../theme.js';
 
 const h = React.createElement;
 
+// ─── Pure Helpers (exported for testability) ──────────────────────────────────
+
+/**
+ * Build an invoke declaration from form input values.
+ * Returns null when catalog is empty (no invoke configured).
+ *
+ * @param {{ catalog: string, sdd: string, payload_from: string, await: boolean, result_field: string }} inputs
+ * @returns {object|null}
+ */
+export function buildInvokeFromInputs({ catalog, sdd, payload_from, await: awaitValue, result_field }) {
+  const trimmedCatalog = (catalog ?? '').trim();
+  if (!trimmedCatalog) return null;
+  const trimmedSdd = (sdd ?? '').trim();
+  return {
+    catalog: trimmedCatalog,
+    sdd: trimmedSdd || trimmedCatalog,
+    payload_from: payload_from ?? 'output',
+    await: typeof awaitValue === 'boolean' ? awaitValue : true,
+    result_field: (result_field ?? '').trim() || null,
+  };
+}
+
 export function SddPhaseEditor({
   router,
   configPath,
@@ -22,8 +44,12 @@ export function SddPhaseEditor({
   selectedSdd,
 }) {
   const [sdd, setSdd] = useState(null);
-  const [view, setView] = useState('menu'); // 'menu' | 'adding-name' | 'adding-intent' | 'confirming-delete'
+  // view: 'menu' | 'adding-name' | 'adding-intent' | 'adding-invoke-catalog' | 'adding-invoke-sdd' | 'confirming-delete'
+  const [view, setView] = useState('menu');
   const [newPhaseName, setNewPhaseName] = useState('');
+  const [newPhaseIntent, setNewPhaseIntent] = useState('');
+  const [invokeCatalog, setInvokeCatalog] = useState('');
+  const [invokeSdd, setInvokeSdd] = useState('');
   const [pendingDelete, setPendingDelete] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -43,6 +69,35 @@ export function SddPhaseEditor({
   };
 
   useEffect(() => { loadSdd(); }, [selectedSdd, configPath]);
+
+  const savePhase = async (intent, invoke) => {
+    try {
+      const pathMod = await import('node:path');
+      const fsMod = await import('node:fs');
+      const { stringifyYaml } = await import('../../../core/router.js');
+      const catalogsDir = pathMod.join(pathMod.dirname(configPath), 'catalogs');
+      const sddYamlPath = pathMod.join(catalogsDir, selectedSdd, 'sdd.yaml');
+      const phaseData = { intent };
+      if (invoke !== null) phaseData.invoke = invoke;
+      const updatedSdd = {
+        ...sdd,
+        phases: {
+          ...sdd.phases,
+          [newPhaseName]: phaseData,
+        },
+      };
+      fsMod.writeFileSync(sddYamlPath, stringifyYaml(updatedSdd), 'utf8');
+      await loadSdd();
+      setView('menu');
+      setNewPhaseName('');
+      setNewPhaseIntent('');
+      setInvokeCatalog('');
+      setInvokeSdd('');
+      setError(null);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
 
   useInput((input, key) => {
     if (key.escape) {
@@ -93,30 +148,58 @@ export function SddPhaseEditor({
       h(Text, { bold: true, color: colors.lavender }, `Add Phase "${newPhaseName}" — Intent`),
       h(TextInput, {
         placeholder: 'Describe what this phase does...',
-        onSubmit: async (value) => {
+        onSubmit: (value) => {
           const trimmed = value.trim();
           if (!trimmed) { setError('Intent is required.'); return; }
-          try {
-            const pathMod = await import('node:path');
-            const fsMod = await import('node:fs');
-            const { stringifyYaml } = await import('../../../core/router.js');
-            const catalogsDir = pathMod.join(pathMod.dirname(configPath), 'catalogs');
-            const sddYamlPath = pathMod.join(catalogsDir, selectedSdd, 'sdd.yaml');
-            const updatedSdd = {
-              ...sdd,
-              phases: {
-                ...sdd.phases,
-                [newPhaseName]: { intent: trimmed },
-              },
-            };
-            fsMod.writeFileSync(sddYamlPath, stringifyYaml(updatedSdd), 'utf8');
-            await loadSdd();
-            setView('menu');
-            setNewPhaseName('');
-            setError(null);
-          } catch (err) {
-            setError(err.message);
+          setNewPhaseIntent(trimmed);
+          setError(null);
+          setView('adding-invoke-catalog');
+        },
+      }),
+    );
+  }
+
+  // View: adding invoke catalog (optional)
+  if (view === 'adding-invoke-catalog') {
+    return h(Box, { flexDirection: 'column' },
+      h(Text, { bold: true, color: colors.lavender }, `Add Phase "${newPhaseName}" — Invoke Catalog (optional)`),
+      h(Text, { color: colors.subtext }, 'Enter the target catalog slug to invoke, or leave empty to skip.'),
+      error ? h(Text, { color: colors.red }, error) : null,
+      h(TextInput, {
+        placeholder: 'e.g. art-production (leave empty to skip)',
+        onSubmit: (value) => {
+          setInvokeCatalog(value.trim());
+          setError(null);
+          if (!value.trim()) {
+            // No invoke — save phase now
+            savePhase(newPhaseIntent, null);
+          } else {
+            setView('adding-invoke-sdd');
           }
+        },
+      }),
+    );
+  }
+
+  // View: adding invoke sdd (optional, only shown when catalog was filled)
+  if (view === 'adding-invoke-sdd') {
+    return h(Box, { flexDirection: 'column' },
+      h(Text, { bold: true, color: colors.lavender }, `Add Phase "${newPhaseName}" — Invoke SDD (optional)`),
+      h(Text, { color: colors.subtext }, `Catalog: ${invokeCatalog}. Enter the SDD slug or leave empty to use catalog name.`),
+      error ? h(Text, { color: colors.red }, error) : null,
+      h(TextInput, {
+        placeholder: `e.g. ${invokeCatalog} (leave empty to use catalog name)`,
+        onSubmit: (value) => {
+          setInvokeSdd(value.trim());
+          setError(null);
+          const invoke = buildInvokeFromInputs({
+            catalog: invokeCatalog,
+            sdd: value.trim(),
+            payload_from: 'output',
+            await: true,
+            result_field: '',
+          });
+          savePhase(newPhaseIntent, invoke);
         },
       }),
     );

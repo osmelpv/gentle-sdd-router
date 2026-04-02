@@ -31,6 +31,7 @@ import { parseYaml, stringifyYaml } from './router.js';
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 const VALID_EXECUTION_VALUES = new Set(['parallel', 'sequential']);
+const VALID_PAYLOAD_FROM_VALUES = new Set(['output', 'input', 'custom']);
 
 // ─── validateSddYaml ─────────────────────────────────────────────────────────
 
@@ -111,6 +112,9 @@ export function validateSddYaml(parsed, filePath) {
       }
     }
 
+    // invoke — optional per-phase invocation declaration
+    const invoke = normalizeInvoke(phase.invoke, phaseName, filePath);
+
     normalizedPhases[phaseName] = {
       intent: phase.intent.trim(),
       execution,
@@ -120,6 +124,7 @@ export function validateSddYaml(parsed, filePath) {
       input: typeof phase.input === 'string' ? phase.input : '',
       output: typeof phase.output === 'string' ? phase.output : '',
       depends_on,
+      invoke,
     };
   }
 
@@ -145,6 +150,66 @@ export function validateSddYaml(parsed, filePath) {
     description: typeof parsed.description === 'string' ? parsed.description : '',
     phases: normalizedPhases,
     triggers,
+  };
+}
+
+/**
+ * Normalize and validate an optional per-phase invoke block.
+ * Returns null if invoke is absent. Throws on validation errors.
+ *
+ * @param {object|null|undefined} raw - Raw invoke value from YAML
+ * @param {string} phaseName - Phase name (for error messages)
+ * @param {string} filePath - Source file path (for error messages)
+ * @returns {InvokeDeclaration|null}
+ */
+function normalizeInvoke(raw, phaseName, filePath) {
+  if (raw == null) return null;
+
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(`[${filePath}] Phase '${phaseName}' invoke must be a mapping.`);
+  }
+
+  // catalog is required and must be a slug
+  if (!raw.catalog || typeof raw.catalog !== 'string' || !raw.catalog.trim()) {
+    throw new Error(
+      `[${filePath}] Phase '${phaseName}' invoke.catalog is required.`
+    );
+  }
+  if (!SLUG_RE.test(raw.catalog)) {
+    throw new Error(
+      `[${filePath}] Phase '${phaseName}' invoke.catalog must be a slug ` +
+      `(lowercase letters, digits, hyphens): "${raw.catalog}".`
+    );
+  }
+
+  // payload_from is required and must be valid enum
+  if (!raw.payload_from) {
+    throw new Error(
+      `[${filePath}] Phase '${phaseName}' invoke.payload_from is required. ` +
+      `Allowed values: output, input, custom.`
+    );
+  }
+  if (!VALID_PAYLOAD_FROM_VALUES.has(raw.payload_from)) {
+    throw new Error(
+      `[${filePath}] Phase '${phaseName}' invoke.payload_from "${raw.payload_from}" is invalid. ` +
+      `Allowed values: output, input, custom.`
+    );
+  }
+
+  // await must be boolean if present
+  const awaitValue = raw.await !== undefined ? raw.await : true;
+  if (typeof awaitValue !== 'boolean') {
+    throw new Error(
+      `[${filePath}] Phase '${phaseName}' invoke.await must be a boolean.`
+    );
+  }
+
+  return {
+    catalog: raw.catalog,
+    sdd: typeof raw.sdd === 'string' && raw.sdd.trim() ? raw.sdd : raw.catalog,
+    payload_from: raw.payload_from,
+    await: awaitValue,
+    result_field: typeof raw.result_field === 'string' ? raw.result_field : null,
   };
 }
 

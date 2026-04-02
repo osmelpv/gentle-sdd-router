@@ -40,7 +40,8 @@ src/
 │   ├── status-reporter.js          # Simple status vocabulary (emoji + one-liner)
 │   ├── unified-sync.js             # Unified sync: contracts + overlay + commands + validate
 │   ├── sdd-catalog-io.js           # Custom SDD create/read/delete in router/catalogs/
-│   ├── sync.js                     # Low-level contract manifest generation
+│   ├── sdd-invocation-io.js        # Cross-catalog invocation records in .gsr/invocations/
+│   ├── sync.js                     # Low-level contract manifest generation (v1/v2/v3)
 │   └── migrations/
 │       ├── index.js                # Migration planner, runner, backup/restore
 │       └── 001_v3-to-v4-multifile.js  # First migration script
@@ -69,9 +70,9 @@ src/
             ├── edit-profile-wizard.js    # Profile editing wizard
             ├── agent-identity-editor.js  # Identity resolution viewer
             ├── sdd-list.js         # Custom SDD list
-            ├── sdd-detail.js       # Custom SDD detail view
+            ├── sdd-detail.js       # Custom SDD detail view (shows invoke per phase)
             ├── sdd-create-wizard.js # Custom SDD creation wizard
-            ├── sdd-phase-editor.js # Phase contract editor
+            ├── sdd-phase-editor.js # Phase contract editor (includes invoke config section)
             ├── sdd-role-editor.js  # Role contract editor
             ├── fresh-install.js    # First-time install screen
             └── settings.js         # Settings screen
@@ -163,6 +164,46 @@ resolveIdentity(preset, { cwd })
    3. preset.agentsContext        (inline override in preset YAML)
    │
    └─ merged prompt + sources array
+```
+
+### Invocation flow
+
+Cross-catalog invocations follow a parent/child record pattern:
+
+```
+sdd.yaml phase declares invoke:
+   catalog: art-production
+   sdd: asset-pipeline
+   payload_from: output
+   await: true
+         │
+         ▼ gsr sdd invoke art-production/asset-pipeline
+              --from game-design/game-design
+              --phase level-design
+              --payload "..."
+         │
+         ▼ createInvocation() [pure data write]
+    .gsr/invocations/{uuid}.json
+    { id, status: "pending", caller, callee, payload, ... }
+         │
+         │ (host/orchestrator reads record and launches callee)
+         │
+         ▼ callee completes
+    gsr sdd invoke-complete {id} --result "..."
+         │
+         ▼ completeInvocation() [pure data write]
+    .gsr/invocations/{uuid}.json
+    { id, status: "completed", result: "...", completed_at: "..." }
+```
+
+**Non-executing boundary**: `gsr` only reads and writes JSON records. It never evaluates `invoke` declarations, never calls the callee, and never orchestrates any workflow. Records declare intent; execution belongs to the host.
+
+**Manifest version**: When any SDD phase has a non-null `invoke`, `generateSyncManifest()` emits `version: 3`. v3 is a strict superset of v2 — existing consumers of v1/v2 manifests are unaffected.
+
+```
+Custom SDDs present, no invoke → manifest version: 2
+Any phase has invoke declaration → manifest version: 3
+No custom SDDs → manifest version: 1
 ```
 
 ## Key Design Decisions

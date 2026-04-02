@@ -132,7 +132,12 @@ export function generateSyncManifest(contractsDir, catalogsDir) {
   let manifest;
 
   if (customSdds.length > 0) {
-    // v2: includes custom_sdds array
+    // Determine version: v3 when any phase has a non-null invoke block
+    const hasAnyInvoke = customSdds.some(sdd =>
+      Object.values(sdd.phases).some(phase => phase.invoke != null)
+    );
+    const manifestVersion = hasAnyInvoke ? 3 : 2;
+
     const customSddsArray = customSdds.map(sdd => {
       const catalogDir = join(catalogsDir, sdd.name);
       const catalogContracts = readCatalogContracts(catalogDir, catalogsDir);
@@ -141,12 +146,19 @@ export function generateSyncManifest(contractsDir, catalogsDir) {
         .filter(c => c.type === 'role')
         .map(c => ({ name: c.name, file: c.file }));
 
-      const phases = Object.entries(sdd.phases).map(([phaseName, phase]) => ({
-        name: phaseName,
-        intent: phase.intent,
-        execution: phase.execution,
-        agents: phase.agents,
-      }));
+      const phases = Object.entries(sdd.phases).map(([phaseName, phase]) => {
+        const entry = {
+          name: phaseName,
+          intent: phase.intent,
+          execution: phase.execution,
+          agents: phase.agents,
+        };
+        // v3: include invoke on all phases (null for phases without invoke)
+        if (hasAnyInvoke) {
+          entry.invoke = phase.invoke ?? null;
+        }
+        return entry;
+      });
 
       return {
         name: sdd.name,
@@ -158,7 +170,7 @@ export function generateSyncManifest(contractsDir, catalogsDir) {
     });
 
     manifest = {
-      version: 2,
+      version: manifestVersion,
       generated_at: new Date().toISOString(),
       contracts: contractsArray,
       custom_sdds: customSddsArray,

@@ -8,6 +8,13 @@ import {
   deleteCustomSdd,
 } from './core/sdd-catalog-io.js';
 import {
+  createInvocation,
+  readInvocation,
+  listInvocations,
+  completeInvocation,
+  getInvocationsDir,
+} from './core/sdd-invocation-io.js';
+import {
   formatConfigPathForDisplay,
   getConfigPath,
   activateOpenCodeCommand,
@@ -2530,6 +2537,22 @@ export function runSddCommand(args) {
       const catalogsDir = path.join(path.dirname(configPath), 'catalogs');
       return runSddDelete(rest, catalogsDir);
     }
+    case 'invoke': {
+      const projectRoot = process.cwd();
+      return runSddInvoke(rest, getInvocationsDir(projectRoot));
+    }
+    case 'invoke-complete': {
+      const projectRoot = process.cwd();
+      return runSddInvokeComplete(rest, getInvocationsDir(projectRoot));
+    }
+    case 'invoke-status': {
+      const projectRoot = process.cwd();
+      return runSddInvokeStatus(rest, getInvocationsDir(projectRoot));
+    }
+    case 'invocations': {
+      const projectRoot = process.cwd();
+      return runSddInvocations(rest, getInvocationsDir(projectRoot));
+    }
     default:
       if (sub === 'help' || sub === '--help' || !sub) {
         process.stdout.write(renderCommandHelp('sdd') ?? '');
@@ -2819,6 +2842,163 @@ export function runPhaseCreate(args, catalogsDir) {
   fs.renameSync(tempPath, phasePath);
 
   process.stdout.write(`Created phase contract '${name}' at ${phasePath}\n`);
+}
+
+// === EXPORTED INVOKE COMMAND FUNCTIONS ========================================
+
+/**
+ * Parse a "catalog/sdd" argument string into { catalog, sdd }.
+ * Throws if argument is missing or malformed.
+ * @param {string|undefined} arg
+ * @param {string} label - Name for error messages ('callee', 'caller', etc.)
+ * @returns {{ catalog: string, sdd: string }}
+ */
+function parseCatalogSddArg(arg, label) {
+  if (!arg || typeof arg !== 'string') {
+    throw new Error(`${label} argument is required in "catalog/sdd" format.`);
+  }
+  const slashIdx = arg.indexOf('/');
+  if (slashIdx === -1) {
+    throw new Error(`${label} must be in "catalog/sdd" format (got: "${arg}").`);
+  }
+  const catalog = arg.slice(0, slashIdx).trim();
+  const sdd = arg.slice(slashIdx + 1).trim();
+  if (!catalog || !sdd) {
+    throw new Error(`${label} must be in "catalog/sdd" format (got: "${arg}").`);
+  }
+  return { catalog, sdd };
+}
+
+/**
+ * Create a cross-catalog invocation record.
+ * gsr sdd invoke <catalog>/<sdd> --from <catalog>/<sdd> --phase <name> [--payload <string>]
+ *
+ * @param {string[]} args - CLI args after 'sdd invoke'
+ * @param {string} invDir - Path to invocations directory
+ */
+export function runSddInvoke(args, invDir) {
+  // Parse positional callee argument (non-flag)
+  const calleeArg = args.find((a, i) => {
+    if (a.startsWith('--')) return false;
+    // Skip values following flags
+    const prev = args[i - 1];
+    if (prev && prev.startsWith('--')) return false;
+    return true;
+  });
+  const callee = parseCatalogSddArg(calleeArg, 'callee');
+
+  // --from <catalog>/<sdd>
+  const fromIdx = args.indexOf('--from');
+  if (fromIdx === -1 || !args[fromIdx + 1]) {
+    throw new Error('--from <catalog>/<sdd> is required.');
+  }
+  const caller = parseCatalogSddArg(args[fromIdx + 1], '--from');
+
+  // --phase <name>
+  const phaseIdx = args.indexOf('--phase');
+  if (phaseIdx === -1 || !args[phaseIdx + 1]) {
+    throw new Error('--phase <name> is required.');
+  }
+  const phase = args[phaseIdx + 1];
+
+  // --payload <string> (optional)
+  const payloadIdx = args.indexOf('--payload');
+  const payload = payloadIdx !== -1 ? (args[payloadIdx + 1] ?? '') : '';
+
+  const record = createInvocation(
+    caller.catalog,
+    caller.sdd,
+    phase,
+    callee.catalog,
+    callee.sdd,
+    payload,
+    invDir
+  );
+
+  process.stdout.write(`Invocation created: ${record.id}\n`);
+}
+
+/**
+ * Complete or fail a pending invocation record.
+ * gsr sdd invoke-complete <id> [--result <string>] [--failed]
+ *
+ * @param {string[]} args
+ * @param {string} invDir
+ */
+export function runSddInvokeComplete(args, invDir) {
+  const id = args.find((a, i) => {
+    if (a.startsWith('--')) return false;
+    const prev = args[i - 1];
+    if (prev && prev.startsWith('--')) return false;
+    return true;
+  });
+  if (!id) {
+    throw new Error('gsr sdd invoke-complete requires an invocation id.');
+  }
+
+  const failed = args.includes('--failed');
+  const status = failed ? 'failed' : 'completed';
+
+  const resultIdx = args.indexOf('--result');
+  const result = resultIdx !== -1 ? (args[resultIdx + 1] ?? null) : null;
+
+  const updated = completeInvocation(id, result, status, invDir);
+  process.stdout.write(`Invocation ${updated.id} marked as ${updated.status}.\n`);
+}
+
+/**
+ * Print the status of an invocation record.
+ * gsr sdd invoke-status <id>
+ *
+ * @param {string[]} args
+ * @param {string} invDir
+ */
+export function runSddInvokeStatus(args, invDir) {
+  const id = args.find((a, i) => {
+    if (a.startsWith('--')) return false;
+    const prev = args[i - 1];
+    if (prev && prev.startsWith('--')) return false;
+    return true;
+  });
+  if (!id) {
+    throw new Error('gsr sdd invoke-status requires an invocation id.');
+  }
+
+  const record = readInvocation(id, invDir);
+  process.stdout.write(`id: ${record.id}\n`);
+  process.stdout.write(`status: ${record.status}\n`);
+  process.stdout.write(`caller: ${record.caller.catalog}/${record.caller.sdd} (phase: ${record.caller.phase})\n`);
+  process.stdout.write(`callee: ${record.callee.catalog}/${record.callee.sdd}\n`);
+  process.stdout.write(`payload: ${record.payload ?? '(none)'}\n`);
+  process.stdout.write(`result: ${record.result ?? '(none)'}\n`);
+  process.stdout.write(`created_at: ${record.created_at}\n`);
+  process.stdout.write(`updated_at: ${record.updated_at}\n`);
+  if (record.completed_at) {
+    process.stdout.write(`completed_at: ${record.completed_at}\n`);
+  }
+}
+
+/**
+ * List all invocation records, optionally filtered by status.
+ * gsr sdd invocations [--status <pending|running|completed|failed>]
+ *
+ * @param {string[]} args
+ * @param {string} invDir
+ */
+export function runSddInvocations(args, invDir) {
+  const statusIdx = args.indexOf('--status');
+  const statusFilter = statusIdx !== -1 ? args[statusIdx + 1] : undefined;
+
+  const records = listInvocations(invDir, statusFilter);
+
+  if (records.length === 0) {
+    process.stdout.write('No invocation records found.\n');
+    return;
+  }
+
+  for (const record of records) {
+    process.stdout.write(`${record.id}  ${record.status}  ${record.caller.catalog}/${record.caller.sdd}:${record.caller.phase} → ${record.callee.catalog}/${record.callee.sdd}\n`);
+  }
 }
 
 // ── identity command ──────────────────────────────────────────────────────────

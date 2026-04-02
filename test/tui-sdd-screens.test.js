@@ -423,6 +423,213 @@ describe('SddRoleEditor — role create/duplicate data layer', () => {
   });
 });
 
+// ─── sdd-detail invoke display ────────────────────────────────────────────────
+
+describe('SddDetailScreen — invoke display helper (formatPhaseInvoke)', () => {
+  test('formatPhaseInvoke exports a function', async () => {
+    const mod = await import('../src/ux/tui/screens/sdd-detail.js');
+    assert.equal(typeof mod.formatPhaseInvoke, 'function',
+      'sdd-detail.js must export formatPhaseInvoke for testability'
+    );
+  });
+
+  test('formatPhaseInvoke returns null for phase with invoke: null', async () => {
+    const { formatPhaseInvoke } = await import('../src/ux/tui/screens/sdd-detail.js');
+    const result = formatPhaseInvoke(null);
+    assert.equal(result, null);
+  });
+
+  test('formatPhaseInvoke returns formatted string for phase with invoke', async () => {
+    const { formatPhaseInvoke } = await import('../src/ux/tui/screens/sdd-detail.js');
+    const invoke = { catalog: 'art-production', sdd: 'asset-pipeline', await: true, payload_from: 'output' };
+    const result = formatPhaseInvoke(invoke);
+    assert.ok(typeof result === 'string', 'formatPhaseInvoke should return a string for non-null invoke');
+    assert.ok(result.includes('art-production'), `Expected catalog in output: ${result}`);
+    assert.ok(result.includes('asset-pipeline'), `Expected sdd in output: ${result}`);
+  });
+
+  test('formatPhaseInvoke shows await: true when invoke.await is true', async () => {
+    const { formatPhaseInvoke } = await import('../src/ux/tui/screens/sdd-detail.js');
+    const result = formatPhaseInvoke({ catalog: 'target', sdd: 'target', await: true, payload_from: 'output' });
+    assert.ok(result.includes('await'), `Expected await indicator in output: ${result}`);
+  });
+
+  test('formatPhaseInvoke shows await: false when invoke.await is false', async () => {
+    const { formatPhaseInvoke } = await import('../src/ux/tui/screens/sdd-detail.js');
+    const result = formatPhaseInvoke({ catalog: 'target', sdd: 'target', await: false, payload_from: 'output' });
+    // Should still render something — just different await value
+    assert.ok(typeof result === 'string');
+  });
+});
+
+// ─── sdd-phase-editor invoke section ─────────────────────────────────────────
+
+describe('SddPhaseEditor — invoke config helper (buildInvokeFromInputs)', () => {
+  test('buildInvokeFromInputs exports a function', async () => {
+    const mod = await import('../src/ux/tui/screens/sdd-phase-editor.js');
+    assert.equal(typeof mod.buildInvokeFromInputs, 'function',
+      'sdd-phase-editor.js must export buildInvokeFromInputs for testability'
+    );
+  });
+
+  test('buildInvokeFromInputs returns null when catalog is empty', async () => {
+    const { buildInvokeFromInputs } = await import('../src/ux/tui/screens/sdd-phase-editor.js');
+    const result = buildInvokeFromInputs({ catalog: '', sdd: '', payload_from: 'output', await: true, result_field: '' });
+    assert.equal(result, null);
+  });
+
+  test('buildInvokeFromInputs returns invoke object when catalog is filled', async () => {
+    const { buildInvokeFromInputs } = await import('../src/ux/tui/screens/sdd-phase-editor.js');
+    const result = buildInvokeFromInputs({
+      catalog: 'art-production',
+      sdd: 'asset-pipeline',
+      payload_from: 'output',
+      await: true,
+      result_field: '',
+    });
+    assert.ok(result !== null, 'Expected non-null invoke when catalog is filled');
+    assert.equal(result.catalog, 'art-production');
+    assert.equal(result.sdd, 'asset-pipeline');
+    assert.equal(result.payload_from, 'output');
+    assert.equal(result.await, true);
+  });
+
+  test('buildInvokeFromInputs defaults sdd to catalog when sdd is empty', async () => {
+    const { buildInvokeFromInputs } = await import('../src/ux/tui/screens/sdd-phase-editor.js');
+    const result = buildInvokeFromInputs({ catalog: 'my-catalog', sdd: '', payload_from: 'input', await: true, result_field: '' });
+    assert.equal(result.sdd, 'my-catalog');
+  });
+
+  test('buildInvokeFromInputs trims whitespace from catalog', async () => {
+    const { buildInvokeFromInputs } = await import('../src/ux/tui/screens/sdd-phase-editor.js');
+    const result = buildInvokeFromInputs({ catalog: '  my-catalog  ', sdd: '', payload_from: 'output', await: false, result_field: '' });
+    assert.equal(result.catalog, 'my-catalog');
+  });
+});
+
+// ─── sdd-phase-editor invoke UI inputs (rendered in 'adding-invoke' view) ────
+
+describe('SddPhaseEditor — invoke inputs rendered and saved', () => {
+  test('SddPhaseEditor exports buildInvokeFromInputs with result_field support', async () => {
+    const { buildInvokeFromInputs } = await import('../src/ux/tui/screens/sdd-phase-editor.js');
+    const result = buildInvokeFromInputs({
+      catalog: 'art-production',
+      sdd: 'asset-pipeline',
+      payload_from: 'input',
+      await: false,
+      result_field: 'result_data',
+    });
+    assert.equal(result.catalog, 'art-production');
+    assert.equal(result.sdd, 'asset-pipeline');
+    assert.equal(result.payload_from, 'input');
+    assert.equal(result.await, false);
+    assert.equal(result.result_field, 'result_data');
+  });
+
+  test('SddPhaseEditor component exports are complete (SddPhaseEditor + buildInvokeFromInputs)', async () => {
+    const mod = await import('../src/ux/tui/screens/sdd-phase-editor.js');
+    assert.equal(typeof mod.SddPhaseEditor, 'function', 'SddPhaseEditor must be a function component');
+    assert.equal(typeof mod.buildInvokeFromInputs, 'function', 'buildInvokeFromInputs must be exported');
+  });
+
+  test('phase written to disk includes invoke when catalog is provided via addPhaseWithInvoke helper', async () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      writeFile(catalogsDir, 'game-design/sdd.yaml', [
+        'name: game-design',
+        'version: 1',
+        'description: "Game design workflow"',
+        'phases:',
+        '  concept:',
+        '    intent: "Define concept"',
+      ].join('\n') + '\n');
+
+      const { loadCustomSdd } = await import('../src/core/sdd-catalog-io.js');
+      const sdd = loadCustomSdd(catalogsDir, 'game-design');
+
+      // Simulate what the editor does: build invoke, then write updated sdd
+      const { buildInvokeFromInputs } = await import('../src/ux/tui/screens/sdd-phase-editor.js');
+      const invoke = buildInvokeFromInputs({
+        catalog: 'art-production',
+        sdd: 'asset-pipeline',
+        payload_from: 'output',
+        await: true,
+        result_field: '',
+      });
+
+      const { stringifyYaml } = await import('../src/core/router.js');
+      const fsMod = await import('node:fs');
+      const pathMod = await import('node:path');
+
+      const sddYamlPath = pathMod.join(catalogsDir, 'game-design', 'sdd.yaml');
+      const updatedSdd = {
+        ...sdd,
+        phases: {
+          ...sdd.phases,
+          prototype: { intent: 'Build prototype', invoke },
+        },
+      };
+      fsMod.writeFileSync(sddYamlPath, stringifyYaml(updatedSdd), 'utf8');
+
+      // Load back and verify invoke was persisted
+      const reloaded = loadCustomSdd(catalogsDir, 'game-design');
+      const protoPhase = reloaded.phases.prototype;
+      assert.ok(protoPhase, 'prototype phase should be present');
+      assert.ok(protoPhase.invoke, 'prototype phase should have invoke block');
+      assert.equal(protoPhase.invoke.catalog, 'art-production');
+      assert.equal(protoPhase.invoke.sdd, 'asset-pipeline');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('phase written to disk has no invoke when catalog is empty', async () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      writeFile(catalogsDir, 'game-design/sdd.yaml', [
+        'name: game-design',
+        'version: 1',
+        'description: "Game design workflow"',
+        'phases:',
+        '  concept:',
+        '    intent: "Define concept"',
+      ].join('\n') + '\n');
+
+      const { loadCustomSdd } = await import('../src/core/sdd-catalog-io.js');
+      const sdd = loadCustomSdd(catalogsDir, 'game-design');
+
+      const { buildInvokeFromInputs } = await import('../src/ux/tui/screens/sdd-phase-editor.js');
+      // Empty catalog → null invoke
+      const invoke = buildInvokeFromInputs({ catalog: '', sdd: '', payload_from: 'output', await: true, result_field: '' });
+      assert.equal(invoke, null, 'Empty catalog must produce null invoke');
+
+      const { stringifyYaml } = await import('../src/core/router.js');
+      const fsMod = await import('node:fs');
+      const pathMod = await import('node:path');
+
+      const sddYamlPath = pathMod.join(catalogsDir, 'game-design', 'sdd.yaml');
+      const phaseData = { intent: 'Build prototype' };
+      if (invoke !== null) phaseData.invoke = invoke;
+      const updatedSdd = {
+        ...sdd,
+        phases: { ...sdd.phases, prototype: phaseData },
+      };
+      fsMod.writeFileSync(sddYamlPath, stringifyYaml(updatedSdd), 'utf8');
+
+      const reloaded = loadCustomSdd(catalogsDir, 'game-design');
+      const protoPhase = reloaded.phases.prototype;
+      assert.ok(protoPhase, 'prototype phase should be present');
+      // invoke should be null or absent when not written
+      assert.ok(!protoPhase.invoke || protoPhase.invoke === null,
+        'Phase without catalog input should have null or absent invoke');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+});
+
 // ─── SDD Create Wizard — cancel behavior ─────────────────────────────────────
 
 describe('SddCreateWizard — cancel behavior (reducer + exported helper)', () => {

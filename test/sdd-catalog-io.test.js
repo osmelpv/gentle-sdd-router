@@ -567,3 +567,136 @@ describe('resolveContract', () => {
     }
   });
 });
+
+// ─── validateSddYaml — invoke extension ──────────────────────────────────────
+
+describe('validateSddYaml — invoke field', () => {
+  test('normalizes absent invoke to null', () => {
+    const parsed = {
+      name: 'my-sdd',
+      version: 1,
+      phases: { concept: { intent: 'Define concept' } },
+    };
+    const result = validateSddYaml(parsed, '<test>');
+    assert.equal(result.phases.concept.invoke, null);
+  });
+
+  test('accepts valid invoke block and normalizes sdd default to catalog', () => {
+    const parsed = {
+      name: 'my-sdd',
+      version: 1,
+      phases: {
+        concept: {
+          intent: 'Define concept',
+          invoke: { catalog: 'art-production', payload_from: 'output', await: true },
+        },
+      },
+    };
+    const result = validateSddYaml(parsed, '<test>');
+    const invoke = result.phases.concept.invoke;
+    assert.equal(invoke.catalog, 'art-production');
+    assert.equal(invoke.sdd, 'art-production'); // defaults to catalog
+    assert.equal(invoke.await, true);
+    assert.equal(invoke.payload_from, 'output');
+  });
+
+  test('accepts explicit sdd that differs from catalog', () => {
+    const parsed = {
+      name: 'my-sdd',
+      version: 1,
+      phases: {
+        concept: {
+          intent: 'Define concept',
+          invoke: { catalog: 'art-production', sdd: 'asset-pipeline', payload_from: 'input' },
+        },
+      },
+    };
+    const result = validateSddYaml(parsed, '<test>');
+    assert.equal(result.phases.concept.invoke.sdd, 'asset-pipeline');
+  });
+
+  test('defaults await to true when absent', () => {
+    const parsed = {
+      name: 'my-sdd',
+      version: 1,
+      phases: {
+        concept: {
+          intent: 'Define concept',
+          invoke: { catalog: 'target', payload_from: 'output' },
+        },
+      },
+    };
+    const result = validateSddYaml(parsed, '<test>');
+    assert.equal(result.phases.concept.invoke.await, true);
+  });
+
+  test('throws when invoke.catalog is an invalid slug', () => {
+    const parsed = {
+      name: 'my-sdd',
+      version: 1,
+      phases: {
+        concept: {
+          intent: 'Define concept',
+          invoke: { catalog: 'Art Production', payload_from: 'output' },
+        },
+      },
+    };
+    assert.throws(() => validateSddYaml(parsed, '<test>'), /slug|catalog/i);
+  });
+
+  test('throws when payload_from is invalid enum value', () => {
+    const parsed = {
+      name: 'my-sdd',
+      version: 1,
+      phases: {
+        concept: {
+          intent: 'Define concept',
+          invoke: { catalog: 'target', payload_from: 'all' },
+        },
+      },
+    };
+    assert.throws(() => validateSddYaml(parsed, '<test>'), /payload_from|output|input|custom/i);
+  });
+
+  test('throws when await is not boolean', () => {
+    const parsed = {
+      name: 'my-sdd',
+      version: 1,
+      phases: {
+        concept: {
+          intent: 'Define concept',
+          invoke: { catalog: 'target', payload_from: 'output', await: 'yes' },
+        },
+      },
+    };
+    assert.throws(() => validateSddYaml(parsed, '<test>'), /await|boolean/i);
+  });
+
+  test('throws when invoke.catalog is missing', () => {
+    const parsed = {
+      name: 'my-sdd',
+      version: 1,
+      phases: {
+        concept: {
+          intent: 'Define concept',
+          invoke: { payload_from: 'output' },
+        },
+      },
+    };
+    assert.throws(() => validateSddYaml(parsed, '<test>'), /catalog|required/i);
+  });
+
+  test('invoke null leaves other phase fields intact', () => {
+    const parsed = {
+      name: 'my-sdd',
+      version: 1,
+      phases: {
+        concept: { intent: 'Define concept', execution: 'parallel', agents: 2 },
+      },
+    };
+    const result = validateSddYaml(parsed, '<test>');
+    assert.equal(result.phases.concept.execution, 'parallel');
+    assert.equal(result.phases.concept.agents, 2);
+    assert.equal(result.phases.concept.invoke, null);
+  });
+});

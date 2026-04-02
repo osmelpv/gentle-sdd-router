@@ -3,7 +3,7 @@
  *
  * Shows:
  *   - SDD name and description
- *   - All phases with intent and execution type
+ *   - All phases with intent and execution type (plus invoke target if present)
  *   - Catalog-scoped role names
  *   - Trigger fields if present
  *   - Navigation to phase/role editors
@@ -15,6 +15,23 @@ import { Menu } from '../components/menu.js';
 import { colors } from '../theme.js';
 
 const h = React.createElement;
+
+// ─── Pure Helpers (exported for testability) ──────────────────────────────────
+
+/**
+ * Format an invoke declaration into a human-readable string.
+ * Returns null when invoke is null or absent.
+ *
+ * @param {object|null} invoke - Phase invoke object from sdd.yaml
+ * @returns {string|null}
+ */
+export function formatPhaseInvoke(invoke) {
+  if (!invoke) return null;
+  const target = `${invoke.catalog}/${invoke.sdd}`;
+  const awaitStr = `await: ${invoke.await}`;
+  const payloadStr = invoke.payload_from ? ` [payload: ${invoke.payload_from}]` : '';
+  return `→ invokes ${target} (${awaitStr}${payloadStr})`;
+}
 
 export function SddDetailScreen({
   router,
@@ -93,11 +110,17 @@ export function SddDetailScreen({
     sdd.description ? h(Text, { color: colors.subtext }, sdd.description) : null,
     h(Text, null, ''),
     h(Text, { bold: true }, `Phases (${phaseNames.length}):`),
-    ...phaseNames.map(phaseName => {
+    ...phaseNames.flatMap(phaseName => {
       const phase = sdd.phases[phaseName];
-      return h(Text, { key: phaseName },
-        `  ${phaseName}: ${phase.intent} [${phase.execution}]`
-      );
+      const invokeStr = formatPhaseInvoke(phase.invoke);
+      return [
+        h(Text, { key: phaseName },
+          `  ${phaseName}: ${phase.intent} [${phase.execution}]`
+        ),
+        invokeStr
+          ? h(Text, { key: `${phaseName}-invoke`, color: colors.subtext }, `    ${invokeStr}`)
+          : null,
+      ].filter(Boolean);
     }),
     h(Text, null, ''),
     roles.length > 0 ? h(Box, { flexDirection: 'column' },

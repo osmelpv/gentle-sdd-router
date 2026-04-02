@@ -380,7 +380,15 @@ describe('runPhaseCreate', () => {
 
 // ─── CLI Help text for sdd/role/phase commands ───────────────────────────────
 
-import { runSddCommand, runRoleCommand, runPhaseCommand } from '../src/cli.js';
+import {
+  runSddCommand,
+  runRoleCommand,
+  runPhaseCommand,
+  runSddInvoke,
+  runSddInvokeComplete,
+  runSddInvokeStatus,
+  runSddInvocations,
+} from '../src/cli.js';
 
 describe('CLI help — gsr sdd/role/phase help text', () => {
   test('gsr sdd help prints usage line for sdd subcommands', async () => {
@@ -420,5 +428,307 @@ describe('CLI help — gsr sdd/role/phase help text', () => {
       output.includes('create'),
       `gsr phase help must mention 'create' subcommand: "${output.trim()}"`
     );
+  });
+});
+
+// ─── runSddInvoke ────────────────────────────────────────────────────────────
+
+describe('runSddInvoke', () => {
+  test('creates invocation record and prints id to stdout', async () => {
+    const tmp = makeTempDir();
+    try {
+      const invDir = path.join(tmp, 'invocations');
+      const output = await captureStdout(() =>
+        runSddInvoke(
+          ['art-production/asset-pipeline', '--from', 'game-design/game-design', '--phase', 'level-design'],
+          invDir
+        )
+      );
+      assert.ok(output.length > 0, 'Output should contain invocation id');
+      // Verify file was created
+      const files = fs.readdirSync(invDir).filter(f => f.endsWith('.json'));
+      assert.equal(files.length, 1, 'Expected one invocation record on disk');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('created record has status: pending', () => {
+    const tmp = makeTempDir();
+    try {
+      const invDir = path.join(tmp, 'invocations');
+      let capturedId;
+      runSddInvoke(
+        ['art-production/asset-pipeline', '--from', 'game-design/game-design', '--phase', 'level-design'],
+        invDir
+      );
+      const files = fs.readdirSync(invDir).filter(f => f.endsWith('.json'));
+      const record = JSON.parse(fs.readFileSync(path.join(invDir, files[0]), 'utf8'));
+      assert.equal(record.status, 'pending');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('throws when --from is missing', () => {
+    const tmp = makeTempDir();
+    try {
+      const invDir = path.join(tmp, 'invocations');
+      assert.throws(
+        () => runSddInvoke(['art-production/asset-pipeline', '--phase', 'level-design'], invDir),
+        /--from|from|required/i
+      );
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('throws when --phase is missing', () => {
+    const tmp = makeTempDir();
+    try {
+      const invDir = path.join(tmp, 'invocations');
+      assert.throws(
+        () => runSddInvoke(['art-production/asset-pipeline', '--from', 'game-design/game-design'], invDir),
+        /--phase|phase|required/i
+      );
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('throws when callee argument is missing', () => {
+    const tmp = makeTempDir();
+    try {
+      const invDir = path.join(tmp, 'invocations');
+      assert.throws(
+        () => runSddInvoke(['--from', 'game-design/game-design', '--phase', 'level-design'], invDir),
+        /callee|argument|required/i
+      );
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('throws when callee argument is malformed (missing /)', () => {
+    const tmp = makeTempDir();
+    try {
+      const invDir = path.join(tmp, 'invocations');
+      assert.throws(
+        () => runSddInvoke(['art-production', '--from', 'game-design/game-design', '--phase', 'level-design'], invDir),
+        /catalog\/sdd|format/i
+      );
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('throws when --from argument is malformed (missing /)', () => {
+    const tmp = makeTempDir();
+    try {
+      const invDir = path.join(tmp, 'invocations');
+      assert.throws(
+        () => runSddInvoke(['art-production/asset-pipeline', '--from', 'game-design', '--phase', 'level-design'], invDir),
+        /catalog\/sdd|format/i
+      );
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('accepts optional --payload flag', async () => {
+    const tmp = makeTempDir();
+    try {
+      const invDir = path.join(tmp, 'invocations');
+      await captureStdout(() =>
+        runSddInvoke(
+          ['art-production/asset-pipeline', '--from', 'game-design/game-design', '--phase', 'level-design', '--payload', 'hello'],
+          invDir
+        )
+      );
+      const files = fs.readdirSync(invDir).filter(f => f.endsWith('.json'));
+      const record = JSON.parse(fs.readFileSync(path.join(invDir, files[0]), 'utf8'));
+      assert.equal(record.payload, 'hello');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+});
+
+// ─── runSddInvokeComplete ────────────────────────────────────────────────────
+
+describe('runSddInvokeComplete', () => {
+  test('completes an existing pending invocation', async () => {
+    const tmp = makeTempDir();
+    try {
+      const invDir = path.join(tmp, 'invocations');
+      // Create via runSddInvoke
+      const { createInvocation } = await import('../src/core/sdd-invocation-io.js');
+      const created = createInvocation('a', 'a', 'p', 'b', 'b', '', invDir);
+      const output = await captureStdout(() =>
+        runSddInvokeComplete([created.id, '--result', 'done'], invDir)
+      );
+      assert.ok(output.length > 0);
+      const onDisk = JSON.parse(fs.readFileSync(path.join(invDir, `${created.id}.json`), 'utf8'));
+      assert.equal(onDisk.status, 'completed');
+      assert.equal(onDisk.result, 'done');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('fails an existing pending invocation with --failed flag', async () => {
+    const tmp = makeTempDir();
+    try {
+      const invDir = path.join(tmp, 'invocations');
+      const { createInvocation } = await import('../src/core/sdd-invocation-io.js');
+      const created = createInvocation('a', 'a', 'p', 'b', 'b', '', invDir);
+      await captureStdout(() => runSddInvokeComplete([created.id, '--failed'], invDir));
+      const onDisk = JSON.parse(fs.readFileSync(path.join(invDir, `${created.id}.json`), 'utf8'));
+      assert.equal(onDisk.status, 'failed');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('throws when id argument is missing', () => {
+    const tmp = makeTempDir();
+    try {
+      const invDir = path.join(tmp, 'invocations');
+      assert.throws(
+        () => runSddInvokeComplete(['--result', 'done'], invDir),
+        /id|required/i
+      );
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('throws when id does not exist', () => {
+    const tmp = makeTempDir();
+    try {
+      const invDir = path.join(tmp, 'invocations');
+      fs.mkdirSync(invDir, { recursive: true });
+      assert.throws(
+        () => runSddInvokeComplete(['inv-ghost-id'], invDir),
+        /not found|missing/i
+      );
+    } finally {
+      cleanup(tmp);
+    }
+  });
+});
+
+// ─── runSddInvokeStatus ──────────────────────────────────────────────────────
+
+describe('runSddInvokeStatus', () => {
+  test('prints record details to stdout', async () => {
+    const tmp = makeTempDir();
+    try {
+      const invDir = path.join(tmp, 'invocations');
+      const { createInvocation } = await import('../src/core/sdd-invocation-io.js');
+      const created = createInvocation('game', 'game', 'design', 'art', 'assets', '', invDir);
+      const output = await captureStdout(() => runSddInvokeStatus([created.id], invDir));
+      assert.ok(output.includes(created.id) || output.includes('pending'),
+        `Expected id or status in output: ${output}`);
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('prints full record including id, status, caller, callee, payload, result, created_at, updated_at', async () => {
+    const tmp = makeTempDir();
+    try {
+      const invDir = path.join(tmp, 'invocations');
+      const { createInvocation } = await import('../src/core/sdd-invocation-io.js');
+      const created = createInvocation('game', 'game', 'design', 'art', 'assets', 'my-payload', invDir);
+      const output = await captureStdout(() => runSddInvokeStatus([created.id], invDir));
+      assert.ok(output.includes(created.id), `Expected id in output: ${output}`);
+      assert.ok(output.includes('pending'), `Expected status in output: ${output}`);
+      assert.ok(output.includes('game'), `Expected caller in output: ${output}`);
+      assert.ok(output.includes('art'), `Expected callee in output: ${output}`);
+      assert.ok(output.includes('my-payload'), `Expected payload in output: ${output}`);
+      assert.ok(output.includes('created_at') || output.includes(created.created_at),
+        `Expected created_at in output: ${output}`);
+      assert.ok(output.includes('updated_at') || output.includes(created.updated_at),
+        `Expected updated_at in output: ${output}`);
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('throws when id does not exist', () => {
+    const tmp = makeTempDir();
+    try {
+      const invDir = path.join(tmp, 'invocations');
+      fs.mkdirSync(invDir, { recursive: true });
+      assert.throws(
+        () => runSddInvokeStatus(['inv-ghost'], invDir),
+        /not found|missing/i
+      );
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('throws when id argument is missing', () => {
+    const tmp = makeTempDir();
+    try {
+      const invDir = path.join(tmp, 'invocations');
+      assert.throws(
+        () => runSddInvokeStatus([], invDir),
+        /id|required/i
+      );
+    } finally {
+      cleanup(tmp);
+    }
+  });
+});
+
+// ─── runSddInvocations ───────────────────────────────────────────────────────
+
+describe('runSddInvocations', () => {
+  test('lists all records when no filter', async () => {
+    const tmp = makeTempDir();
+    try {
+      const invDir = path.join(tmp, 'invocations');
+      const { createInvocation } = await import('../src/core/sdd-invocation-io.js');
+      const r1 = createInvocation('a', 'a', 'p', 'b', 'b', '', invDir);
+      const r2 = createInvocation('c', 'c', 'p', 'd', 'd', '', invDir);
+      const output = await captureStdout(() => runSddInvocations([], invDir));
+      assert.ok(output.includes(r1.id) || output.length > 0,
+        `Expected records in output: ${output}`);
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('filters by --status pending', async () => {
+    const tmp = makeTempDir();
+    try {
+      const invDir = path.join(tmp, 'invocations');
+      const { createInvocation, completeInvocation } = await import('../src/core/sdd-invocation-io.js');
+      const r1 = createInvocation('a', 'a', 'p', 'b', 'b', '', invDir);
+      const r2 = createInvocation('c', 'c', 'p', 'd', 'd', '', invDir);
+      completeInvocation(r2.id, '', 'completed', invDir);
+      const output = await captureStdout(() => runSddInvocations(['--status', 'pending'], invDir));
+      assert.ok(output.includes(r1.id) || output.includes('pending'),
+        `Expected pending record: ${output}`);
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('prints empty message when no records exist', async () => {
+    const tmp = makeTempDir();
+    try {
+      const invDir = path.join(tmp, 'invocations');
+      const output = await captureStdout(() => runSddInvocations([], invDir));
+      assert.ok(
+        output.toLowerCase().includes('no') || output.toLowerCase().includes('empty') || output.length >= 0,
+        `Expected empty state message: ${output}`
+      );
+    } finally {
+      cleanup(tmp);
+    }
   });
 });

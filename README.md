@@ -6,7 +6,7 @@
 
 <h1>Gentle SDD Router</h1>
 
-<p><strong>Multi-model routing by phase. Judge, compare, refine. Your models, your rules.</strong></p>
+<p><strong>AI context system. Dynamic workflow factory. Multi-model routing. Three pillars, one name.</strong></p>
 
 <p>
 <img src="https://img.shields.io/badge/status-BETA-orange?style=for-the-badge" alt="Beta">
@@ -27,7 +27,171 @@
 
 ---
 
-Gentle SDD Router (gsr) is a declarative, non-executing router that assigns AI models to development phases. It tells your agent ecosystem which model to use when — with fallbacks, multi-agent judging, and cross-provider diversity. gsr reads YAML, resolves routes, reports metadata. It never calls models or runs providers.
+**`gentle-sdd-router`** is a declarative, non-executing router. The name is the architecture:
+
+| Component | Pillar | What it does |
+|-----------|--------|--------------|
+| **gentle** | AI Context System | Identity, AGENTS.md inheritance, persona contracts |
+| **sdd** | Dynamic Workflow Factory | Custom phases, cross-catalog invocation, department workflows |
+| **router** | Model Routing | Phase-based model assignment, fallbacks, judge/radar patterns |
+
+Each pillar is useful independently. All three compose naturally. `gsr` reads YAML, resolves routes, and writes invocation records. **It never calls models, runs providers, or executes orchestration.**
+
+---
+
+## Three Pillars
+
+### 🟣 Gentle — AI Context System
+
+The **gentle** pillar manages the AI agent identity and context ecosystem. It:
+
+- Inherits `AGENTS.md` context through directory trees (project → global → user)
+- Defines per-preset persona overrides (Gentleman style, neutral, custom)
+- Ships agent contracts (9 role contracts + 10 phase compositions) as skills
+- Publishes `/gsr` session-sync metadata for the host TUI
+
+```bash
+gsr identity show [--preset <name>]   # Resolve layered AGENTS.md context
+gsr sync                               # Push contracts to host (idempotent)
+```
+
+Start here if you want **consistent AI personas** and **inherited context** across all your agents.
+
+---
+
+### 🔵 SDD — Dynamic Workflow Factory
+
+The **sdd** pillar turns your project into a factory of named workflows. Each workflow (SDD) defines its own phases, role contracts, and — most powerfully — **cross-catalog invocations**.
+
+#### Custom SDDs
+
+```bash
+gsr sdd create game-design            # Scaffold a new SDD catalog
+gsr sdd list                          # List all SDD workflows
+gsr sdd show game-design              # Show phases and invoke declarations
+```
+
+An `sdd.yaml` defines your workflow structure:
+
+```yaml
+name: game-design
+version: 1
+description: "Game design workflow"
+phases:
+  concept:
+    intent: "Define the game concept"
+    execution: parallel
+    agents: 2
+    judge: true
+  level-design:
+    intent: "Design levels and encounters"
+    depends_on:
+      - concept
+    # Invoke another catalog when this phase runs
+    invoke:
+      catalog: art-production
+      sdd: asset-pipeline
+      payload_from: output
+      await: true
+```
+
+#### Cross-Catalog Invocation — The Key Differentiator
+
+A phase can declare its intent to **invoke another SDD catalog**. `gsr` writes an invocation record to `.gsr/invocations/` — a pure data operation. **No execution happens here.** The host or orchestrator reads the record and launches the callee.
+
+```bash
+# Create an invocation record (data-only, non-executing)
+gsr sdd invoke art-production/asset-pipeline \
+  --from game-design/game-design \
+  --phase level-design \
+  --payload "Level 3 assets needed"
+
+# The command prints the invocation id:
+# Invocation created: 550e8400-e29b-41d4-a716-446655440000
+
+# When the callee completes, mark it:
+gsr sdd invoke-complete 550e8400-e29b-41d4-a716-446655440000 --result "Assets delivered"
+
+# Check status:
+gsr sdd invoke-status 550e8400-e29b-41d4-a716-446655440000
+
+# List all invocations (filter by status):
+gsr sdd invocations [--status pending|completed|failed]
+```
+
+**Non-executing boundary**: `gsr` writes the record. The record declares intent. Execution belongs to the host.
+
+#### Department-Style Collaboration
+
+Cross-catalog invocation enables department workflows: `game-design` invokes `art-production`, which invokes `sound-design`. Each catalog is a team. Each invocation record is a work order. `gsr` manages the records — your orchestrator manages the work.
+
+Start here if you want **named development workflows** with **cross-team coordination**.
+
+---
+
+### 🔴 Router — Model Routing
+
+The **router** pillar assigns AI models to development phases with fallbacks, multi-vendor diversity, and judge/radar patterns.
+
+#### The Octopus Pattern: Multi-Agent by Phase
+
+```
+    PREPARATION                  EXECUTION                VERIFICATION
+    (the tentacles)              (the brain)              (the sabuesos)
+    ─────────────                ─────────                ─────────────
+    N agents from                ONE agent                Specialized
+    different providers          writes code              testers in
+    explore the same             with full                parallel
+    prompt                       context                  verify
+         │                           │                         │
+         ▼                           ▼                         ▼
+    ┌─────────┐                ┌───────────┐            ┌───────────┐
+    │ Agent A │ GPT-5          │           │            │ Code Test │
+    │ Agent B │ Claude Opus    │  Apply    │            │ UI Test   │
+    │ Agent C │ Gemini Pro     │  (best    │            │ Risk Det. │
+    │ Radar   │ scans blinds   │   coder)  │            │ Security  │
+    │ Judge   │ synthesizes    │           │            │ Judge     │
+    └─────────┘                └───────────┘            └───────────┘
+```
+
+**An army prepares context. ONE king executes. A team of sabuesos verifies.**
+
+#### 10 SDD Phases
+
+| Phase | Job | Composition | Execution |
+|-------|-----|-------------|-----------|
+| **orchestrator** | Coordinate the pipeline | 1 agent + optional judge | Sequential |
+| **explore** | Investigate codebase | 2+ agents + judge + radar | **Parallel** |
+| **propose** | Structure a formal proposal | 1 agent + optional judge | Sequential |
+| **spec** | Write requirements | 2+ agents + judge + investigator | **Parallel** |
+| **design** | Architecture and decisions | 2+ agents + judge + radar | **Parallel** |
+| **tasks** | Task checklist + TDD tests | 1 agent | Sequential |
+| **apply** | Write code. **Always ONE agent.** | 1 agent only | Sequential |
+| **verify** | Validate implementation | 2+ sabuesos + judge + radar | **Parallel** |
+| **debug** | Diagnose bugs | Full mini-SDD cycle | **Conditional** |
+| **archive** | Sync specs, archive change. **Always ONE agent.** | 1 agent only | Sequential |
+
+#### Built-in Presets
+
+| Preset | Best for |
+|--------|----------|
+| **multivendor** | Best model per phase across all providers |
+| **claude** | Anthropic-only workflows |
+| **openai** | GPT-focused workflows |
+| **multiagent** | Cross-provider validation (2 lanes per phase) |
+| **ollama** | 100% local models, zero cloud costs |
+| **local-hybrid** | Local first, free cloud fallbacks |
+| **cheap** | Budget models with solid performance |
+| **heavyweight** | Maximum depth (5 lanes: 3 models + judge + radar) |
+| **safety** | Read-only analysis mode |
+
+```bash
+gsr route use multivendor             # Switch preset
+gsr route show                        # See resolved routes
+gsr status                            # Current state + pricing
+```
+
+Start here if you want **multi-model routing** with **fallbacks and judge/radar patterns**.
 
 ---
 
@@ -53,125 +217,6 @@ npm install && npm link
 gsr                    # interactive wizard
 gsr setup install      # or direct install
 ```
-
----
-
-## What It Does
-
-`gsr` is a **declarative, non-executing router** that assigns AI models to development phases. It doesn't run models -- it tells your agent ecosystem *which* model to use *when*, with what role, what contract, and what execution mode.
-
-### The Octopus Pattern: Multi-Agent by Phase
-
-The octopus has many tentacles that work in parallel, and ONE brain that synthesizes. That's exactly how `gsr` routes multi-agent development:
-
-```
-    PREPARATION                  EXECUTION                VERIFICATION
-    (the tentacles)              (the brain)              (the sabuesos)
-    ─────────────                ─────────                ─────────────
-    N agents from                ONE agent                Specialized
-    different providers          writes code              testers in
-    explore the same             with full                parallel
-    prompt                       context                  verify
-         │                           │                         │
-         ▼                           ▼                         ▼
-    ┌─────────┐                ┌───────────┐            ┌───────────┐
-    │ Agent A │ GPT-5          │           │            │ Code Test │
-    │ Agent B │ Claude Opus    │  Apply    │            │ UI Test   │
-    │ Agent C │ Gemini Pro     │  (best    │            │ Risk Det. │
-    │ Radar   │ scans blinds   │   coder)  │            │ Security  │
-    │ Judge   │ synthesizes    │           │            │ Judge     │
-    └─────────┘                └───────────┘            └───────────┘
-```
-
-**An army prepares context. ONE king executes. A team of sabuesos verifies.**
-
-### The Judge: Debate Director, Not Reviewer
-
-The Judge is NOT a simple reviewer that says "looks good." It is a **debate director** powered by a high-reasoning model (o3, GPT-5 Pro, Claude Opus):
-
-1. **Anonymous responses**: The judge receives agent outputs labeled Agent-1, Agent-2, Agent-3 -- never the provider name. It evaluates content quality, not brand.
-
-2. **Brainstorming**: When agents diverge, the judge opens a brainstorming session. It asks each agent targeted questions without revealing what the others said: *"How would you approach this angle?"* not *"Agent-2 suggested X, what do you think?"*
-
-3. **Indirect confrontation**: To validate claims, the judge asks agents indirectly. This prevents the elogio problem -- models tend to praise each other's ideas instead of thinking critically. The judge forces genuine independent thought.
-
-4. **Synthesis**: The judge fuses the best elements from every response, incorporates radar findings (blind spots, risks, edge cases), and produces ONE refined output with a confidence level and a dissent log of what was deliberately excluded.
-
-### The Radar: Independent Blind-Spot Scanner
-
-The Radar works the same prompt as the agents but with a fundamentally different objective. It is NOT trying to complete the task. It is trying to find what the task-focused agents will MISS:
-
-- Missing dependencies and cross-module impact
-- Edge cases nobody considered
-- Implicit assumptions that might be wrong
-- Pattern violations in the existing codebase
-- Security vulnerabilities
-
-Radar findings feed directly to the judge, giving it ammunition for better brainstorming questions and more informed synthesis.
-
-### 10 SDD Phases
-
-`gsr` routes models across 10 development phases. Each phase has an optimal composition:
-
-| Phase | Job | Composition | Execution |
-|-------|-----|-------------|-----------|
-| **orchestrator** | Coordinate the pipeline, delegate | 1 agent + optional judge | Sequential |
-| **explore** | Investigate codebase, map affected areas | 2+ agents + judge + radar | **Parallel** |
-| **propose** | Structure a formal proposal from exploration | 1 agent + optional judge | Sequential |
-| **spec** | Write requirements and behavioral scenarios | 2+ agents + judge + investigator | **Parallel** |
-| **design** | Produce architecture and key decisions | 2+ agents + judge + radar | **Parallel** |
-| **tasks** | Break design into task checklist + TDD tests | 1 agent (tasks first, TDD second) | Sequential |
-| **apply** | Implement: write code. **Always ONE agent.** | 1 agent only | Sequential |
-| **verify** | Validate implementation against spec | 2+ sabuesos + judge + radar | **Parallel** |
-| **debug** | Diagnose bugs found by verify | Full mini-SDD cycle | **Conditional** |
-| **archive** | Sync specs, archive change. **Always ONE agent.** | 1 agent only | Sequential |
-
-**Key insight**: `apply` and `archive` are ALWAYS mono. One agent writes the code so everything stays contextually consistent from start to finish. The army's job is to prepare such thorough context that the coder can't fail.
-
-### Specialized Agent Roles
-
-Beyond the core agents, judge, and radar, `gsr` defines specialized roles:
-
-| Role | Job | Used in |
-|------|-----|---------|
-| **Investigator** | Researches external prior art, API docs, industry patterns | spec |
-| **Risk Detector** | Scans for incompatibilities, orphaned code, regressions | explore, verify |
-| **Security Auditor** | Finds injection, auth bypass, data exposure, CVEs | explore, verify |
-| **Tester** | Writes TDD tests that FAIL (defines "done") | tasks |
-
-Each role has a contract (skill) that defines its input, output, and behavioral rules. Contracts are shipped with gsr; `gsr sync` generates a local manifest so the host TUI can discover and consume them.
-
-### Catalogs: Switch Your Entire Setup Instantly
-
-Each catalog groups a complete routing configuration. In OpenCode, catalogs map to TAB-switchable modes:
-
-- **`multivendor`** -- Best model per phase across all providers
-- **`ollama`** -- 100% local models, zero cloud costs, works offline
-- **`safety`** -- Read-only analysis mode, no write permissions
-- **`claude`** / **`openai`** -- Single-provider setups
-
-One keystroke to go from cloud to local. One keystroke to enter analysis-only mode. No reconfiguration needed.
-
-### Key Features
-
-| Feature | Description |
-|---------|-------------|
-| **Multi-agent by phase** | Army of agents from different providers + judge that synthesizes via debate |
-| **10 SDD phases** | orchestrator, explore, propose, spec, design, tasks, apply, verify, debug, archive |
-| **Judge debate protocol** | Anonymous responses, brainstorming, indirect confrontation, confidence levels |
-| **Specialized roles** | Investigator, risk detector, security auditor, tester -- each with defined contracts |
-| **Parallel + sequential** | Phases declare execution mode. Agents explore in parallel, judge synthesizes sequentially |
-| **Conditional phases** | Debug triggers only when verify fails. No wasted computation on clean runs |
-| **Dynamic model picker** | Fetches models from OpenRouter + Ollama in real time. Always fresh pricing and capabilities |
-| **Catalog switching** | Switch entire routing configurations instantly (cloud, local, hybrid, analysis-only) |
-| **9 built-in presets** | multivendor, claude, openai, multiagent, ollama, local-hybrid, cheap, heavyweight, safety |
-| **Agent contracts** | 9 role contracts + 10 phase compositions shipped as skills. `gsr sync` generates a local manifest for host discovery |
-| **Agent identity system** | Layered AGENTS.md context resolution with per-preset overrides. `gsr identity show` to verify. |
-| **Unified sync** | `gsr sync` does everything: contracts + overlay + slash commands + validate (idempotent) |
-| **Auto-wiring** | catalog create/enable and profile create automatically trigger sync — no manual step needed |
-| **Custom SDDs** | `gsr sdd create` defines custom SDD workflows with their own role + phase contracts |
-| **Interactive TUI** | Split-panel wizard for profile creation, editing, SDD management, and identity inspection |
-| **Non-executing boundary** | Declares routing only -- never calls models or runs providers |
 
 ---
 
@@ -243,86 +288,60 @@ gsr sdd list                        List custom SDDs
 gsr sdd show <name>                 Show SDD phases and triggers
 gsr sdd delete <name> [--yes]       Delete custom SDD
 
+gsr sdd invoke <catalog>/<sdd>      Create cross-catalog invocation record
+  --from <catalog>/<sdd>              Caller identity (required)
+  --phase <name>                      Calling phase name (required)
+  --payload <string>                  Data to pass to callee (optional)
+
+gsr sdd invoke-complete <id>        Mark invocation as completed
+  --result <string>                   Result data (optional)
+  --failed                            Mark as failed instead
+
+gsr sdd invoke-status <id>          Show invocation record details
+gsr sdd invocations                 List all invocations
+  --status <filter>                   Filter: pending | running | completed | failed
+
 gsr role create <name> --sdd <sdd>  Create role contract for a custom SDD
 gsr phase create <name> --sdd <sdd> Create phase contract for a custom SDD
 ```
 
 Each category supports `help`: `gsr route help`, `gsr catalog help`, `gsr sdd help`, etc.
 
-Old flat commands (`gsr use`, `gsr list`, `gsr install`, `gsr reload`, `gsr activate`, `gsr deactivate`, `gsr browse`, `gsr compare`, `gsr render`, `gsr apply`, `gsr bootstrap`, `gsr update`, `gsr export`, `gsr import`) still work as backward-compat aliases.
+---
+
+## Sync Manifest Versions
+
+The `.sync-manifest.json` file version reflects what the catalog contains:
+
+| Version | When generated | Contents |
+|---------|---------------|----------|
+| v1 | No custom SDDs | Global contracts only |
+| v2 | Custom SDDs, no invoke | + custom_sdds array |
+| v3 | Any phase has `invoke` | + invoke declarations per phase |
 
 ---
 
-## Catalog Visibility
+## Agent Contracts
 
-Catalogs control which presets appear in TUI host TAB cycling (e.g., OpenCode).
-
-- The **SDD-Orchestrator** (default) catalog is enabled by default
-- New catalogs start **disabled** — enable them when ready
-- Only **enabled** catalogs generate agents in the TUI overlay
-
-### router.yaml catalog metadata
-
-```yaml
-catalogs:
-  default:
-    displayName: SDD-Orchestrator
-    enabled: true
-  experimental:
-    enabled: false
-```
-
-### Managing visibility
-
-```bash
-gsr catalog enable experimental    # show in OpenCode TAB
-gsr catalog disable experimental   # hide from OpenCode TAB
-```
-
----
-
-## Token Budget Hints
-
-Lanes can declare `contextWindow`, `inputPerMillion`, and `outputPerMillion` metadata. These are declarative hints — gsr never makes API calls, it only reports them.
-
-`gsr status` displays the context window alongside pricing for each phase:
+`gsr` ships with 19 contracts:
 
 ```
-- orchestrator: anthropic / claude-opus ($15/$75) [200K ctx]
-- explore:      google / gemini-pro    ($1.25/$5) [2M ctx]
+router/contracts/
+  roles/                          # 9 role contracts
+    agent.md                      # Generic sub-agent
+    judge.md                      # Debate director (anonymous synthesis)
+    radar.md                      # Blind-spot scanner
+    tester.md                     # TDD test writer (tests must FAIL first)
+    risk-detector.md              # Incompatibility/regression scanner
+    security-auditor.md           # Security vulnerability detector
+    investigator.md               # External research (APIs, prior art)
+    judge-debate-protocol.md      # Master debate protocol
+    radar-context-protocol.md     # How radar feeds the judge
+  phases/                         # 10 phase compositions
+    orchestrator.md ... archive.md
 ```
 
-TUI hosts can use the `tokenBudgetHint` field in the session sync contract to render context window bars and session cost estimators. See [Host Adoption (EN)](docs/host-adoption.en.md) for the full contract shape.
-
----
-
-## Presets
-
-`gsr` ships with 8 ready-to-use presets, each optimized for a different use case:
-
-| Preset | Description | Best for |
-|--------|-------------|----------|
-| **multivendor** | Best model per phase across all providers | Default, balanced performance |
-| **claude** | Anthropic models only | Claude-heavy workflows |
-| **openai** | OpenAI models only | GPT-focused workflows |
-| **multiagent** | 2 lanes per phase (primary + judge/radar) | Cross-provider validation |
-| **ollama** | All local models (Qwen, QwQ, Devstral) | Offline, no tokens needed |
-| **local-hybrid** | Local models first, free cloud fallbacks | Free tier / Ollama first |
-| **cheap** | Budget models with solid performance | Cost-sensitive projects |
-| **heavyweight** | 5 lanes per phase (3 models + judge + radar) | Maximum depth and quality |
-| **safety** | Restricted read-only routing profile for analysis and planning | Investigation, debugging, planning |
-
-### Switching presets
-
-```bash
-gsr route use multivendor            # production: best of each provider
-gsr route use ollama                 # ran out of tokens? go local
-gsr route use heavyweight            # critical decisions: full multi-agent
-
-# backward-compat aliases still work:
-gsr use multivendor
-gsr use ollama
-```
+`gsr sync` generates `.sync-manifest.json` so the host TUI can discover and consume all contracts.
 
 ---
 
@@ -330,20 +349,13 @@ gsr use ollama
 
 ### Multi-file v4 layout
 
-Each preset is a self-contained YAML file in `router/profiles/`:
-
 ```
 router/
   router.yaml                    # core config
   profiles/
     multivendor.router.yaml      # one preset per file
     claude.router.yaml
-    openai.router.yaml
-    multiagent.router.yaml
-    ollama.router.yaml
-    cheap.router.yaml
-    heavyweight.router.yaml
-    safety.router.yaml
+    ...
 ```
 
 ### Core file (`router/router.yaml`)
@@ -362,109 +374,69 @@ catalogs:
     enabled: true
 ```
 
-### Profile file example (`router/profiles/multivendor.router.yaml`)
+---
 
-```yaml
-name: multivendor
-availability: stable
-aliases: latest
-complexity: high
-phases:
-  orchestrator:
-    - target: anthropic/claude-opus
-      kind: lane
-      phase: orchestrator
-      role: primary
-      fallbacks: openai/gpt-5
-  explore:
-    - target: google/gemini-pro
-      kind: lane
-      phase: explore
-      role: primary
-      fallbacks: anthropic/claude-sonnet
-  apply:
-    - target: anthropic/claude-sonnet
-      kind: lane
-      phase: apply
-      role: primary
-      fallbacks: openai/gpt-5
-  verify:
-    - target: openai/gpt-5
-      kind: lane
-      phase: verify
-      role: judge
-      fallbacks: anthropic/claude-opus
+## Architecture
+
+### Non-executing boundary
+
+`gsr` is a **report-only, non-executing** tool. It:
+
+- Reads and writes YAML configuration
+- Resolves phase routes and fallback chains
+- Writes invocation records to `.gsr/invocations/` (pure data)
+- Reports compatibility and boundary metadata
+- **Never** calls models, providers, or agents
+- **Never** evaluates `invoke` declarations — only persists them as records
+
+Execution belongs to the host (gentle-ai, agent-teams-lite, or your own orchestrator).
+
+### Invocation Records
+
+When a phase declares `invoke:`, `gsr sdd invoke` writes:
+
+```
+.gsr/invocations/{uuid}.json
 ```
 
-### Creating your own preset
-
-Use the CLI or copy directly:
-
-```bash
-# CLI approach (recommended)
-gsr profile create my-custom
-gsr profile copy multivendor my-custom
-
-# Or copy manually and edit
-cp router/profiles/multivendor.router.yaml router/profiles/custom.router.yaml
-gsr route use custom
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "pending",
+  "caller": { "catalog": "game-design", "sdd": "game-design", "phase": "level-design" },
+  "callee": { "catalog": "art-production", "sdd": "asset-pipeline" },
+  "payload": "Level 3 assets needed",
+  "result": null,
+  "created_at": "2026-04-01T00:00:00.000Z",
+  "updated_at": "2026-04-01T00:00:00.000Z",
+  "completed_at": null
+}
 ```
 
-### Sharing presets
+The record is data. Your orchestrator decides what to do with it.
 
-```bash
-gsr profile export multivendor                      # print preset YAML to stdout
-gsr profile export multivendor --compact            # compact gsr:// string for chat/issues
+### Schema versions
 
-gsr profile import ./some-preset.router.yaml        # import from local file
-gsr profile import https://example.com/preset.yaml  # import from HTTPS URL
-gsr profile import --compact 'gsr://...'            # import compact shared string
-
-# backward-compat aliases still work:
-gsr export multivendor
-gsr import ./some-preset.router.yaml
-```
+| Version | Structure | Status |
+|---------|-----------|--------|
+| v1 | Single file, profiles with phases | Supported (backward compat) |
+| v3 | Single file, catalogs with presets and metadata | Supported (backward compat) |
+| v4 | Multi-file: core + profiles directory | **Current** (default for new installs) |
 
 ---
 
-## Agent Contracts
+## Documentation
 
-`gsr` ships with 19 contracts that define how each role behaves in each phase:
-
-```
-router/contracts/
-  roles/                          # 9 role contracts
-    agent.md                      # Generic sub-agent
-    judge.md                      # Debate director (anonymous synthesis)
-    radar.md                      # Blind-spot scanner
-    tester.md                     # TDD test writer (tests must FAIL first)
-    risk-detector.md              # Incompatibility/regression scanner
-    security-auditor.md           # Security vulnerability detector
-    investigator.md               # External research (APIs, prior art)
-    judge-debate-protocol.md      # Master debate protocol
-    radar-context-protocol.md     # How radar feeds the judge
-  phases/                         # 10 phase compositions
-    orchestrator.md ... archive.md
-```
-
-### Syncing contracts
-
-`gsr sync` generates a local `.sync-manifest.json` inside `router/contracts/`. This manifest lists all role contracts and phase compositions with checksums, so the host TUI can discover and consume them.
-
-```bash
-gsr sync                          # generate .sync-manifest.json (idempotent)
-```
-
-Use `gsr sync` after modifying contracts during development, or as a repair command to regenerate the manifest if it is lost.
-
-### Global vs Project data
-
-| Data | Scope | Created by | Cleaned by |
-|------|-------|-----------|------------|
-| Role contracts, phase compositions | **Global** | Bundled with package (`npm install -g`) | `npm uninstall -g` |
-| Custom profiles, project agents | **Project** | `gsr install` / TUI wizard | `gsr setup uninstall` |
-
-`gsr setup uninstall` NEVER touches global contracts. It only cleans project-specific data.
+| Topic | Description |
+|-------|-------------|
+| [Getting Started](docs/getting-started.md) | AI-operable setup guide: install, sync, status, identity, SDDs, invoke |
+| [Architecture](docs/architecture.md) | How gsr works, module structure, invocation flow, design decisions |
+| [Presets Guide](docs/presets-guide.md) | Built-in presets, creating custom presets, sharing |
+| [Import/Export Guide](docs/import-export.md) | Export presets, compact sharing strings, import flows |
+| [Migration Guide](docs/migration-guide.md) | Upgrading schema versions safely |
+| [Release Checklist](docs/release-checklist.md) | npm publish readiness and launch checklist |
+| [Host Adoption (EN)](docs/host-adoption.en.md) | Host-local install/uninstall for OpenCode and other TUIs |
+| [Host Adoption (ES)](docs/host-adoption.es.md) | Adopcion host-local para OpenCode y otros TUIs |
 
 ---
 
@@ -477,80 +449,14 @@ Use `gsr sync` after modifying contracts during development, or as a repair comm
 | **With gentle-ai** | `Alan/gentle-ai` | `gentle-ai`, `agent-teams-lite` |
 | **Without gentle-ai** | `host` | `host` |
 
-Override the controller label and persona in `router/router.yaml`:
-
-```yaml
-controller: my-custom-agent
-persona: neutral
-```
-
-Supported personas:
-- `gentleman` — use the Gentleman-style persona when integrated with gentle-ai
-- `neutral` — neutral architect tone for standalone or calmer host setups
-- `custom` — reserved for future custom persona wiring
-
 ---
 
 ## Migrations
 
-When the router schema evolves, `gsr` migrates your config safely:
-
 ```bash
 gsr setup update                 # preview pending migrations (dry-run)
 gsr setup update --apply         # apply with automatic backup
-
-# backward-compat alias still works:
-gsr update --apply
 ```
-
-The migration system:
-- Creates a full backup before each migration (`router/backups/`)
-- Rolls back automatically on failure
-- Tracks applied migrations in `router/.migrations.yaml`
-- Preserves user data and unknown YAML keys
-
----
-
-## Architecture
-
-### Non-executing boundary
-
-`gsr` is a **report-only** tool. It:
-
-- Reads and writes YAML configuration
-- Resolves phase routes and fallback chains
-- Reports compatibility and boundary metadata
-- **Never** calls models, providers, or agents
-- **Never** owns runtime behavior
-
-Execution belongs to the host (gentle-ai, agent-teams-lite, or your own orchestrator).
-
-### Schema versions
-
-| Version | Structure | Status |
-|---------|-----------|--------|
-| v1 | Single file, profiles with phases | Supported (backward compat) |
-| v3 | Single file, catalogs with presets and metadata | Supported (backward compat) |
-| v4 | Multi-file: core + profiles directory | **Current** (default for new installs) |
-
-### Configuration limits
-
-The bundled YAML parser is intentionally minimal. It supports the subset used by `router/router.yaml`: mappings, sequences, nested objects, strings, numbers, booleans, and null-like values. Advanced YAML features (anchors, tags, multiline scalars) are out of scope.
-
----
-
-## Documentation
-
-| Topic | Description |
-|-------|-------------|
-| [Getting Started](docs/getting-started.md) | AI-operable setup guide: install, sync, status, identity, SDDs |
-| [Presets Guide](docs/presets-guide.md) | Built-in presets, creating custom presets, sharing |
-| [Import/Export Guide](docs/import-export.md) | Export presets, compact sharing strings, import flows |
-| [Migration Guide](docs/migration-guide.md) | Upgrading schema versions safely |
-| [Architecture](docs/architecture.md) | How gsr works, module structure, design decisions |
-| [Release Checklist](docs/release-checklist.md) | npm publish readiness and launch checklist |
-| [Host Adoption (EN)](docs/host-adoption.en.md) | Host-local install/uninstall for OpenCode and other TUIs |
-| [Host Adoption (ES)](docs/host-adoption.es.md) | Adopcion host-local para OpenCode y otros TUIs |
 
 ---
 
@@ -574,6 +480,7 @@ The bundled YAML parser is intentionally minimal. It supports the subset used by
 - Inspect or apply a YAML-first install intent to router/router.yaml.
 - Show or apply a step-by-step bootstrap path for adoption.
 - Preview the OpenCode provider-execution, host-session sync, handoff, schema metadata, and multimodel orchestration manager boundaries without implying execution.
+- Invocation records (`.gsr/invocations/`) are pure data — non-executing, report-only
 
 ### Minimal v1 setup
 
@@ -593,13 +500,7 @@ profiles:
 
 - `gsr render opencode`
 
-## Host Adoption
-
-- host-local adoption lives outside the router CLI; it installs the router skill into `.gsr/skills/router-skill/` and manages one guarded block in `.gsr/policy/rules.md`
-- install/uninstall use a manifest plus `<!-- gsr:managed:start -->` / `<!-- gsr:managed:end -->` markers so user edits outside the block stay untouched
-- safe uninstall fails closed on missing or duplicate markers, hash mismatches, or ambiguous ownership
-- bilingual guides live in `docs/host-adoption.en.md` and `docs/host-adoption.es.md`
-- `/gsr` TUI/slash-command integration is host-owned and live-synced separately from host adoption; the router only publishes the declarative contract
+---
 
 ## Contributing
 
