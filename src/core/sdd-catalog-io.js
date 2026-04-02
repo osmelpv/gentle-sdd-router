@@ -33,6 +33,9 @@ const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const VALID_EXECUTION_VALUES = new Set(['parallel', 'sequential']);
 const VALID_PAYLOAD_FROM_VALUES = new Set(['output', 'input', 'custom']);
 
+/** Valid trigger values for per-phase invoke declarations. */
+const VALID_INVOKE_TRIGGERS = new Set(['on_issues', 'always', 'never', 'manual']);
+
 // ─── validateSddYaml ─────────────────────────────────────────────────────────
 
 /**
@@ -465,6 +468,105 @@ ${outputContract}
   renameSync(tempPath, contractPath);
 
   return { created: true, path: contractPath };
+}
+
+// ─── addPhaseInvoke ──────────────────────────────────────────────────────────
+
+/**
+ * Add or update an invoke block on a specific phase within a custom SDD.
+ * Reads sdd.yaml, merges the invoke config onto the named phase, writes back atomically.
+ *
+ * GSR boundary: invoke fields are stored as plain data — never evaluated.
+ *
+ * @param {string} catalogsDir - Path to router/catalogs/
+ * @param {string} sddName - SDD catalog name (slug)
+ * @param {string} phaseName - Phase to add invoke to
+ * @param {object} invokeConfig - Invoke configuration object
+ * @param {string} invokeConfig.catalog - Target catalog slug (required)
+ * @param {string} [invokeConfig.sdd] - Target SDD slug (defaults to catalog)
+ * @param {string} [invokeConfig.trigger] - Trigger mode: on_issues | always | never | manual
+ * @param {string} [invokeConfig.input_from] - Where to read input from
+ * @param {string[]} [invokeConfig.required_fields] - Required field names
+ * @returns {{ sddName: string, phaseName: string, invoke: object }}
+ */
+export function addPhaseInvoke(catalogsDir, sddName, phaseName, invokeConfig) {
+  const sddYamlPath = join(catalogsDir, sddName, 'sdd.yaml');
+
+  if (!existsSync(sddYamlPath)) {
+    throw new Error(`SDD '${sddName}' not found at ${join(catalogsDir, sddName)}.`);
+  }
+
+  // Validate invoke config
+  const { catalog, sdd: sddSlug, trigger, input_from, required_fields } = invokeConfig ?? {};
+
+  if (!catalog || typeof catalog !== 'string' || !catalog.trim()) {
+    throw new Error(`addPhaseInvoke: invoke.catalog is required.`);
+  }
+  if (!SLUG_RE.test(catalog)) {
+    throw new Error(
+      `addPhaseInvoke: invoke.catalog must be a slug (lowercase letters, digits, hyphens): "${catalog}".`
+    );
+  }
+
+  if (trigger !== undefined && trigger !== null && trigger !== '') {
+    if (!VALID_INVOKE_TRIGGERS.has(trigger)) {
+      throw new Error(
+        `addPhaseInvoke: invoke.trigger "${trigger}" is invalid. ` +
+        `Allowed values: on_issues, always, never, manual.`
+      );
+    }
+  }
+
+  // Read and parse the existing sdd.yaml
+  const raw = readFileSync(sddYamlPath, 'utf8');
+  const parsed = parseYaml(raw);
+
+  if (!parsed.phases || typeof parsed.phases !== 'object') {
+    throw new Error(`SDD '${sddName}' sdd.yaml has no phases.`);
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(parsed.phases, phaseName)) {
+    throw new Error(
+      `Phase '${phaseName}' not found in SDD '${sddName}'. ` +
+      `Available phases: ${Object.keys(parsed.phases).join(', ')}.`
+    );
+  }
+
+  // Build the invoke block (plain data — non-executing)
+  // payload_from defaults to 'output' when not supplied (normalizeInvoke requires it)
+  const payloadFrom = invokeConfig.payload_from ?? 'output';
+
+  const invokeBlock = {
+    catalog: catalog.trim(),
+    sdd: sddSlug && sddSlug.trim() ? sddSlug.trim() : catalog.trim(),
+    payload_from: VALID_PAYLOAD_FROM_VALUES.has(payloadFrom) ? payloadFrom : 'output',
+  };
+
+  if (trigger && VALID_INVOKE_TRIGGERS.has(trigger)) {
+    invokeBlock.trigger = trigger;
+  }
+
+  if (input_from && typeof input_from === 'string' && input_from.trim()) {
+    invokeBlock.input_from = input_from.trim();
+  }
+
+  if (Array.isArray(required_fields) && required_fields.length > 0) {
+    invokeBlock.required_fields = required_fields.filter(Boolean);
+  }
+
+  // Merge invoke block onto the phase (upsert)
+  parsed.phases[phaseName] = {
+    ...parsed.phases[phaseName],
+    invoke: invokeBlock,
+  };
+
+  // Write back atomically
+  const yaml = stringifyYaml(parsed);
+  const tempPath = `${sddYamlPath}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tempPath, yaml, 'utf8');
+  renameSync(tempPath, sddYamlPath);
+
+  return { sddName, phaseName, invoke: invokeBlock };
 }
 
 // ─── resolveContract ─────────────────────────────────────────────────────────

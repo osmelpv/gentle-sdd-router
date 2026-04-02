@@ -242,6 +242,65 @@ phases:
 
 A phase can declare its intent to **invoke another SDD catalog**. `gsr` writes an invocation record to `.gsr/invocations/` — a pure data operation. **No execution happens here.** The host or orchestrator reads the record and launches the callee.
 
+##### How to connect two SDDs
+
+Here's the full flow for connecting `game-design` → `art-production` with debug-aware invocation:
+
+**Step 1 — Declare the invoke in sdd.yaml**
+
+```yaml
+# router/catalogs/game-design/sdd.yaml
+name: game-design
+version: 1
+phases:
+  level-design:
+    intent: "Design levels and encounters"
+    invoke:
+      catalog: art-production
+      sdd: asset-pipeline      # optional — defaults to catalog name
+      payload_from: output     # output | input | custom
+      await: true
+      trigger: on_issues       # on_issues | always | never | manual
+      input_from: phase_output
+      required_fields:
+        - issues
+        - affected_files
+```
+
+Or use the CLI to add/update the invoke declaration on an existing phase:
+
+```bash
+gsr phase invoke level-design \
+  --sdd game-design \
+  --target art-production/asset-pipeline \
+  --trigger on_issues \
+  --input-from phase_output \
+  --required-fields "issues,affected_files"
+```
+
+**Step 2 — Create the invocation record** (during execution, when the phase completes)
+
+```bash
+gsr sdd invoke art-production/asset-pipeline \
+  --from game-design/game-design \
+  --phase level-design \
+  --payload "Level 3 assets needed"
+# Output: Invocation created: inv-550e8400-e29b-41d4-a716-446655440000
+```
+
+**Step 3 — invoke-complete** (when the callee finishes all its phases)
+
+```bash
+gsr sdd invoke-complete inv-550e8400-e29b-41d4-a716-446655440000 \
+  --result "Assets delivered: tree_bioluminescent.fbx"
+```
+
+**Step 4 — Re-verify if needed**
+
+If the callee reported issues, the `trigger: on_issues` declaration means the orchestrator should re-verify the caller's phase. GSR writes the record — the orchestrator decides what to do with it.
+
+> **Presets with `debug_invoke` built-in**: The built-in presets (multivendor, claude, openai, etc.) ship with a `debug_invoke` block pre-configured. When a verify phase fails, no manual wiring is needed — the preset already declares when and how to invoke the debug SDD. Custom SDDs need to declare their own invoke blocks using `gsr phase invoke` or by editing `sdd.yaml` directly.
+
 ```bash
 # Create an invocation record (data-only, non-executing)
 gsr sdd invoke art-production/asset-pipeline \
@@ -457,6 +516,8 @@ gsr sdd invocations                 List all invocations
 
 gsr role create <name> --sdd <sdd>  Create role contract for a custom SDD
 gsr phase create <name> --sdd <sdd> Create phase contract for a custom SDD
+gsr phase invoke <name> --sdd <sdd> --target <catalog>/<sdd> --trigger <trigger>
+                                    Add/update invoke declaration on a phase
 ```
 
 Each category supports `help`: `gsr route help`, `gsr catalog help`, `gsr sdd help`, etc.
@@ -581,12 +642,30 @@ router/contracts/
 
 ## Standalone Mode
 
+**GSR is its own ecosystem. gentle-ai enhances it but is not required.**
+
 `gsr` works with or without [gentle-ai](https://github.com/Gentleman-Programming/gentle-ai) installed:
 
-| Mode | Controller | Execution owners |
-|------|-----------|-----------------|
-| **With gentle-ai** | `Alan/gentle-ai` | `gentle-ai`, `agent-teams-lite` |
-| **Without gentle-ai** | `host` | `host` |
+| Mode | Controller | Execution owners | Persona | Persistence |
+|------|-----------|-----------------|---------|-------------|
+| **With gentle-ai** | `Alan/gentle-ai` | `gentle-ai`, `agent-teams-lite` | Gentleman | Engram memory |
+| **Without gentle-ai** | `host` | `host` | Neutral (no accent) | File-based |
+
+### When gentle-ai is NOT installed
+
+- GSR uses a **neutral agent persona** — no Gentleman accent, no ecosystem branding
+- All SDD contracts ship **with GSR** (self-contained) — no dependency on gentle-ai files
+- **File-based persistence** is used instead of Engram
+- **All features work** — routing, custom SDDs, cross-catalog invocations, identity resolution, TUI
+- The controller label defaults to `host` and execution owners to `['host']`
+
+### When gentle-ai IS installed
+
+- GSR **auto-detects** gentle-ai and switches to use `AGENTS.md`, Engram, and the Gentleman persona
+- No manual configuration needed — detection is automatic
+- Identity layering uses global `AGENTS.md` → project `AGENTS.md` → preset overrides
+
+> **Note**: The standalone fallback implementation (file-based Engram substitute, persona switching) is defined by a separate SDD. This section documents the intent and expected user experience.
 
 ---
 
@@ -660,7 +739,7 @@ This project follows [Spec-Driven Development](https://github.com/Gentleman-Prog
 
 <div align="center">
 
-<p>Part of the <a href="https://github.com/Gentleman-Programming">Gentleman Programming</a> ecosystem</p>
+<p>Recommended with <a href="https://github.com/Gentleman-Programming/gentle-ai">gentle-ai</a> for the full experience. Works independently without it.</p>
 
 <img src="https://img.shields.io/badge/license-UNLICENSED-lightgrey.svg" alt="License: UNLICENSED">
 

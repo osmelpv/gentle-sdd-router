@@ -26,6 +26,7 @@ export {
   createCustomSdd,
   deleteCustomSdd,
   resolveContract,
+  addPhaseInvoke,
 } from './core/sdd-catalog-io.js';
 
 export { shouldInvokeDebug } from './core/debug-invoke.js';

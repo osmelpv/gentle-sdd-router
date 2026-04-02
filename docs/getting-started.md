@@ -160,6 +160,50 @@ gsr role create director --sdd game-design
 gsr phase create concept --sdd game-design
 ```
 
+### Step 9 — Connect SDDs with invoke declarations (optional)
+
+You can wire two SDDs together so one invokes the other after a phase completes.
+
+```bash
+# Add an invoke declaration to an existing phase in a custom SDD
+gsr phase invoke level-design \
+  --sdd game-design \
+  --target art-production/asset-pipeline \
+  --trigger on_issues \
+  --input-from phase_output \
+  --required-fields "issues,affected_files"
+```
+
+**Expected output**:
+```
+Invoke added to phase 'level-design' in SDD 'game-design'.
+  catalog: art-production
+  trigger: on_issues
+```
+
+This writes the invoke declaration to `router/catalogs/game-design/sdd.yaml`. `gsr` stores it as plain data — never executes it.
+
+To manually trigger an invocation record (as an orchestrator sub-agent would do after phase completion):
+
+```bash
+gsr sdd invoke art-production/asset-pipeline \
+  --from game-design/game-design \
+  --phase level-design \
+  --payload "Level 3 assets needed"
+```
+
+**Expected output**:
+```
+Invocation created: inv-550e8400-e29b-41d4-a716-446655440000
+```
+
+When the callee finishes:
+
+```bash
+gsr sdd invoke-complete inv-550e8400-e29b-41d4-a716-446655440000 \
+  --result "All assets delivered"
+```
+
 ---
 
 ## Prerequisites
@@ -393,7 +437,18 @@ gsr sdd delete <name> [--yes]                  Delete custom SDD
 ```
 gsr role create <name> --sdd <sdd>   Create role contract
 gsr phase create <name> --sdd <sdd>  Create phase contract
+gsr phase invoke <name> --sdd <sdd> --target <catalog>/<sdd> --trigger <trigger>
+                                     Add/update invoke declaration on a phase
 ```
+
+### Phase Invoke (adding cross-SDD wiring to existing phases)
+
+```
+gsr phase invoke <phase-name> --sdd <sdd-name> --target <catalog>/<sdd> --trigger <trigger>
+  [--input-from <field>] [--required-fields <comma-separated>]
+```
+
+Adds or updates the invoke declaration on a specific phase in a custom SDD. Trigger options: `on_issues | always | never | manual`.
 
 ### Cross-Catalog Invocations
 
@@ -449,6 +504,89 @@ gsr sdd invocations --status pending       # filter by status
 --confirm     Required for destructive operations (uninstall)
 --compact     Use compact gsr:// encoding (export, import)
 ```
+
+---
+
+## Connecting SDDs
+
+Cross-SDD wiring lets one workflow invoke another as a work-order. This is how department-style collaboration works.
+
+### Step-by-step: Create two SDDs and connect them
+
+```bash
+# 1. Create source SDD (game design)
+gsr sdd create game-design --description "Game design workflow"
+
+# 2. Create target SDD (art production)
+gsr sdd create art-production --description "Art production workflow"
+
+# 3. Add an invoke declaration to a phase in game-design
+gsr phase invoke level-design \
+  --sdd game-design \
+  --target art-production/asset-pipeline \
+  --trigger on_issues \
+  --input-from phase_output \
+  --required-fields "issues,affected_files"
+
+# Expected:
+# Invoke added to phase 'level-design' in SDD 'game-design'.
+#   catalog: art-production
+#   trigger: on_issues
+
+# 4. Show the updated SDD to verify
+gsr sdd show game-design
+```
+
+### Testing the flow
+
+```bash
+# When level-design phase completes and issues are found:
+gsr sdd invoke art-production/asset-pipeline \
+  --from game-design/game-design \
+  --phase level-design \
+  --payload "Issues found in level 3 assets"
+# → Invocation created: inv-<uuid>
+
+# When art-production finishes its work:
+gsr sdd invoke-complete inv-<uuid> \
+  --result "Assets corrected and delivered"
+
+# Verify the record:
+gsr sdd invoke-status inv-<uuid>
+```
+
+### AI Agent Operational Guide — Setting Up Inter-SDD Connections
+
+As an AI agent, follow this sequence to set up cross-SDD connections:
+
+1. **Identify the caller phase**: which SDD/phase needs to invoke another
+2. **Identify the callee**: which catalog/sdd should be invoked
+3. **Choose the trigger**: `on_issues` (most common), `always`, `never`, or `manual`
+4. **Declare the invoke**:
+   ```bash
+   gsr phase invoke <phase> --sdd <caller-sdd> --target <callee-catalog>/<callee-sdd> --trigger <trigger>
+   ```
+5. **During execution**, when the phase completes and trigger condition is met:
+   ```bash
+   gsr sdd invoke <callee-catalog>/<callee-sdd> --from <caller-catalog>/<caller-sdd> --phase <phase> --payload "<context>"
+   ```
+6. **Mark complete** when the callee finishes:
+   ```bash
+   gsr sdd invoke-complete <inv-id> --result "<result>"
+   ```
+7. **If re-verification is needed** (e.g., trigger was `on_issues`), run the verify phase again after completion.
+
+### What GSR does vs. what the orchestrator does
+
+| Responsibility | Owner |
+|---------------|-------|
+| Store invoke declaration in sdd.yaml | GSR (`gsr phase invoke`) |
+| Write invocation record to `.gsr/invocations/` | GSR (`gsr sdd invoke`) |
+| Read the record and launch the callee | **Your orchestrator** |
+| Mark the invocation complete | GSR (`gsr sdd invoke-complete`) |
+| Re-run verification after completion | **Your orchestrator** |
+
+GSR is always report-only. Execution belongs to the host.
 
 ---
 

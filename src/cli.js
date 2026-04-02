@@ -7,6 +7,7 @@ import {
   loadCustomSdd,
   deleteCustomSdd,
   scaffoldPhaseContract,
+  addPhaseInvoke,
 } from './core/sdd-catalog-io.js';
 import {
   createInvocation,
@@ -1980,9 +1981,12 @@ function renderCommandHelp(topic, subtopic) {
         'Manage catalog-scoped phase contracts for a custom SDD.',
         '',
         '  create <name> --sdd <sdd-name>  Create a new phase contract .md file.',
+        '  invoke <name> --sdd <sdd-name> --target <catalog>/<sdd> --trigger <trigger>',
+        '                                   Add/update invoke declaration on a phase.',
         '',
         'Examples:',
         '  gsr phase create concept --sdd game-design',
+        '  gsr phase invoke level-design --sdd game-design --target art-production/asset-pipeline --trigger on_issues',
       ].join('\n') + '\n';
     }
     if (sub === 'create') {
@@ -1991,6 +1995,26 @@ function renderCommandHelp(topic, subtopic) {
         'Create a new catalog-scoped phase contract in router/catalogs/<sdd>/contracts/phases/.',
         '  <name>           Phase name (slug: lowercase letters, digits, hyphens).',
         '  --sdd <sdd-name> The SDD catalog to add the phase to (required).',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'invoke') {
+      return [
+        'Usage: gsr phase invoke <phase-name> --sdd <sdd-name> --target <catalog>/<sdd> --trigger <trigger>',
+        '  [--input-from <field>] [--required-fields <comma-separated>]',
+        'Add or update an invoke declaration on a phase in a custom SDD.',
+        '  <phase-name>          Phase to add invoke to (must exist in sdd.yaml).',
+        '  --sdd <sdd-name>      The SDD catalog that owns the phase (required).',
+        '  --target <cat>/<sdd>  Target catalog/sdd to invoke (required).',
+        '  --trigger <trigger>   When to invoke: on_issues | always | never | manual.',
+        '  --input-from <field>  Where the callee reads its input from (optional).',
+        '  --required-fields <fields>  Comma-separated field names required from phase output (optional).',
+        '',
+        'Example:',
+        '  gsr phase invoke level-design --sdd game-design \\',
+        '    --target art-production/asset-pipeline \\',
+        '    --trigger on_issues \\',
+        '    --input-from phase_output \\',
+        '    --required-fields "issues,affected_files"',
       ].join('\n') + '\n';
     }
     return null;
@@ -2606,6 +2630,15 @@ export function runPhaseCommand(args) {
       const catalogsDir = path.join(path.dirname(configPath), 'catalogs');
       return runPhaseCreate(rest, catalogsDir);
     }
+    case 'invoke': {
+      const configPath = discoverConfigPath();
+      if (!configPath) {
+        process.stdout.write('No router config found. Run `gsr install` first.\n');
+        return;
+      }
+      const catalogsDir = path.join(path.dirname(configPath), 'catalogs');
+      return runPhaseInvoke(rest, catalogsDir);
+    }
     default:
       if (sub === 'help' || sub === '--help' || !sub) {
         process.stdout.write(renderCommandHelp('phase') ?? '');
@@ -2842,6 +2875,73 @@ export function runPhaseCreate(args, catalogsDir) {
 
   const result = scaffoldPhaseContract(catalogsDir, sddName, name, { intent });
   process.stdout.write(`Created phase contract '${name}' at ${result.path}\n`);
+}
+
+/**
+ * Add or update an invoke declaration on a phase in a custom SDD.
+ * gsr phase invoke <phase-name> --sdd <sdd-name> --target <catalog>/<sdd> --trigger <trigger>
+ *   [--input-from <field>] [--required-fields <comma-separated>]
+ *
+ * @param {string[]} args - CLI args after 'phase invoke'
+ * @param {string} catalogsDir - Path to router/catalogs/
+ */
+export function runPhaseInvoke(args, catalogsDir) {
+  // Positional: phase name (first non-flag arg not following a flag)
+  const phaseName = args.find((a, i) => {
+    if (a.startsWith('--')) return false;
+    const prev = args[i - 1];
+    if (prev && prev.startsWith('--')) return false;
+    return true;
+  });
+  if (!phaseName) {
+    throw new Error('gsr phase invoke requires a phase name.');
+  }
+
+  // --sdd <sdd-name>
+  const sddIndex = args.indexOf('--sdd');
+  const sddName = sddIndex !== -1 ? args[sddIndex + 1] : null;
+  if (!sddName) {
+    throw new Error('gsr phase invoke requires --sdd <sdd-name>.');
+  }
+
+  // --target <catalog>/<sdd>
+  const targetIndex = args.indexOf('--target');
+  const targetArg = targetIndex !== -1 ? args[targetIndex + 1] : null;
+  if (!targetArg) {
+    throw new Error('gsr phase invoke requires --target <catalog>/<sdd>.');
+  }
+  const slashIdx = targetArg.indexOf('/');
+  const catalog = slashIdx !== -1 ? targetArg.slice(0, slashIdx).trim() : targetArg.trim();
+  const sddTarget = slashIdx !== -1 ? targetArg.slice(slashIdx + 1).trim() : '';
+
+  // --trigger <trigger>
+  const triggerIndex = args.indexOf('--trigger');
+  const trigger = triggerIndex !== -1 ? args[triggerIndex + 1] : undefined;
+
+  // --input-from <field>
+  const inputFromIndex = args.indexOf('--input-from');
+  const input_from = inputFromIndex !== -1 ? args[inputFromIndex + 1] : undefined;
+
+  // --required-fields <comma-separated>
+  const reqFieldsIndex = args.indexOf('--required-fields');
+  const reqFieldsRaw = reqFieldsIndex !== -1 ? args[reqFieldsIndex + 1] : undefined;
+  const required_fields = reqFieldsRaw
+    ? reqFieldsRaw.split(',').map(f => f.trim()).filter(Boolean)
+    : undefined;
+
+  const result = addPhaseInvoke(catalogsDir, sddName, phaseName, {
+    catalog,
+    sdd: sddTarget || catalog,
+    trigger,
+    input_from,
+    required_fields,
+  });
+
+  process.stdout.write(
+    `Invoke added to phase '${result.phaseName}' in SDD '${result.sddName}'.\n` +
+    `  catalog: ${result.invoke.catalog}\n` +
+    (result.invoke.trigger ? `  trigger: ${result.invoke.trigger}\n` : '')
+  );
 }
 
 // === EXPORTED INVOKE COMMAND FUNCTIONS ========================================

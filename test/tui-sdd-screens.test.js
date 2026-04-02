@@ -827,3 +827,58 @@ describe('scaffoldPhaseContract — data layer used by TUI', () => {
     }
   });
 });
+
+// ─── sdd-phase-editor — extended invoke fields (trigger/input_from/required_fields) ─
+
+describe('SddPhaseEditor — extended invoke fields in buildInvokeFromInputs', () => {
+  test('buildInvokeFromInputs exports are present and support trigger field', async () => {
+    const mod = await import('../src/ux/tui/screens/sdd-phase-editor.js');
+    assert.equal(typeof mod.buildInvokeFromInputs, 'function', 'buildInvokeFromInputs must be exported');
+    const result = mod.buildInvokeFromInputs({
+      catalog: 'art-production',
+      sdd: '',
+      payload_from: 'output',
+      await: true,
+      result_field: '',
+      trigger: 'on_issues',
+      input_from: '',
+      required_fields: '',
+    });
+    assert.ok(result, 'buildInvokeFromInputs must return non-null for non-empty catalog');
+    assert.equal(result.trigger, 'on_issues', 'trigger field must be present in result');
+  });
+
+  test('buildInvokeFromInputs supports input_from field', async () => {
+    const { buildInvokeFromInputs } = await import('../src/ux/tui/screens/sdd-phase-editor.js');
+    const result = buildInvokeFromInputs({
+      catalog: 'art-production',
+      sdd: '',
+      payload_from: 'output',
+      await: true,
+      result_field: '',
+      trigger: '',
+      input_from: 'phase_output',
+      required_fields: '',
+    });
+    assert.ok(result, 'buildInvokeFromInputs must return non-null');
+    assert.equal(result.input_from, 'phase_output', 'input_from field must be present in result');
+  });
+
+  test('buildInvokeFromInputs parses required_fields comma-separated string into array', async () => {
+    const { buildInvokeFromInputs } = await import('../src/ux/tui/screens/sdd-phase-editor.js');
+    const result = buildInvokeFromInputs({
+      catalog: 'art-production',
+      sdd: '',
+      payload_from: 'output',
+      await: true,
+      result_field: '',
+      trigger: 'on_issues',
+      input_from: '',
+      required_fields: 'issues,affected_files,summary',
+    });
+    assert.ok(result, 'buildInvokeFromInputs must return non-null');
+    assert.deepEqual(result.required_fields, ['issues', 'affected_files', 'summary'],
+      'required_fields must be parsed from comma-separated string into array'
+    );
+  });
+});

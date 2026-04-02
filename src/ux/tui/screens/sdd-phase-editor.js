@@ -20,20 +20,52 @@ const h = React.createElement;
  * Build an invoke declaration from form input values.
  * Returns null when catalog is empty (no invoke configured).
  *
- * @param {{ catalog: string, sdd: string, payload_from: string, await: boolean, result_field: string }} inputs
+ * @param {{ catalog: string, sdd: string, payload_from: string, await: boolean, result_field: string, trigger?: string, input_from?: string, required_fields?: string }} inputs
  * @returns {object|null}
  */
-export function buildInvokeFromInputs({ catalog, sdd, payload_from, await: awaitValue, result_field }) {
+export function buildInvokeFromInputs({
+  catalog,
+  sdd,
+  payload_from,
+  await: awaitValue,
+  result_field,
+  trigger,
+  input_from,
+  required_fields,
+}) {
   const trimmedCatalog = (catalog ?? '').trim();
   if (!trimmedCatalog) return null;
   const trimmedSdd = (sdd ?? '').trim();
-  return {
+
+  const result = {
     catalog: trimmedCatalog,
     sdd: trimmedSdd || trimmedCatalog,
     payload_from: payload_from ?? 'output',
     await: typeof awaitValue === 'boolean' ? awaitValue : true,
     result_field: (result_field ?? '').trim() || null,
   };
+
+  // Extended context fields
+  const trimmedTrigger = (trigger ?? '').trim();
+  if (trimmedTrigger) {
+    result.trigger = trimmedTrigger;
+  }
+
+  const trimmedInputFrom = (input_from ?? '').trim();
+  if (trimmedInputFrom) {
+    result.input_from = trimmedInputFrom;
+  }
+
+  // required_fields: parse comma-separated string into array
+  const trimmedReqFields = (required_fields ?? '').trim();
+  if (trimmedReqFields) {
+    const fields = trimmedReqFields.split(',').map(f => f.trim()).filter(Boolean);
+    if (fields.length > 0) {
+      result.required_fields = fields;
+    }
+  }
+
+  return result;
 }
 
 export function SddPhaseEditor({
@@ -44,15 +76,22 @@ export function SddPhaseEditor({
   selectedSdd,
 }) {
   const [sdd, setSdd] = useState(null);
-  // view: 'menu' | 'adding-name' | 'adding-intent' | 'adding-invoke-catalog' | 'adding-invoke-sdd' | 'confirming-delete'
+  // view: 'menu' | 'adding-name' | 'adding-intent' | 'adding-invoke-catalog' | 'adding-invoke-sdd'
+  //        | 'adding-invoke-trigger' | 'adding-invoke-input-from' | 'adding-invoke-required-fields'
+  //        | 'confirming-delete'
   const [view, setView] = useState('menu');
   const [newPhaseName, setNewPhaseName] = useState('');
   const [newPhaseIntent, setNewPhaseIntent] = useState('');
   const [invokeCatalog, setInvokeCatalog] = useState('');
   const [invokeSdd, setInvokeSdd] = useState('');
+  const [invokeTrigger, setInvokeTrigger] = useState('');
+  const [invokeInputFrom, setInvokeInputFrom] = useState('');
+  const [invokeRequiredFields, setInvokeRequiredFields] = useState('');
   const [pendingDelete, setPendingDelete] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const VALID_TRIGGERS = ['on_issues', 'always', 'never', 'manual'];
 
   const loadSdd = async () => {
     try {
@@ -103,6 +142,9 @@ export function SddPhaseEditor({
       setNewPhaseIntent('');
       setInvokeCatalog('');
       setInvokeSdd('');
+      setInvokeTrigger('');
+      setInvokeInputFrom('');
+      setInvokeRequiredFields('');
       setError(null);
     } catch (err) {
       setError(err.message);
@@ -202,12 +244,74 @@ export function SddPhaseEditor({
         onSubmit: (value) => {
           setInvokeSdd(value.trim());
           setError(null);
+          setView('adding-invoke-trigger');
+        },
+      }),
+    );
+  }
+
+  // View: adding invoke trigger (optional)
+  if (view === 'adding-invoke-trigger') {
+    return h(Box, { flexDirection: 'column' },
+      h(Text, { bold: true, color: colors.lavender }, `Add Phase "${newPhaseName}" — Invoke Trigger (optional)`),
+      h(Text, { color: colors.subtext }, `Options: on_issues | always | never | manual (leave empty for default)`),
+      error ? h(Text, { color: colors.red }, error) : null,
+      h(Menu, {
+        items: [
+          { label: 'on_issues', value: 'on_issues', description: 'Invoke when issues are detected.' },
+          { label: 'always', value: 'always', description: 'Always invoke after this phase.' },
+          { label: 'never', value: 'never', description: 'Never auto-invoke (manual only).' },
+          { label: 'manual', value: 'manual', description: 'Invoke manually by the orchestrator.' },
+          { label: '(skip)', value: '__skip__', description: 'Skip trigger — use default.' },
+        ],
+        onSelect: (value) => {
+          setInvokeTrigger(value === '__skip__' ? '' : value);
+          setError(null);
+          setView('adding-invoke-input-from');
+        },
+        setDescription,
+      }),
+    );
+  }
+
+  // View: adding invoke input_from (optional)
+  if (view === 'adding-invoke-input-from') {
+    return h(Box, { flexDirection: 'column' },
+      h(Text, { bold: true, color: colors.lavender }, `Add Phase "${newPhaseName}" — Invoke Input From (optional)`),
+      h(Text, { color: colors.subtext }, 'Where should the callee read its input? (e.g. phase_output, leave empty to skip)'),
+      error ? h(Text, { color: colors.red }, error) : null,
+      h(TextInput, {
+        placeholder: 'e.g. phase_output (leave empty to skip)',
+        onSubmit: (value) => {
+          setInvokeInputFrom(value.trim());
+          setError(null);
+          setView('adding-invoke-required-fields');
+        },
+      }),
+    );
+  }
+
+  // View: adding invoke required_fields (optional, comma-separated)
+  if (view === 'adding-invoke-required-fields') {
+    return h(Box, { flexDirection: 'column' },
+      h(Text, { bold: true, color: colors.lavender }, `Add Phase "${newPhaseName}" — Invoke Required Fields (optional)`),
+      h(Text, { color: colors.subtext }, 'Comma-separated field names required from caller output (leave empty to skip)'),
+      error ? h(Text, { color: colors.red }, error) : null,
+      h(TextInput, {
+        placeholder: 'e.g. issues,affected_files (leave empty to skip)',
+        onSubmit: (value) => {
+          setInvokeRequiredFields(value.trim());
+          setError(null);
+          // All invoke fields collected — build and save
           const invoke = buildInvokeFromInputs({
             catalog: invokeCatalog,
-            sdd: value.trim(),
+            sdd: invokeSdd,
             payload_from: 'output',
             await: true,
             result_field: '',
+            trigger: invokeTrigger,
+            input_from: invokeInputFrom,
+            required_fields: value.trim(),
           });
           savePhase(newPhaseIntent, invoke);
         },
