@@ -199,7 +199,13 @@ export function mergeOverlayWithExisting(overlay, existing = {}, options = {}) {
     result.agent[key] = entry;
   }
 
-  result.warnings = mergeWarnings;
+  // Attach warnings as non-enumerable so they travel with the return value
+  // but are NEVER serialized to opencode.json (JSON.stringify ignores non-enumerable).
+  Object.defineProperty(result, 'warnings', {
+    value: mergeWarnings,
+    enumerable: false,
+    configurable: true,
+  });
 
   return result;
 }
