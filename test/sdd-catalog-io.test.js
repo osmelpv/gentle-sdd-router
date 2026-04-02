@@ -264,7 +264,7 @@ describe('loadCustomSdds', () => {
     const tmp = makeTempDir();
     try {
       const nonExistent = path.join(tmp, 'catalogs');
-      const result = loadCustomSdds(nonExistent);
+      const result = loadCustomSdds(nonExistent, { includeGlobal: false });
       assert.deepEqual(result, []);
     } finally {
       cleanup(tmp);
@@ -276,7 +276,7 @@ describe('loadCustomSdds', () => {
     try {
       const catalogsDir = path.join(tmp, 'catalogs');
       fs.mkdirSync(catalogsDir, { recursive: true });
-      const result = loadCustomSdds(catalogsDir);
+      const result = loadCustomSdds(catalogsDir, { includeGlobal: false });
       assert.deepEqual(result, []);
     } finally {
       cleanup(tmp);
@@ -288,7 +288,7 @@ describe('loadCustomSdds', () => {
     try {
       const catalogsDir = path.join(tmp, 'catalogs');
       writeFile(catalogsDir, 'game-design/sdd.yaml', MINIMAL_SDD_YAML);
-      const result = loadCustomSdds(catalogsDir);
+      const result = loadCustomSdds(catalogsDir, { includeGlobal: false });
       assert.equal(result.length, 1);
       assert.equal(result[0].name, 'game-design');
     } finally {
@@ -302,7 +302,7 @@ describe('loadCustomSdds', () => {
       const catalogsDir = path.join(tmp, 'catalogs');
       writeFile(catalogsDir, 'alpha/sdd.yaml', MINIMAL_SDD_YAML.replace('game-design', 'alpha'));
       writeFile(catalogsDir, 'beta/sdd.yaml', MINIMAL_SDD_YAML.replace('game-design', 'beta'));
-      const result = loadCustomSdds(catalogsDir);
+      const result = loadCustomSdds(catalogsDir, { includeGlobal: false });
       assert.equal(result.length, 2);
       const names = result.map(s => s.name).sort();
       assert.deepEqual(names, ['alpha', 'beta']);
@@ -317,7 +317,7 @@ describe('loadCustomSdds', () => {
       const catalogsDir = path.join(tmp, 'catalogs');
       writeFile(catalogsDir, 'alpha/sdd.yaml', MINIMAL_SDD_YAML.replace('game-design', 'alpha'));
       writeFile(catalogsDir, 'beta/sdd.yaml', INVALID_YAML_MISSING_NAME);
-      assert.throws(() => loadCustomSdds(catalogsDir), /name/i);
+      assert.throws(() => loadCustomSdds(catalogsDir, { includeGlobal: false }), /name/i);
     } finally {
       cleanup(tmp);
     }
@@ -328,7 +328,7 @@ describe('loadCustomSdds', () => {
     try {
       const catalogsDir = path.join(tmp, 'catalogs');
       writeFile(catalogsDir, 'game-design/sdd.yaml', MINIMAL_SDD_YAML);
-      const [sdd] = loadCustomSdds(catalogsDir);
+      const [sdd] = loadCustomSdds(catalogsDir, { includeGlobal: false });
       assert.equal(sdd.phases.concept.intent, 'Define high-level game concept');
       assert.equal(sdd.phases.concept.execution, 'sequential');
       assert.equal(sdd.phases.concept.agents, 1);
@@ -454,7 +454,7 @@ describe('deleteCustomSdd', () => {
       createCustomSdd(catalogsDir, 'other-sdd');
 
       deleteCustomSdd(catalogsDir, 'my-sdd');
-      const remaining = loadCustomSdds(catalogsDir);
+      const remaining = loadCustomSdds(catalogsDir, { includeGlobal: false });
       assert.equal(remaining.length, 1);
       assert.equal(remaining[0].name, 'other-sdd');
     } finally {
@@ -1055,7 +1055,7 @@ ${invokeExtra}`;
           field: "zones.north"
 `);
       fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), yaml, 'utf8');
-      const sdd = loadCustomSdds(catalogsDir)[0];
+      const sdd = loadCustomSdds(catalogsDir, { includeGlobal: false })[0];
       const invoke = sdd.phases['level-design'].invoke;
       assert.ok(Array.isArray(invoke.input_context), 'input_context must be an array');
       assert.equal(invoke.input_context.length, 2, 'should have 2 input_context entries');
@@ -1079,7 +1079,7 @@ ${invokeExtra}`;
           format: "PNG 2048x2048"
 `);
       fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), yaml, 'utf8');
-      const sdd = loadCustomSdds(catalogsDir)[0];
+      const sdd = loadCustomSdds(catalogsDir, { includeGlobal: false })[0];
       const invoke = sdd.phases['level-design'].invoke;
       assert.ok(Array.isArray(invoke.output_expected), 'output_expected must be an array');
       assert.equal(invoke.output_expected.length, 2, 'should have 2 output_expected entries');
@@ -1098,7 +1098,7 @@ ${invokeExtra}`;
       fs.mkdirSync(sddDir, { recursive: true });
       const yaml = makeSddWithInvoke(`      on_failure: block\n`);
       fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), yaml, 'utf8');
-      const sdd = loadCustomSdds(catalogsDir)[0];
+      const sdd = loadCustomSdds(catalogsDir, { includeGlobal: false })[0];
       assert.equal(sdd.phases['level-design'].invoke.on_failure, 'block');
     } finally {
       cleanup(tmp);
@@ -1113,7 +1113,7 @@ ${invokeExtra}`;
       fs.mkdirSync(sddDir, { recursive: true });
       const yaml = makeSddWithInvoke(`      on_failure: escalate\n`);
       fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), yaml, 'utf8');
-      const sdd = loadCustomSdds(catalogsDir)[0];
+      const sdd = loadCustomSdds(catalogsDir, { includeGlobal: false })[0];
       assert.equal(sdd.phases['level-design'].invoke.on_failure, 'escalate');
     } finally {
       cleanup(tmp);
@@ -1128,7 +1128,7 @@ ${invokeExtra}`;
       fs.mkdirSync(sddDir, { recursive: true });
       const yaml = makeSddWithInvoke(`      on_failure: continue\n`);
       fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), yaml, 'utf8');
-      const sdd = loadCustomSdds(catalogsDir)[0];
+      const sdd = loadCustomSdds(catalogsDir, { includeGlobal: false })[0];
       assert.equal(sdd.phases['level-design'].invoke.on_failure, 'continue');
     } finally {
       cleanup(tmp);
@@ -1143,7 +1143,7 @@ ${invokeExtra}`;
       fs.mkdirSync(sddDir, { recursive: true });
       const yaml = makeSddWithInvoke('');
       fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), yaml, 'utf8');
-      const sdd = loadCustomSdds(catalogsDir)[0];
+      const sdd = loadCustomSdds(catalogsDir, { includeGlobal: false })[0];
       assert.equal(sdd.phases['level-design'].invoke.on_failure, 'block', 'default on_failure must be block');
     } finally {
       cleanup(tmp);
@@ -1159,7 +1159,7 @@ ${invokeExtra}`;
       const yaml = makeSddWithInvoke(`      on_failure: retry\n`);
       fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), yaml, 'utf8');
       assert.throws(
-        () => loadCustomSdds(catalogsDir),
+        () => loadCustomSdds(catalogsDir, { includeGlobal: false }),
         /on_failure.*retry|retry.*on_failure|invalid/i,
         'must throw for invalid on_failure value'
       );
@@ -1183,7 +1183,7 @@ ${invokeExtra}`;
       on_failure: escalate
 `);
       fs.writeFileSync(path.join(sddDir, 'sdd.yaml'), yaml, 'utf8');
-      const sdd = loadCustomSdds(catalogsDir)[0];
+      const sdd = loadCustomSdds(catalogsDir, { includeGlobal: false })[0];
       const invoke = sdd.phases['level-design'].invoke;
       // Round-trip checks
       assert.ok(Array.isArray(invoke.input_context), 'input_context must survive round-trip');

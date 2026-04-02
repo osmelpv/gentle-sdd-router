@@ -89,7 +89,7 @@ phases:
 function makeAssembledConfig(dir) {
   writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
   writeFile(dir, 'profiles/safety.router.yaml', SAFETY_PROFILE_YAML);
-  const profiles = loadV4Profiles(dir);
+  const profiles = loadV4Profiles(dir, { includeGlobal: false });
   return assembleV4Config(V4_CORE_CONFIG, profiles);
 }
 

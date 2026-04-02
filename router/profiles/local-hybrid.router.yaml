@@ -1,7 +1,4 @@
 name: local-hybrid
-# Strategy: free cloud models (openrouter free tier) as primary per SDD phase,
-# with ranked ollama local fallbacks for offline resilience.
-# Based on the ArchonLord ollama-archon preset pattern.
 availability: stable
 complexity: medium
 debug_invoke:
@@ -22,13 +19,13 @@ phases:
       kind: lane
       phase: orchestrator
       role: primary
-      fallbacks: opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/devstral-small-2:24b
+      fallbacks: "opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/devstral-small-2:24b"
   explore:
     - target: opencode/nemotron-3-super-free
       kind: lane
       phase: explore
       role: primary
-      fallbacks: opencode/qwen3.6-plus-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/devstral-small-2:24b
+      fallbacks: "opencode/qwen3.6-plus-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/devstral-small-2:24b"
   propose:
     - target: opencode/qwen3.6-plus-free
       kind: lane
@@ -54,11 +51,11 @@ phases:
       role: primary
       fallbacks: opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
   apply:
-    - target: ollama/devstral-small-2:24b
+    - target: "ollama/devstral-small-2:24b"
       kind: lane
       phase: apply
       role: primary
-      fallbacks: opencode/qwen3.6-plus-free, opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, ollama/qwen3.5:35b
+      fallbacks: "opencode/qwen3.6-plus-free, opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, ollama/qwen3.5:35b"
   verify:
     - target: opencode/nemotron-3-super-free
       kind: lane

@@ -204,7 +204,7 @@ phases:
     try {
       writeFile(dir, 'profiles/priced.router.yaml', PRICED_PROFILE_YAML);
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
       const assembled = assembleV4Config(
         { version: 4, active_preset: 'priced', activation_state: 'active' },
         profiles
@@ -236,7 +236,7 @@ phases:
     try {
       writeFile(dir, 'profiles/unpriced.router.yaml', UNPRICED_YAML);
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
       const assembled = assembleV4Config(
         { version: 4, active_preset: 'unpriced', activation_state: 'active' },
         profiles

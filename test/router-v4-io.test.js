@@ -286,7 +286,7 @@ describe('loadV4Profiles', () => {
       writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
       writeFile(dir, 'profiles/safety.router.yaml', SAFETY_PROFILE_YAML);
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
 
       assert.equal(profiles.length, 2);
 
@@ -312,7 +312,7 @@ describe('loadV4Profiles', () => {
       writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
       writeFile(dir, 'profiles/experimental/turbo.router.yaml', TURBO_PROFILE_YAML);
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
 
       assert.equal(profiles.length, 2);
 
@@ -334,7 +334,7 @@ describe('loadV4Profiles', () => {
       writeFile(dir, 'profiles/README.md', '# docs');
       writeFile(dir, 'profiles/.gitkeep', '');
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
 
       assert.equal(profiles.length, 1);
       assert.equal(profiles[0].content.name, 'balanced');
@@ -348,7 +348,7 @@ describe('loadV4Profiles', () => {
 
     try {
       assert.throws(
-        () => loadV4Profiles(dir),
+        () => loadV4Profiles(dir, { includeGlobal: false }),
         /No profiles directory found/
       );
     } finally {
@@ -363,7 +363,7 @@ describe('loadV4Profiles', () => {
       writeFile(dir, 'profiles/.gitkeep', '');
 
       assert.throws(
-        () => loadV4Profiles(dir),
+        () => loadV4Profiles(dir, { includeGlobal: false }),
         /No profile files found/
       );
     } finally {
@@ -378,7 +378,7 @@ describe('loadV4Profiles', () => {
       writeFile(dir, 'profiles/bad.router.yaml', 'name: bad\n');
 
       assert.throws(
-        () => loadV4Profiles(dir),
+        () => loadV4Profiles(dir, { includeGlobal: false }),
         /requires "phases" as a non-empty object/
       );
     } finally {
@@ -395,7 +395,7 @@ describe('assembleV4Config', () => {
       writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
       writeFile(dir, 'profiles/safety.router.yaml', SAFETY_PROFILE_YAML);
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
       const assembled = assembleV4Config(MINIMAL_CORE_CONFIG, profiles);
 
       assert.equal(assembled.version, 3);
@@ -417,7 +417,7 @@ describe('assembleV4Config', () => {
     try {
       writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
       const assembled = assembleV4Config(MINIMAL_CORE_CONFIG, profiles);
 
       const descriptor = Object.getOwnPropertyDescriptor(assembled, '_v4Source');
@@ -438,7 +438,7 @@ describe('assembleV4Config', () => {
       writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
       writeFile(dir, 'profiles/experimental/turbo.router.yaml', TURBO_PROFILE_YAML);
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
       const assembled = assembleV4Config(MINIMAL_CORE_CONFIG, profiles);
 
       assert.ok(assembled.catalogs.default?.presets?.balanced, 'balanced in default catalog');
@@ -454,7 +454,7 @@ describe('assembleV4Config', () => {
     try {
       writeFile(dir, 'profiles/internal.router.yaml', RESTRICTED_HIDDEN_PROFILE_YAML);
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
       const assembled = assembleV4Config(MINIMAL_CORE_CONFIG, profiles);
       const preset = assembled.catalogs.default.presets.internal;
 
@@ -486,7 +486,7 @@ phases:
       writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
       writeFile(dir, 'profiles/experimental/balanced.router.yaml', DUPLICATE_BALANCED_YAML);
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
 
       assert.throws(
         () => assembleV4Config(MINIMAL_CORE_CONFIG, profiles),
@@ -512,7 +512,7 @@ phases:
     try {
       writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
       const assembled = assembleV4Config(coreWithCatalogMeta, profiles);
 
       assert.equal(assembled.catalogs.default.availability, 'experimental');
@@ -527,7 +527,7 @@ phases:
     try {
       writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
       const assembled = assembleV4Config(MINIMAL_CORE_CONFIG, profiles);
 
       assert.equal(assembled.catalogs.default.availability, 'stable');
@@ -545,7 +545,7 @@ describe('disassembleV4Config', () => {
       writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
       writeFile(dir, 'profiles/safety.router.yaml', SAFETY_PROFILE_YAML);
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
       const assembled = assembleV4Config(MINIMAL_CORE_CONFIG, profiles);
       const { coreFields, profiles: disassembled } = disassembleV4Config(assembled);
 
@@ -575,7 +575,7 @@ describe('disassembleV4Config', () => {
     try {
       writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
       const assembled = assembleV4Config(MINIMAL_CORE_CONFIG, profiles);
       const { profiles: disassembled } = disassembleV4Config(assembled);
 
@@ -600,7 +600,7 @@ describe('disassembleV4Config', () => {
     try {
       writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
       const assembled = assembleV4Config(MINIMAL_CORE_CONFIG, profiles);
       const { profiles: disassembled } = disassembleV4Config(assembled);
 
@@ -619,7 +619,7 @@ describe('buildV4WritePlan', () => {
     try {
       writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
       const oldConfig = assembleV4Config(MINIMAL_CORE_CONFIG, profiles);
       const newConfig = assembleV4Config(
         { ...MINIMAL_CORE_CONFIG, active_preset: 'balanced', activation_state: 'inactive' },
@@ -643,7 +643,7 @@ describe('buildV4WritePlan', () => {
     try {
       writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
       const oldConfig = assembleV4Config(MINIMAL_CORE_CONFIG, profiles);
 
       const MODIFIED_BALANCED_YAML = `name: balanced
@@ -654,7 +654,7 @@ phases:
       role: primary
 `;
       writeFile(dir, 'profiles/balanced.router.yaml', MODIFIED_BALANCED_YAML);
-      const newProfiles = loadV4Profiles(dir);
+      const newProfiles = loadV4Profiles(dir, { includeGlobal: false });
       const newConfig = assembleV4Config(MINIMAL_CORE_CONFIG, newProfiles);
 
       const plan = buildV4WritePlan(oldConfig, newConfig);
@@ -673,11 +673,11 @@ phases:
 
     try {
       writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
-      const profilesOld = loadV4Profiles(dir);
+      const profilesOld = loadV4Profiles(dir, { includeGlobal: false });
       const oldConfig = assembleV4Config(MINIMAL_CORE_CONFIG, profilesOld);
 
       writeFile(dir, 'profiles/safety.router.yaml', SAFETY_PROFILE_YAML);
-      const profilesNew = loadV4Profiles(dir);
+      const profilesNew = loadV4Profiles(dir, { includeGlobal: false });
       const newConfig = assembleV4Config(MINIMAL_CORE_CONFIG, profilesNew);
 
       const plan = buildV4WritePlan(oldConfig, newConfig);
@@ -695,11 +695,11 @@ phases:
     try {
       writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
       writeFile(dir, 'profiles/safety.router.yaml', SAFETY_PROFILE_YAML);
-      const profilesOld = loadV4Profiles(dir);
+      const profilesOld = loadV4Profiles(dir, { includeGlobal: false });
       const oldConfig = assembleV4Config(MINIMAL_CORE_CONFIG, profilesOld);
 
       fs.unlinkSync(path.join(dir, 'profiles/safety.router.yaml'));
-      const profilesNew = loadV4Profiles(dir);
+      const profilesNew = loadV4Profiles(dir, { includeGlobal: false });
       const newConfig = assembleV4Config(MINIMAL_CORE_CONFIG, profilesNew);
 
       const plan = buildV4WritePlan(oldConfig, newConfig);
@@ -717,7 +717,7 @@ phases:
     try {
       writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
       const config = assembleV4Config(MINIMAL_CORE_CONFIG, profiles);
 
       const plan = buildV4WritePlan(config, config);
@@ -736,7 +736,7 @@ phases:
     try {
       writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
       const oldConfig = assembleV4Config(MINIMAL_CORE_CONFIG, profiles);
       const newConfig = assembleV4Config(
         { ...MINIMAL_CORE_CONFIG, activation_state: 'inactive' },

@@ -81,7 +81,7 @@ describe('generateSyncManifest — v1 manifest (no custom SDDs)', () => {
       const catalogsDir = path.join(tmp, 'catalogs');
       fs.mkdirSync(catalogsDir, { recursive: true });
       writeFile(contractsDir, 'roles/agent.md', MINIMAL_CONTRACT_ROLE);
-      const { manifest } = generateSyncManifest(contractsDir, catalogsDir);
+      const { manifest } = generateSyncManifest(contractsDir, catalogsDir, { includeGlobal: false });
       assert.equal(manifest.version, 1);
     } finally {
       cleanup(tmp);
@@ -94,7 +94,7 @@ describe('generateSyncManifest — v1 manifest (no custom SDDs)', () => {
       const contractsDir = path.join(tmp, 'contracts');
       const nonExistentCatalogs = path.join(tmp, 'catalogs');
       writeFile(contractsDir, 'roles/agent.md', MINIMAL_CONTRACT_ROLE);
-      const { manifest } = generateSyncManifest(contractsDir, nonExistentCatalogs);
+      const { manifest } = generateSyncManifest(contractsDir, nonExistentCatalogs, { includeGlobal: false });
       assert.equal(manifest.version, 1);
     } finally {
       cleanup(tmp);
@@ -151,7 +151,7 @@ describe('generateSyncManifest — v2 manifest (with custom SDDs)', () => {
       const catalogsDir = path.join(tmp, 'catalogs');
       writeFile(contractsDir, 'roles/agent.md', MINIMAL_CONTRACT_ROLE);
       writeFile(catalogsDir, 'game-design/sdd.yaml', GAME_DESIGN_SDD_YAML);
-      const { manifest } = generateSyncManifest(contractsDir, catalogsDir);
+      const { manifest } = generateSyncManifest(contractsDir, catalogsDir, { includeGlobal: false });
       assert.ok(Array.isArray(manifest.custom_sdds));
       assert.equal(manifest.custom_sdds.length, 1);
     } finally {

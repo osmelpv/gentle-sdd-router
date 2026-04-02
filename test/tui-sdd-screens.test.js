@@ -146,7 +146,7 @@ phases:
       const catalogsDir = path.join(tmp, 'catalogs');
       fs.mkdirSync(catalogsDir);
       const { loadCustomSdds } = await import('../src/core/sdd-catalog-io.js');
-      const result = loadCustomSdds(catalogsDir);
+      const result = loadCustomSdds(catalogsDir, { includeGlobal: false });
       // Empty state — TUI should show "No custom SDDs" message
       assert.deepEqual(result, []);
     } finally {
@@ -162,7 +162,7 @@ phases:
       writeFile(catalogsDir, 'alpha/sdd.yaml', GAME_SDD_YAML.replace('game-design', 'alpha'));
       writeFile(catalogsDir, 'beta/sdd.yaml', GAME_SDD_YAML.replace('game-design', 'beta'));
       const { loadCustomSdds } = await import('../src/core/sdd-catalog-io.js');
-      const result = loadCustomSdds(catalogsDir);
+      const result = loadCustomSdds(catalogsDir, { includeGlobal: false });
       // TUI sdd-list should show 3 items
       assert.equal(result.length, 3);
     } finally {

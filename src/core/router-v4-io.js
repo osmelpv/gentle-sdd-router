@@ -1,6 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseYaml } from './router.js';
+
+/** Resolve the plugin's own router/ directory (where built-in presets live). */
+const __pluginDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const PLUGIN_PROFILES_DIR = path.join(__pluginDir, 'router', 'profiles');
+const PLUGIN_CATALOGS_DIR = path.join(__pluginDir, 'router', 'catalogs');
 
 const EXECUTION_HINT_FIELDS = new Set([
   'execute',
@@ -220,15 +226,51 @@ export function validateProfileFile(profile, filePath) {
   return profile;
 }
 
-export function loadV4Profiles(routerDir) {
-  const profilesDir = path.join(routerDir, 'profiles');
+/**
+ * Load v4 profile files from project profiles/ directory AND plugin global profiles.
+ * Project profiles win over global ones if they share a name.
+ *
+ * @param {string} routerDir - Project router/ directory
+ * @param {{ includeGlobal?: boolean }} [options] - Set includeGlobal: false to skip plugin profiles (for testing)
+ */
+export function loadV4Profiles(routerDir, options = {}) {
+  const includeGlobal = options.includeGlobal !== false && process.env.GSR_TEST_NO_GLOBAL !== '1';
+  const projectProfilesDir = path.join(routerDir, 'profiles');
 
-  if (!fs.existsSync(profilesDir)) {
-    throw new Error(`No profiles directory found at "${profilesDir}". A v4 router requires at least one profile file.`);
+  if (!fs.existsSync(projectProfilesDir)) {
+    throw new Error(`No profiles directory found at "${projectProfilesDir}". A v4 router requires at least one profile file.`);
   }
 
   const results = [];
 
+  // 1. Load project-local profiles FIRST (they win over global)
+  //    Do NOT deduplicate here — assembleV4Config detects intra-project duplicates.
+  _loadProfilesFromDir(projectProfilesDir, results, null);
+
+  // 2. Load plugin global profiles (only those NOT already loaded from project)
+  if (includeGlobal) {
+    const globalProfilesDir = PLUGIN_PROFILES_DIR;
+    if (fs.existsSync(globalProfilesDir) && globalProfilesDir !== projectProfilesDir) {
+      // Build the skip set from already-loaded project profiles
+      const projectNames = new Set(results.map(r => r.content.name ?? r.fileName.replace('.router.yaml', '')));
+      _loadProfilesFromDir(globalProfilesDir, results, projectNames);
+    }
+  }
+
+  if (results.length === 0) {
+    throw new Error(`No profile files found under "${projectProfilesDir}". A v4 router requires at least one *.router.yaml file.`);
+  }
+
+  return results;
+}
+
+/**
+ * Scan a profiles directory for *.router.yaml files and subdirectories.
+ * @param {string} profilesDir
+ * @param {Array} results - accumulator array
+ * @param {Set|null} skipNames - names to skip (used for global vs project deduplication). Pass null to skip no names.
+ */
+function _loadProfilesFromDir(profilesDir, results, skipNames) {
   const topEntries = fs.readdirSync(profilesDir);
 
   for (const entry of topEntries) {
@@ -249,8 +291,11 @@ export function loadV4Profiles(routerDir) {
         const raw = fs.readFileSync(filePath, 'utf8');
         const content = parseYaml(raw);
 
-        validateProfileFile(content, filePath);
+        // Project profiles win over global — skip if name already loaded from project
+        const presetName = content.name ?? fileName.replace('.router.yaml', '');
+        if (skipNames && skipNames.has(presetName)) continue;
 
+        validateProfileFile(content, filePath);
         results.push({ filePath, fileName, catalogName, content });
       }
     } else if (entry.endsWith('.router.yaml')) {
@@ -260,17 +305,13 @@ export function loadV4Profiles(routerDir) {
       const raw = fs.readFileSync(filePath, 'utf8');
       const content = parseYaml(raw);
 
-      validateProfileFile(content, filePath);
+      const presetName = content.name ?? fileName.replace('.router.yaml', '');
+      if (skipNames && skipNames.has(presetName)) continue;
 
+      validateProfileFile(content, filePath);
       results.push({ filePath, fileName, catalogName, content });
     }
   }
-
-  if (results.length === 0) {
-    throw new Error(`No profile files found under "${profilesDir}". A v4 router requires at least one *.router.yaml file.`);
-  }
-
-  return results;
 }
 
 export function assembleV4Config(coreConfig, profiles) {

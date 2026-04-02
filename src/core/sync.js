@@ -105,16 +105,17 @@ export function readCatalogContracts(catalogDir, catalogsDir) {
  *
  * @param {string} contractsDir - Path to router/contracts/
  * @param {string} [catalogsDir] - Optional path to router/catalogs/ for custom SDDs
+ * @param {{ includeGlobal?: boolean }} [options] - Set includeGlobal: false to skip plugin catalogs (for testing)
  * @returns {{ manifest: object, contractCount: number, manifestPath: string }}
  */
-export function generateSyncManifest(contractsDir, catalogsDir) {
+export function generateSyncManifest(contractsDir, catalogsDir, options = {}) {
   const contracts = readContracts(contractsDir);
 
   // Load custom SDDs if catalogsDir provided
   let customSdds = [];
   if (catalogsDir) {
     try {
-      customSdds = loadCustomSdds(catalogsDir);
+      customSdds = loadCustomSdds(catalogsDir, options);
     } catch {
       // Non-blocking: catalog load errors don't break the sync
       customSdds = [];

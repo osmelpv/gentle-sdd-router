@@ -21,7 +21,8 @@ import {
   renameSync,
   rmSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { parseYaml, stringifyYaml } from './router.js';
 
@@ -338,22 +339,56 @@ function detectCycles(phases, filePath) {
  * @param {string} catalogsDir - Path to router/catalogs/
  * @returns {SddDefinition[]}
  */
-export function loadCustomSdds(catalogsDir) {
-  if (!existsSync(catalogsDir)) {
-    return [];
+/**
+ * Load custom SDD definitions from project catalogs/ AND plugin global catalogs.
+ * Project catalogs win over global ones if they share a name.
+ *
+ * @param {string} catalogsDir - Project router/catalogs/ directory
+ * @param {{ includeGlobal?: boolean }} [options] - Set includeGlobal: false to skip plugin catalogs (for testing)
+ */
+export function loadCustomSdds(catalogsDir, options = {}) {
+  const includeGlobal = options.includeGlobal !== false && process.env.GSR_TEST_NO_GLOBAL !== '1';
+  const sdds = [];
+  const seenNames = new Set();
+
+  // 1. Load project-local catalogs FIRST (they win over global)
+  _loadSddsFromDir(catalogsDir, sdds, seenNames);
+
+  // 2. Load plugin global catalogs (sdd-debug, etc.)
+  if (includeGlobal) {
+    const pluginCatalogsDir = _getPluginCatalogsDir();
+    if (pluginCatalogsDir && existsSync(pluginCatalogsDir) && pluginCatalogsDir !== catalogsDir) {
+      _loadSddsFromDir(pluginCatalogsDir, sdds, seenNames);
+    }
   }
+
+  return sdds;
+}
+
+/** Resolve the plugin's own catalogs directory. */
+function _getPluginCatalogsDir() {
+  try {
+    const __dir = dirname(fileURLToPath(import.meta.url));
+    return join(__dir, '..', '..', 'router', 'catalogs');
+  } catch {
+    return null;
+  }
+}
+
+function _loadSddsFromDir(dir, sdds, seenNames) {
+  if (!existsSync(dir)) return;
 
   let entries;
   try {
-    entries = readdirSync(catalogsDir);
+    entries = readdirSync(dir);
   } catch {
-    return [];
+    return;
   }
 
-  const sdds = [];
-
   for (const entry of entries) {
-    const entryPath = join(catalogsDir, entry);
+    if (seenNames.has(entry)) continue; // project wins over global
+
+    const entryPath = join(dir, entry);
     let stat;
     try {
       stat = statSync(entryPath);
@@ -368,10 +403,9 @@ export function loadCustomSdds(catalogsDir) {
     const raw = readFileSync(sddYamlPath, 'utf8');
     const parsed = parseYaml(raw);
     const sdd = validateSddYaml(parsed, sddYamlPath);
+    seenNames.add(entry);
     sdds.push(sdd);
   }
-
-  return sdds;
 }
 
 /**

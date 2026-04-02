@@ -352,12 +352,14 @@ test('CLI apply opencode previews agents without writing any files', async () =>
     chunks.push(String(chunk));
     return true;
   };
+  process.env.GSR_TEST_NO_GLOBAL = '1';
 
   try {
     await runCli(['apply', 'opencode']);
   } finally {
     process.stdout.write = originalWrite;
     process.chdir(originalCwd);
+    delete process.env.GSR_TEST_NO_GLOBAL;
     fs.rmSync(tempDir, { recursive: true });
   }
 

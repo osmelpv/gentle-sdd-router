@@ -71,7 +71,7 @@ describe('local-hybrid preset — file and basic structure', () => {
       fs.mkdirSync(path.join(dir, 'profiles'), { recursive: true });
       fs.copyFileSync(PRESET_PATH, path.join(dir, 'profiles', 'local-hybrid.router.yaml'));
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
       assert.equal(profiles.length, 1);
       assert.equal(profiles[0].content.name, 'local-hybrid');
       assert.equal(profiles[0].catalogName, 'default');

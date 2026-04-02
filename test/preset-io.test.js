@@ -63,7 +63,7 @@ const MINIMAL_CORE_CONFIG = {
 function makeAssembledConfig(dir) {
   writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
   writeFile(dir, 'profiles/safety.router.yaml', SAFETY_PROFILE_YAML);
-  const profiles = loadV4Profiles(dir);
+  const profiles = loadV4Profiles(dir, { includeGlobal: false });
   return assembleV4Config(MINIMAL_CORE_CONFIG, profiles);
 }
 
@@ -255,7 +255,7 @@ describe('exportAllPresets', () => {
       writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
       writeFile(dir, 'profiles/team/safety.router.yaml', SAFETY_PROFILE_YAML);
 
-      const profiles = loadV4Profiles(dir);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
       const config = assembleV4Config(MINIMAL_CORE_CONFIG, profiles);
       const result = exportAllPresets(config);
 
