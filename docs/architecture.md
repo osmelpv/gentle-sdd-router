@@ -237,7 +237,7 @@ All file writes use temp-file + rename pattern. For v4 multi-file saves, profile
 
 ### Simple status vocabulary
 
-`gsr status` (without flags) shows a simplified view: emoji, one-line message, active preset, activation state. Full details are behind `--verbose`. This hides overlay mechanics from everyday use.
+`gsr status` (without flags) shows: state header (Ready/Needs sync/Not installed), active preset with phase count, catalog, identity, debug wiring, enabled catalogs, and a one-line SDD connections summary. `--verbose` adds: full configuration, routes with pricing, all presets with debug variants, and an ASCII **SDD CONNECTIONS** graph showing phase trees with invoke arrows between SDDs.
 
 ## Dependencies
 

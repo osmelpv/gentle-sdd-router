@@ -72,19 +72,27 @@ gsr status
 
 **Expected output** (simplified):
 ```
-✅ Router active
-Preset: multivendor
-Activation: active
-Run `gsr status --verbose` for full details.
+✅ Ready — Synchronized
+
+Preset      multivendor (8 phases)
+Catalog     default (SDD-Orchestrator)
+Identity    AGENTS.md inherited
+Debug       sdd-debug-mono → on_issues
+Catalogs    2 enabled: default, sdd-debug
+Connections SDD-Orchestrator/verify → sdd-debug-mono (on_issues)
+
+  gsr status --verbose   full routes, pricing & SDD graph
+  gsr route use <name>   switch preset
+  gsr sync               re-sync everything
 ```
 
-For full route details:
+For full details including routes, pricing, all presets, and the SDD connections graph:
 
 ```bash
 gsr status --verbose
 ```
 
-**Expected output** includes: installed state, controller, activation, schema version, active preset, config path, and all resolved routes per phase.
+**Expected output** includes: configuration (schema, controller, manifest), active preset with identity and debug wiring, resolved routes per phase with pricing and context window, all catalogs and presets, and an ASCII **SDD CONNECTIONS** graph showing how SDDs invoke each other (e.g., verify → sdd-debug).
 
 ### Step 5 — Create a catalog (optional)
 

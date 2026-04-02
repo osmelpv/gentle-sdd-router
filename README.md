@@ -151,10 +151,14 @@ gsr status
 
 > **Example**: `gsr status` shows:
 > ```
-> ✅ Router active
-> Preset: multivendor
-> Activation: active
-> Run `gsr status --verbose` for full details.
+> ✅ Ready — Synchronized
+>
+> Preset      multivendor (8 phases)
+> Catalog     default (SDD-Orchestrator)
+> Identity    AGENTS.md inherited
+> Debug       sdd-debug-mono → on_issues
+> Catalogs    2 enabled: default, sdd-debug
+> Connections SDD-Orchestrator/verify → sdd-debug-mono (on_issues)
 > ```
 
 See [Getting Started](docs/getting-started.md) for the full AI-operable setup guide with expected outputs per step.
