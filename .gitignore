@@ -42,6 +42,9 @@ docker-compose.override.yml
 coverage/
 .nyc_output/
 
+# Local task notes (not part of repo)
+tareas/
+
 # Build artifacts
 dist/
 *.tgz
