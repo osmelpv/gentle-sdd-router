@@ -419,25 +419,25 @@ gsr sdd invoke art-production/asset-pipeline \
   --from game-design/game-design \
   --phase level-design \
   --payload "Level 3 assets needed"
-# Output: Invocation created: 550e8400-e29b-41d4-a716-446655440000
+# Output: Invocation created: inv-550e8400-e29b-41d4-a716-446655440000
 ```
 
 #### 3. Complete the invocation when the callee finishes
 
 ```bash
-gsr sdd invoke-complete 550e8400-e29b-41d4-a716-446655440000 \
+gsr sdd invoke-complete inv-550e8400-e29b-41d4-a716-446655440000 \
   --result "All assets delivered"
 ```
 
 #### 4. Check status
 
 ```bash
-gsr sdd invoke-status 550e8400-e29b-41d4-a716-446655440000
+gsr sdd invoke-status inv-550e8400-e29b-41d4-a716-446655440000
 gsr sdd invocations                        # list all
 gsr sdd invocations --status pending       # filter by status
 ```
 
-**Important**: `gsr` writes the invocation record to `.gsr/invocations/{id}.json`. It never executes the callee. Your orchestrator reads the record and launches the target SDD.
+**Important**: `gsr` writes the invocation record to `.gsr/invocations/inv-{id}.json`. It never executes the callee. Your orchestrator reads the record and launches the target SDD.
 
 ### Flags
 

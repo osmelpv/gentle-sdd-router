@@ -1,7 +1,7 @@
 <div align="center">
 
 <a href="assets/img/gsr-logo.png">
-<img src="assets/img/gsr-logo.png" alt="GSR — Gentle SDD Router" width="200">
+<img src="assets/img/gsr-logo.png" alt="GSR — Gentle SDD Router" width="360">
 </a>
 
 <h1>Gentle SDD Router</h1>
@@ -27,15 +27,137 @@
 
 ---
 
-**`gentle-sdd-router`** is a declarative, non-executing router. The name is the architecture:
+## Why Are You Here?
 
-| Component | Pillar | What it does |
-|-----------|--------|--------------|
-| **gentle** | AI Context System | Identity, AGENTS.md inheritance, persona contracts |
-| **sdd** | Dynamic Workflow Factory | Custom phases, cross-catalog invocation, department workflows |
-| **router** | Model Routing | Phase-based model assignment, fallbacks, judge/radar patterns |
+**"I want multi-model routing with fallbacks"** → Jump to [Router — Model Routing](#-router--model-routing)
 
-Each pillar is useful independently. All three compose naturally. `gsr` reads YAML, resolves routes, and writes invocation records. **It never calls models, runs providers, or executes orchestration.**
+**"I want custom AI workflows with cross-team collaboration"** → Jump to [SDD — Dynamic Workflow Factory](#-sdd--dynamic-workflow-factory)
+
+**"I want consistent AI personas across all my agents"** → Jump to [Gentle — AI Context System](#-gentle--ai-context-system)
+
+**"I want all three"** → Read on. The name IS the architecture, and they compose naturally.
+
+---
+
+## The Name IS the Architecture
+
+Here's the thing — most tools name themselves after a feature. `gsr` names itself after its *entire model of the world*:
+
+| Pillar | WHO / WHAT / WITH WHAT | What it does |
+|--------|------------------------|--------------|
+| **gentle** | **WHO** your agents are | Identity, AGENTS.md inheritance, persona contracts |
+| **sdd** | **WHAT** they do | Custom phases, cross-catalog invocation, department workflows |
+| **router** | **WITH WHAT** they work | Phase-based model assignment, fallbacks, judge/radar patterns |
+
+Think of it this way: **Gentle** gives your agents personality. **SDD** gives them purpose. **Router** gives them the right tools for each job. All three compose into one coherent AI operations layer — declarative, non-executing, report-only.
+
+`gsr` reads YAML, resolves routes, and writes records. **It never calls models, runs providers, or executes orchestration.** Execution belongs to the host.
+
+---
+
+## For AI Agents — Operational Context
+
+> **This README is your operational manual.** An AI agent can install, configure, and manage GSR for any project by following these instructions. No human intervention needed.
+
+### Install & Initialize
+
+```bash
+npm install -g gentle-sdd-router
+cd <project>
+gsr setup install
+gsr sync
+gsr status
+```
+
+### Common Operations
+
+```bash
+gsr route use <preset>                     # Switch routing preset
+gsr catalog create <name>                  # Create catalog (auto-syncs)
+gsr sdd create <name>                      # Create custom SDD workflow
+gsr identity show                          # Check resolved agent identity
+gsr sdd invoke <catalog>/<sdd> \
+  --from <caller-catalog>/<caller-sdd> \
+  --phase <phase>                          # Cross-catalog invocation record
+gsr sync                                   # Full sync (idempotent, always safe)
+```
+
+### What You Need to Know
+
+- `gsr sync` does EVERYTHING — contracts, overlay, commands, validation. Run it freely.
+- Creating catalogs and profiles auto-triggers sync. You don't need to call it manually after those.
+- `gsr status` tells you if everything is OK. `gsr status --verbose` gives full route details for debugging.
+- Identity inherits from `AGENTS.md` automatically — no manual configuration needed.
+- **GSR NEVER executes** — it writes config and records that the host reads and acts on.
+- Invocation IDs use the `inv-` prefix: `inv-{uuid}` (e.g., `inv-550e8400-e29b-41d4-a716-446655440000`).
+
+### Decision Tree for AI
+
+| Situation | Action |
+|-----------|--------|
+| User asks to set up GSR | `gsr setup install && gsr sync` |
+| User wants a different model | `gsr route use <preset>` |
+| User needs a custom workflow | `gsr sdd create <name>` |
+| User needs department collaboration | Set up `invoke` in `sdd.yaml`, then `gsr sdd invoke` |
+| Something seems wrong | `gsr status --verbose` |
+| User modified agents manually | `gsr sync` (or `gsr sync --force` to overwrite) |
+| No router config found | `gsr setup install` |
+
+---
+
+## Installation
+
+### From npm (recommended)
+
+```bash
+npm install -g gentle-sdd-router
+```
+
+### From source
+
+```bash
+git clone https://github.com/osmelpv/gentle-sdd-router.git
+cd gentle-sdd-router
+npm install && npm link
+```
+
+---
+
+## Quick Start
+
+```bash
+# 1. Install globally
+npm install -g gentle-sdd-router
+
+# 2. Initialize in your project
+cd your-project
+gsr setup install
+
+# 3. Sync everything (contracts + overlay + commands + validation)
+gsr sync
+
+# 4. Check status
+gsr status
+```
+
+> **Example**: After `gsr sync` you'll see:
+> ```
+> Synced 9 role contracts + 10 phase compositions (19 total).
+> Manifest: router/contracts/.sync-manifest.json
+> 3 agent(s) synced to opencode.json.
+> Commands: 5 written, 0 already up to date.
+> Synchronized.
+> ```
+
+> **Example**: `gsr status` shows:
+> ```
+> ✅ Router active
+> Preset: multivendor
+> Activation: active
+> Run `gsr status --verbose` for full details.
+> ```
+
+See [Getting Started](docs/getting-started.md) for the full AI-operable setup guide with expected outputs per step.
 
 ---
 
@@ -43,17 +165,39 @@ Each pillar is useful independently. All three compose naturally. `gsr` reads YA
 
 ### 🟣 Gentle — AI Context System
 
-The **gentle** pillar manages the AI agent identity and context ecosystem. It:
+The **gentle** pillar manages agent identity and context. It:
 
 - Inherits `AGENTS.md` context through directory trees (project → global → user)
 - Defines per-preset persona overrides (Gentleman style, neutral, custom)
-- Ships agent contracts (9 role contracts + 10 phase compositions) as skills
+- Ships 9 role contracts + 10 phase compositions as skills
 - Publishes `/gsr` session-sync metadata for the host TUI
 
 ```bash
 gsr identity show [--preset <name>]   # Resolve layered AGENTS.md context
 gsr sync                               # Push contracts to host (idempotent)
 ```
+
+> **Example**: `gsr identity show` resolves the full context chain:
+> ```
+> === multivendor ===
+> Sources: global-agents-md, project-agents-md
+> Prompt:
+> # Senior Architect, 15+ years experience...
+> (inherited from AGENTS.md — no manual config needed)
+> ```
+
+> **Example**: Adding identity to a preset YAML:
+> ```yaml
+> # router/profiles/my-preset.router.yaml
+> name: my-preset
+> identity:
+>   inherit_agents_md: true    # checked by default in TUI
+>   persona: gentleman
+>   context: "Extra context for this specific preset"
+> phases:
+>   orchestrator:
+>     - target: anthropic/claude-opus-4-6
+> ```
 
 Start here if you want **consistent AI personas** and **inherited context** across all your agents.
 
@@ -87,7 +231,6 @@ phases:
     intent: "Design levels and encounters"
     depends_on:
       - concept
-    # Invoke another catalog when this phase runs
     invoke:
       catalog: art-production
       sdd: asset-pipeline
@@ -107,13 +250,13 @@ gsr sdd invoke art-production/asset-pipeline \
   --payload "Level 3 assets needed"
 
 # The command prints the invocation id:
-# Invocation created: 550e8400-e29b-41d4-a716-446655440000
+# Invocation created: inv-550e8400-e29b-41d4-a716-446655440000
 
 # When the callee completes, mark it:
-gsr sdd invoke-complete 550e8400-e29b-41d4-a716-446655440000 --result "Assets delivered"
+gsr sdd invoke-complete inv-550e8400-e29b-41d4-a716-446655440000 --result "Assets delivered"
 
 # Check status:
-gsr sdd invoke-status 550e8400-e29b-41d4-a716-446655440000
+gsr sdd invoke-status inv-550e8400-e29b-41d4-a716-446655440000
 
 # List all invocations (filter by status):
 gsr sdd invocations [--status pending|completed|failed]
@@ -124,6 +267,34 @@ gsr sdd invocations [--status pending|completed|failed]
 #### Department-Style Collaboration
 
 Cross-catalog invocation enables department workflows: `game-design` invokes `art-production`, which invokes `sound-design`. Each catalog is a team. Each invocation record is a work order. `gsr` manages the records — your orchestrator manages the work.
+
+> **Example**: Full department collaboration flow:
+> ```bash
+> # 1. Create department catalogs
+> gsr sdd create game-design
+> gsr sdd create art-production
+> gsr sdd create sound-design
+>
+> # 2. In game-design/sdd.yaml, level-design phase invokes art-production:
+> #    invoke:
+> #      catalog: art-production
+> #      sdd: asset-pipeline
+> #      payload_from: output
+> #      await: true
+>
+> # 3. During execution, the sub-agent creates the invocation:
+> gsr sdd invoke art-production/asset-pipeline \
+>   --from game-design/game-design \
+>   --phase level-design \
+>   --payload "Forest level — bioluminescent trees, Nature faction style"
+> # → Invocation created: inv-a1b2c3d4-...
+>
+> # 4. When art-production completes all its phases:
+> gsr sdd invoke-complete inv-a1b2c3d4-... \
+>   --result "Assets delivered: tree_bioluminescent.fbx, forest_ground.png"
+>
+> # 5. The caller reads the result and continues its phase
+> ```
 
 Start here if you want **named development workflows** with **cross-team coordination**.
 
@@ -191,53 +362,36 @@ gsr route show                        # See resolved routes
 gsr status                            # Current state + pricing
 ```
 
+> **Example**: A preset YAML assigns models per phase with fallbacks:
+> ```yaml
+> # router/profiles/multivendor.router.yaml
+> name: multivendor
+> phases:
+>   orchestrator:
+>     - target: anthropic/claude-opus-4-6
+>       kind: lane
+>       role: agent
+>   explore:
+>     - target: openai/gpt-5.4
+>       kind: lane
+>       role: agent
+>       fallbacks:
+>         - anthropic/claude-sonnet-4-6
+>         - google/gemini-3-pro
+>   verify:
+>     - target: openai/gpt-5.4
+>       kind: lane
+>       role: judge
+> ```
+
+> **Example**: Switch presets instantly:
+> ```bash
+> gsr route use ollama        # switch to 100% local models
+> gsr route use multivendor   # switch back to multi-provider
+> gsr route show              # see what model goes where
+> ```
+
 Start here if you want **multi-model routing** with **fallbacks and judge/radar patterns**.
-
----
-
-## Installation
-
-### From npm (recommended)
-
-```bash
-npm install -g gentle-sdd-router
-```
-
-### From source
-
-```bash
-git clone https://github.com/osmelpv/gentle-sdd-router.git
-cd gentle-sdd-router
-npm install && npm link
-```
-
-### First setup
-
-```bash
-gsr                    # interactive wizard
-gsr setup install      # or direct install
-```
-
----
-
-## Quick Start
-
-```bash
-# 1. Install globally
-npm install -g gentle-sdd-router
-
-# 2. Initialize in your project
-cd your-project
-gsr setup install
-
-# 3. Sync contracts + overlay (do everything at once)
-gsr sync
-
-# 4. Check status
-gsr status
-```
-
-See [Getting Started](docs/getting-started.md) for the full AI-operable setup guide.
 
 ---
 
@@ -309,6 +463,86 @@ Each category supports `help`: `gsr route help`, `gsr catalog help`, `gsr sdd he
 
 ---
 
+## Architecture
+
+### Non-executing boundary
+
+`gsr` is a **report-only, non-executing** tool. It:
+
+- Reads and writes YAML configuration
+- Resolves phase routes and fallback chains
+- Writes invocation records to `.gsr/invocations/` (pure data)
+- Reports compatibility and boundary metadata
+- **Never** calls models, providers, or agents
+- **Never** evaluates `invoke` declarations — only persists them as records
+
+Execution belongs to the host (gentle-ai, agent-teams-lite, or your own orchestrator).
+
+### Invocation Records
+
+When a phase declares `invoke:`, `gsr sdd invoke` writes:
+
+```
+.gsr/invocations/inv-{uuid}.json
+```
+
+```json
+{
+  "id": "inv-550e8400-e29b-41d4-a716-446655440000",
+  "status": "pending",
+  "caller": { "catalog": "game-design", "sdd": "game-design", "phase": "level-design" },
+  "callee": { "catalog": "art-production", "sdd": "asset-pipeline" },
+  "payload": "Level 3 assets needed",
+  "result": null,
+  "created_at": "2026-04-01T00:00:00.000Z",
+  "updated_at": "2026-04-01T00:00:00.000Z",
+  "completed_at": null
+}
+```
+
+The record is data. Your orchestrator decides what to do with it.
+
+### Schema versions
+
+| Version | Structure | Status |
+|---------|-----------|--------|
+| v1 | Single file, profiles with phases | Supported (backward compat) |
+| v3 | Single file, catalogs with presets and metadata | Supported (backward compat) |
+| v4 | Multi-file: core + profiles directory | **Current** (default for new installs) |
+
+---
+
+## Profile Structure
+
+### Multi-file v4 layout
+
+```
+router/
+  router.yaml                    # core config
+  profiles/
+    multivendor.router.yaml      # one preset per file
+    claude.router.yaml
+    ...
+```
+
+### Core file (`router/router.yaml`)
+
+```yaml
+version: 4
+active_preset: multivendor
+activation_state: active
+metadata:
+  installation_contract:
+    source_of_truth: router/router.yaml
+    runtime_execution: false
+catalogs:
+  default:
+    displayName: SDD-Orchestrator
+    enabled: true
+```
+
+---
+
 ## Sync Manifest Versions
 
 The `.sync-manifest.json` file version reflects what the catalog contains:
@@ -345,101 +579,6 @@ router/contracts/
 
 ---
 
-## Profile Structure
-
-### Multi-file v4 layout
-
-```
-router/
-  router.yaml                    # core config
-  profiles/
-    multivendor.router.yaml      # one preset per file
-    claude.router.yaml
-    ...
-```
-
-### Core file (`router/router.yaml`)
-
-```yaml
-version: 4
-active_preset: multivendor
-activation_state: active
-metadata:
-  installation_contract:
-    source_of_truth: router/router.yaml
-    runtime_execution: false
-catalogs:
-  default:
-    displayName: SDD-Orchestrator
-    enabled: true
-```
-
----
-
-## Architecture
-
-### Non-executing boundary
-
-`gsr` is a **report-only, non-executing** tool. It:
-
-- Reads and writes YAML configuration
-- Resolves phase routes and fallback chains
-- Writes invocation records to `.gsr/invocations/` (pure data)
-- Reports compatibility and boundary metadata
-- **Never** calls models, providers, or agents
-- **Never** evaluates `invoke` declarations — only persists them as records
-
-Execution belongs to the host (gentle-ai, agent-teams-lite, or your own orchestrator).
-
-### Invocation Records
-
-When a phase declares `invoke:`, `gsr sdd invoke` writes:
-
-```
-.gsr/invocations/{uuid}.json
-```
-
-```json
-{
-  "id": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "pending",
-  "caller": { "catalog": "game-design", "sdd": "game-design", "phase": "level-design" },
-  "callee": { "catalog": "art-production", "sdd": "asset-pipeline" },
-  "payload": "Level 3 assets needed",
-  "result": null,
-  "created_at": "2026-04-01T00:00:00.000Z",
-  "updated_at": "2026-04-01T00:00:00.000Z",
-  "completed_at": null
-}
-```
-
-The record is data. Your orchestrator decides what to do with it.
-
-### Schema versions
-
-| Version | Structure | Status |
-|---------|-----------|--------|
-| v1 | Single file, profiles with phases | Supported (backward compat) |
-| v3 | Single file, catalogs with presets and metadata | Supported (backward compat) |
-| v4 | Multi-file: core + profiles directory | **Current** (default for new installs) |
-
----
-
-## Documentation
-
-| Topic | Description |
-|-------|-------------|
-| [Getting Started](docs/getting-started.md) | AI-operable setup guide: install, sync, status, identity, SDDs, invoke |
-| [Architecture](docs/architecture.md) | How gsr works, module structure, invocation flow, design decisions |
-| [Presets Guide](docs/presets-guide.md) | Built-in presets, creating custom presets, sharing |
-| [Import/Export Guide](docs/import-export.md) | Export presets, compact sharing strings, import flows |
-| [Migration Guide](docs/migration-guide.md) | Upgrading schema versions safely |
-| [Release Checklist](docs/release-checklist.md) | npm publish readiness and launch checklist |
-| [Host Adoption (EN)](docs/host-adoption.en.md) | Host-local install/uninstall for OpenCode and other TUIs |
-| [Host Adoption (ES)](docs/host-adoption.es.md) | Adopcion host-local para OpenCode y otros TUIs |
-
----
-
 ## Standalone Mode
 
 `gsr` works with or without [gentle-ai](https://github.com/Gentleman-Programming/gentle-ai) installed:
@@ -462,25 +601,21 @@ gsr setup update --apply         # apply with automatic backup
 
 ## Boundary Notes
 
-- external router boundary, non-executing.
-- `router/router.yaml` is the source of truth.
-- does not execute models, providers, or agent orchestration.
-- exposes `/gsr` session-sync metadata for the active host TUI, but slash-command registration stays host-owned and non-executing.
-- browse/compare visibility flags are explicit for availability, pricing, labels, and guidance; hidden metadata stays redacted
-- render opencode also surfaces a multimodel orchestration manager plan that only labels split/dispatch/merge/judge/radar steps
-- compatibility is explicit: schema v1, v3, and v4 are supported; v3 powers multimodel browse/compare and v4 is the current multi-file format
-- Host sync: /gsr session metadata is published for host-local slash-command registration; the router stays external and non-executing.
-- Multimodel browse/compare expose shareable schema v3 metadata only.
-- Compatibility: router.yaml versions 1, 3, and 4 are supported; v3 powers multimodel browse/compare and v4 is the current multi-file format.
-- Quickstart: run gsr status, then gsr bootstrap if router/router.yaml is missing.
-- Select the active profile in router/router.yaml without changing who is in control.
-- Show current router status. Use --verbose or --debug for full details.
-- Inspect shareable multimodel metadata projected from schema v3 without recommending or executing anything.
-- Compare two shareable multimodel projections without recommending or executing anything.
-- Inspect or apply a YAML-first install intent to router/router.yaml.
-- Show or apply a step-by-step bootstrap path for adoption.
-- Preview the OpenCode provider-execution, host-session sync, handoff, schema metadata, and multimodel orchestration manager boundaries without implying execution.
-- Invocation records (`.gsr/invocations/`) are pure data — non-executing, report-only
+These phrases form the contractual boundary of `gsr` and are referenced by coherence tests. They read as a functional summary of what `gsr` does and does not do.
+
+**Core boundary**: external router boundary, non-executing. `router/router.yaml` is the source of truth. `gsr` does not execute models, providers, or agent orchestration.
+
+**Session sync**: `gsr` exposes `/gsr` session-sync metadata for the active host TUI, but slash-command registration stays host-owned and non-executing. Host sync: /gsr session metadata is published for host-local slash-command registration; the router stays external and non-executing.
+
+**Visibility and metadata**: browse/compare visibility flags are explicit for availability, pricing, labels, and guidance; hidden metadata stays redacted. Multimodel browse/compare expose shareable schema v3 metadata only. Inspect shareable multimodel metadata projected from schema v3 without recommending or executing anything. Compare two shareable multimodel projections without recommending or executing anything.
+
+**Render and orchestration**: render opencode also surfaces a multimodel orchestration manager plan that only labels split/dispatch/merge/judge/radar steps. Preview the OpenCode provider-execution, host-session sync, handoff, schema metadata, and multimodel orchestration manager boundaries without implying execution.
+
+**Compatibility and routing**: compatibility is explicit: schema v1, v3, and v4 are supported; v3 powers multimodel browse/compare and v4 is the current multi-file format. Compatibility: router.yaml versions 1, 3, and 4 are supported; v3 powers multimodel browse/compare and v4 is the current multi-file format. Select the active profile in router/router.yaml without changing who is in control.
+
+**Setup and status**: Quickstart: run gsr status, then gsr bootstrap if router/router.yaml is missing. Show current router status. Use --verbose or --debug for full details. Inspect or apply a YAML-first install intent to router/router.yaml. Show or apply a step-by-step bootstrap path for adoption.
+
+**Invocation records**: Invocation records (`.gsr/invocations/`) are pure data — non-executing, report-only.
 
 ### Minimal v1 setup
 
@@ -499,6 +634,21 @@ profiles:
 ```
 
 - `gsr render opencode`
+
+---
+
+## Documentation
+
+| Topic | Description |
+|-------|-------------|
+| [Getting Started](docs/getting-started.md) | AI-operable setup guide: install, sync, status, identity, SDDs, invoke |
+| [Architecture](docs/architecture.md) | How gsr works, module structure, invocation flow, design decisions |
+| [Presets Guide](docs/presets-guide.md) | Built-in presets, creating custom presets, sharing |
+| [Import/Export Guide](docs/import-export.md) | Export presets, compact sharing strings, import flows |
+| [Migration Guide](docs/migration-guide.md) | Upgrading schema versions safely |
+| [Release Checklist](docs/release-checklist.md) | npm publish readiness and launch checklist |
+| [Host Adoption (EN)](docs/host-adoption.en.md) | Host-local install/uninstall for OpenCode and other TUIs |
+| [Host Adoption (ES)](docs/host-adoption.es.md) | Adopcion host-local para OpenCode y otros TUIs |
 
 ---
 
