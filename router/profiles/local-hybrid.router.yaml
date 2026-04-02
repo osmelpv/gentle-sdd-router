@@ -45,11 +45,11 @@ phases:
       role: primary
       fallbacks: opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
   apply:
-    - target: opencode/mimo-v2-pro-free
+    - target: ollama/devstral-small-2:24b
       kind: lane
       phase: apply
       role: primary
-      fallbacks: opencode/qwen3.6-plus-free, opencode/nemotron-3-super-free, opencode/minimax-m2.5-free, ollama/devstral-small-2:24b
+      fallbacks: opencode/qwen3.6-plus-free, opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, ollama/qwen3.5:35b
   verify:
     - target: opencode/nemotron-3-super-free
       kind: lane
@@ -63,8 +63,8 @@ phases:
       role: primary
       fallbacks: opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/devstral-small-2:24b
   archive:
-    - target: opencode/minimax-m2.5-free
+    - target: opencode/qwen3.6-plus-free
       kind: lane
       phase: archive
       role: primary
-      fallbacks: opencode/qwen3.6-plus-free, opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, ollama/nemotron-cascade-2
+      fallbacks: opencode/nemotron-3-super-free, opencode/mimo-v2-pro-free, opencode/minimax-m2.5-free, ollama/nemotron-cascade-2
