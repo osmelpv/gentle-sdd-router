@@ -75,6 +75,7 @@ gsr status
 gsr route use <preset>                     # Switch routing preset
 gsr catalog create <name>                  # Create catalog (auto-syncs)
 gsr sdd create <name>                      # Create custom SDD workflow
+gsr sdd global-sync                        # Materialize global sdd-* agents from GSR presets
 gsr identity show                          # Check resolved agent identity
 gsr sdd invoke <catalog>/<sdd> \
   --from <caller-catalog>/<caller-sdd> \
@@ -85,6 +86,7 @@ gsr sync                                   # Full sync (idempotent, always safe)
 ### What You Need to Know
 
 - `gsr sync` does EVERYTHING — contracts, overlay, commands, validation. Run it freely.
+- `gsr sdd global-sync` patches the global inherited `sdd-*` agents (the ones in `~/.config/opencode/opencode.json`) so they also route through GSR presets like `local-hybrid`.
 - Creating catalogs and profiles auto-triggers sync. You don't need to call it manually after those.
 - `gsr status` tells you if everything is OK. `gsr status --verbose` gives full route details for debugging.
 - Identity inherits from `AGENTS.md` automatically — no manual configuration needed.

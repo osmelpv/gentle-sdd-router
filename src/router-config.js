@@ -83,8 +83,14 @@ export {
 export { resolveControllerLabel, resolveExecutionOwners, detectGentleAi, resolvePersona } from './core/controller.js';
 
 export { resolveIdentity, readAgentsMd, resetIdentityCache, NEUTRAL_FALLBACK_PROMPT } from './core/agent-identity.js';
+export {
+  getGlobalSddAgentSpecs,
+  DEFAULT_PRESET as DEFAULT_GLOBAL_SDD_PRESET,
+  DEFAULT_DEBUG_PRESET as DEFAULT_GLOBAL_DEBUG_PRESET,
+} from './core/global-sdd-agent-routing.js';
 
 export { removeOpenCodeOverlay, deployGsrCommands, removeGsrCommands, cleanStaleGlobalOverlay } from './adapters/opencode/overlay-generator.js';
+export { materializeGlobalSddAgents } from './adapters/opencode/global-sdd-agent-materializer.js';
 
 export {
   createAgentTeamsLiteIntegrationContract,

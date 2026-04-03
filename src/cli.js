@@ -60,6 +60,10 @@ import {
   deployGsrCommands,
   removeGsrCommands,
   cleanStaleGlobalOverlay,
+  getGlobalSddAgentSpecs,
+  DEFAULT_GLOBAL_SDD_PRESET,
+  DEFAULT_GLOBAL_DEBUG_PRESET,
+  materializeGlobalSddAgents,
 } from './router-config.js';
 import { resolveControllerLabel, resolvePersona } from './core/controller.js';
 import { resolveIdentity, resetIdentityCache } from './core/agent-identity.js';
@@ -186,6 +190,8 @@ export async function runCli(argv) {
       // Allow 'setup' only for install/bootstrap subcommands
       if (command === 'setup' && (rest[0] === 'install' || rest[0] === 'bootstrap')) {
         // Allow through — setup install/bootstrap create the config
+      } else if (command === 'sdd' && rest[0] === 'global-sync') {
+        // Allow through — global SDD agent sync is plugin-global, not project-local.
       } else {
         process.stdout.write(
           'Gentle SDD Router is not installed in this project.\n' +
@@ -1927,6 +1933,7 @@ function renderCommandHelp(topic, subtopic) {
         '  list                                  List all custom SDDs.',
         '  show <name>                           Show SDD details (phases, triggers).',
         '  delete <name> [--yes]                 Delete a custom SDD.',
+        `  global-sync [--preset <name>] [--debug-preset <name>]  Materialize global sdd-* agents.`,
         '',
         'Examples:',
         '  gsr sdd create game-design --description "Game design workflow"',
@@ -1961,6 +1968,14 @@ function renderCommandHelp(topic, subtopic) {
         'Delete a custom SDD catalog and all its files.',
         '  <name>  SDD name to delete.',
         '  --yes   Skip confirmation prompt.',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'global-sync') {
+      return [
+        'Usage: gsr sdd global-sync [--preset <name>] [--debug-preset <name>]',
+        'Materialize/update global sdd-* agents in ~/.config/opencode/opencode.json using GSR presets.',
+        `  --preset <name>        Standard SDD preset (default: ${DEFAULT_GLOBAL_SDD_PRESET}).`,
+        `  --debug-preset <name>  Debug SDD preset (default: ${DEFAULT_GLOBAL_DEBUG_PRESET}).`,
       ].join('\n') + '\n';
     }
     return null;
@@ -2616,6 +2631,9 @@ export function runSddCommand(args) {
       const catalogsDir = path.join(path.dirname(configPath), 'catalogs');
       return runSddValidate(rest, catalogsDir);
     }
+    case 'global-sync': {
+      return runSddGlobalSync(rest);
+    }
     default:
       if (sub === 'help' || sub === '--help' || !sub) {
         process.stdout.write(renderCommandHelp('sdd') ?? '');
@@ -2871,6 +2889,36 @@ export function runSddValidate(args, catalogsDir) {
     process.stdout.write('SDD is valid with warnings.\n');
   } else {
     process.stdout.write('SDD is valid.\n');
+  }
+}
+
+/**
+ * Materialize global sdd-* agents in ~/.config/opencode/opencode.json using GSR presets.
+ * gsr sdd global-sync [--preset <name>] [--debug-preset <name>]
+ *
+ * @param {string[]} args
+ * @param {{ targetPath?: string, cwd?: string }} [options]
+ */
+export function runSddGlobalSync(args, options = {}) {
+  const presetIndex = args.indexOf('--preset');
+  const debugPresetIndex = args.indexOf('--debug-preset');
+  const preset = presetIndex !== -1 ? args[presetIndex + 1] : DEFAULT_GLOBAL_SDD_PRESET;
+  const debugPreset = debugPresetIndex !== -1 ? args[debugPresetIndex + 1] : DEFAULT_GLOBAL_DEBUG_PRESET;
+
+  if (!preset) throw new Error('gsr sdd global-sync requires a value after --preset.');
+  if (!debugPreset) throw new Error('gsr sdd global-sync requires a value after --debug-preset.');
+
+  const specs = getGlobalSddAgentSpecs({ preset, debugPreset, cwd: options.cwd ?? process.cwd() });
+  const result = materializeGlobalSddAgents(specs, options.targetPath);
+
+  process.stdout.write(`Global SDD agents synced: ${result.count}\n`);
+  process.stdout.write(`Preset: ${preset}\n`);
+  process.stdout.write(`Debug preset: ${debugPreset}\n`);
+  process.stdout.write(`Written: ${result.writtenPath}\n`);
+  if (result.warnings.length > 0) {
+    for (const warning of result.warnings) {
+      process.stdout.write(`Warning: ${warning}\n`);
+    }
   }
 }
 

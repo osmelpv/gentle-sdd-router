@@ -47,6 +47,24 @@ Status: ready
 
 This creates the `router/` directory with `router.yaml` and default profiles. If config already exists, skip this step.
 
+### Step 2.5 — Patch global inherited SDD agents (recommended)
+
+If you use the inherited `/sdd-*` commands (for example `/sdd-explore`, `/sdd-spec`, etc.), run:
+
+```bash
+gsr sdd global-sync
+```
+
+**Expected output**:
+```
+Global SDD agents synced: <N>
+Preset: local-hybrid
+Debug preset: sdd-debug-mono
+Written: ~/.config/opencode/opencode.json
+```
+
+This updates the hidden global `sdd-*` agents so they use GSR's preset routing instead of stale hardcoded models. It is especially important if you want inherited SDD commands to follow `local-hybrid`.
+
 ### Step 3 — Run a full sync
 
 ```bash
