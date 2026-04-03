@@ -28,6 +28,11 @@ async function getOverlayGenerators() {
   return mod;
 }
 
+async function getProjectSddMaterializer() {
+  const { materializeProjectSddAgents } = await import('../adapters/opencode/project-sdd-agent-materializer.js');
+  return materializeProjectSddAgents;
+}
+
 async function getLoadRouterConfig() {
   const { loadRouterConfig } = await import('../adapters/opencode/index.js');
   return loadRouterConfig;
@@ -233,6 +238,7 @@ async function runApplyStep(opts) {
         dryRun: true,
         agentCount,
         gsrCount,
+        sddCount: configPath ? 1 : 0,
         wouldCreate,
         wouldUpdate,
         wouldPreserve,
@@ -245,8 +251,24 @@ async function runApplyStep(opts) {
       ? mergeOverlayWithFile(overlay, resolvedTarget, { force })
       : mergeOverlayWithExisting(overlay, {}, { force });
 
-    const writtenPath = writeOpenCodeConfig(merged, resolvedTarget);
+    let writtenPath = writeOpenCodeConfig(merged, resolvedTarget);
+    const applyWarnings = [...(merged.warnings ?? [])];
     const gsrCount = Object.keys(merged.agent ?? {}).filter(k => k.startsWith('gsr-')).length;
+    let sddCount = 0;
+
+    if (configPath) {
+      try {
+        const materializeProjectSddAgents = await getProjectSddMaterializer();
+        const projectResult = materializeProjectSddAgents(configPath, { targetPath: writtenPath, cwd: opts.cwd ?? process.cwd() });
+        writtenPath = projectResult.writtenPath;
+        sddCount = projectResult.count;
+        if (projectResult.warnings?.length) {
+          applyWarnings.push(...projectResult.warnings);
+        }
+      } catch (err) {
+        applyWarnings.push(`project-sdd-agents: ${err.message}`);
+      }
+    }
 
     // Count preserved user overrides from merge warnings
     const preservedCount = (merged.warnings ?? []).filter(
@@ -257,8 +279,9 @@ async function runApplyStep(opts) {
       writtenPath,
       agentCount: Object.keys(merged.agent ?? {}).length,
       gsrCount,
+      sddCount,
       preservedCount,
-      warnings: merged.warnings ?? [],
+      warnings: applyWarnings,
     });
   } catch (err) {
     return stepFailed('apply', err.message);

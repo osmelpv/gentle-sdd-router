@@ -199,6 +199,7 @@ export function SddCreateWizard({
             const pathMod = await import('node:path');
             const catalogsDir = pathMod.join(pathMod.dirname(configPath), 'catalogs');
             const { createCustomSdd, scaffoldPhaseContract } = await import('../../../core/sdd-catalog-io.js');
+            const { materializeProjectSddAgents } = await import('../../../adapters/opencode/project-sdd-agent-materializer.js');
             const { stringifyYaml } = await import('../../../core/router.js');
             const fsMod = await import('node:fs');
 
@@ -226,6 +227,9 @@ export function SddCreateWizard({
               judge: false,
               radar: false,
             });
+
+            // Materialize project-local sdd-* agents so the new SDD is immediately usable.
+            materializeProjectSddAgents(configPath);
 
             if (setSelectedSdd) setSelectedSdd(state.name);
             router.pop(); // back to sdd-list

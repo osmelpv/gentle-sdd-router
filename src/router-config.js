@@ -88,9 +88,11 @@ export {
   DEFAULT_PRESET as DEFAULT_GLOBAL_SDD_PRESET,
   DEFAULT_DEBUG_PRESET as DEFAULT_GLOBAL_DEBUG_PRESET,
 } from './core/global-sdd-agent-routing.js';
+export { getProjectSddAgentSpecs } from './core/project-sdd-agent-routing.js';
 
 export { removeOpenCodeOverlay, deployGsrCommands, removeGsrCommands, cleanStaleGlobalOverlay } from './adapters/opencode/overlay-generator.js';
 export { materializeGlobalSddAgents } from './adapters/opencode/global-sdd-agent-materializer.js';
+export { materializeProjectSddAgents } from './adapters/opencode/project-sdd-agent-materializer.js';
 
 export {
   createAgentTeamsLiteIntegrationContract,

@@ -74,7 +74,7 @@ gsr status
 ```bash
 gsr route use <preset>                     # Switch routing preset
 gsr catalog create <name>                  # Create catalog (auto-syncs)
-gsr sdd create <name>                      # Create custom SDD workflow
+gsr sdd create <name>                      # Create custom SDD workflow (contracts + hidden phase agents auto-created)
 gsr sdd global-sync                        # Materialize global sdd-* agents from GSR presets
 gsr identity show                          # Check resolved agent identity
 gsr sdd invoke <catalog>/<sdd> \
@@ -85,7 +85,8 @@ gsr sync                                   # Full sync (idempotent, always safe)
 
 ### What You Need to Know
 
-- `gsr sync` does EVERYTHING — contracts, overlay, commands, validation. Run it freely.
+- `gsr sdd create` and the SDD TUI flows leave a new SDD functional immediately — contracts are scaffolded and project-local hidden `sdd-<catalog>-<phase>` agents are materialized automatically.
+- `gsr sync` does EVERYTHING — contracts, overlay, commands, validation, and SDD agent reconciliation. Run it freely when YAML was edited manually or something drifted.
 - `gsr sdd global-sync` patches the global inherited `sdd-*` agents (the ones in `~/.config/opencode/opencode.json`) so they also route through GSR presets like `local-hybrid`.
 - Creating catalogs and profiles auto-triggers sync. You don't need to call it manually after those.
 - `gsr status` tells you if everything is OK. `gsr status --verbose` gives full route details for debugging.

@@ -173,6 +173,11 @@ gsr sdd create game-design --description "Game design workflow"
 Created SDD 'game-design' at router/catalogs/game-design/
 ```
 
+When created through the normal GSR flows, the SDD is left functional immediately:
+- `sdd.yaml` is created
+- phase contracts are scaffolded automatically
+- hidden project-local `sdd-<catalog>-<phase>` agents are materialized into `./opencode.json`
+
 List custom SDDs:
 
 ```bash
@@ -452,7 +457,7 @@ gsr identity show [--preset <name>] Resolve and display agent identity
 ### SDD (Custom Workflows)
 
 ```
-gsr sdd create <name> [--description <desc>]  Create custom SDD
+gsr sdd create <name> [--description <desc>]  Create custom SDD (contracts + hidden phase agents auto-created)
 gsr sdd list                                   List custom SDDs
 gsr sdd show <name>                            Show SDD phases and triggers
 gsr sdd delete <name> [--yes]                  Delete custom SDD

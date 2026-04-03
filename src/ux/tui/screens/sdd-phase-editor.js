@@ -115,6 +115,7 @@ export function SddPhaseEditor({
       const fsMod = await import('node:fs');
       const { stringifyYaml } = await import('../../../core/router.js');
       const { scaffoldPhaseContract } = await import('../../../core/sdd-catalog-io.js');
+      const { materializeProjectSddAgents } = await import('../../../adapters/opencode/project-sdd-agent-materializer.js');
       const catalogsDir = pathMod.join(pathMod.dirname(configPath), 'catalogs');
       const sddYamlPath = pathMod.join(catalogsDir, selectedSdd, 'sdd.yaml');
       const phaseData = { intent };
@@ -135,6 +136,9 @@ export function SddPhaseEditor({
         judge: false,
         radar: false,
       });
+
+      // Keep project-local sdd-* agents in sync whenever phases change.
+      materializeProjectSddAgents(configPath);
 
       await loadSdd();
       setView('menu');

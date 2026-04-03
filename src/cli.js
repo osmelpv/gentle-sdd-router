@@ -64,6 +64,7 @@ import {
   DEFAULT_GLOBAL_SDD_PRESET,
   DEFAULT_GLOBAL_DEBUG_PRESET,
   materializeGlobalSddAgents,
+  materializeProjectSddAgents,
 } from './router-config.js';
 import { resolveControllerLabel, resolvePersona } from './core/controller.js';
 import { resolveIdentity, resetIdentityCache } from './core/agent-identity.js';
@@ -2723,6 +2724,16 @@ export function runSddCreate(args, catalogsDir) {
 
   const result = createCustomSdd(catalogsDir, name, description);
   process.stdout.write(`Created SDD '${result.name}' at ${result.path}\n`);
+
+  const configPath = path.join(path.dirname(catalogsDir), 'router.yaml');
+  if (fs.existsSync(configPath)) {
+    try {
+      const syncResult = materializeProjectSddAgents(configPath);
+      process.stdout.write(`Project SDD agents synced: ${syncResult.count}\n`);
+    } catch {
+      // Non-blocking. Some tests and partial setups don't have full v4 profile structure yet.
+    }
+  }
 }
 
 /**
@@ -2919,6 +2930,16 @@ export function runSddGlobalSync(args, options = {}) {
     for (const warning of result.warnings) {
       process.stdout.write(`Warning: ${warning}\n`);
     }
+  }
+}
+
+async function syncProjectSddAgentsIfPossible(configPath, options = {}) {
+  try {
+    const result = materializeProjectSddAgents(configPath, options);
+    return result;
+  } catch (err) {
+    process.stdout.write(`Note: project SDD agent sync failed: ${err.message}\n`);
+    return null;
   }
 }
 
