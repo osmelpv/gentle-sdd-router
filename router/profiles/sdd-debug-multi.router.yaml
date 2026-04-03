@@ -1,6 +1,7 @@
 name: sdd-debug-multi
 catalog: sdd-debug
 availability: stable
+hidden: true
 identity:
   inherit_agents_md: true
   persona: gentleman
