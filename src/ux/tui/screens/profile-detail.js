@@ -14,22 +14,22 @@ function formatCtx(cw) {
   return String(cw);
 }
 
-export function ProfileDetailScreen({ config: propConfig, configPath: propConfigPath, router, setDescription, showResult, reloadConfig, selectedCatalog, selectedProfile }) {
-  const [config, setConfig] = useState(propConfig);
-  const [configPath, setConfigPath] = useState(propConfigPath);
+export function ProfileDetailScreen({ config: propConfig, configPath: propConfigPath, router, setDescription, showResult, reloadConfig, selectedCatalog, selectedProfile, updateConfig }) {
+  const [localConfig, setLocalConfig] = useState(propConfig);
+  const [localConfigPath, setLocalConfigPath] = useState(propConfigPath);
   const [subView, setSubView] = useState('menu'); // 'menu' | 'copying'
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       try {
-        const mod = await import('../../../router-config.js');
+        const mod = await import('../../../router-localConfig.js');
         const pathMod = await import('node:path');
         const freshConfigPath = mod.discoverConfigPath([process.cwd()]);
         if (freshConfigPath) {
           const freshConfig = mod.loadRouterConfig(freshConfigPath);
-          setConfig(freshConfig);
-          setConfigPath(freshConfigPath);
+          setLocalConfig(freshConfig);
+          setLocalConfigPath(freshConfigPath);
         }
       } catch { /* use current */ }
       setLoading(false);
@@ -49,7 +49,7 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
     return h(Box, null, h(Text, { color: colors.subtext }, 'Loading preset...'));
   }
 
-  const activePresetName = selectedProfile || config?.active_preset;
+  const activePresetName = selectedProfile || localConfig?.active_preset;
   
   if (!activePresetName) {
     return h(Box, { flexDirection: 'column' },
@@ -58,10 +58,10 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
     );
   }
 
-  const activeOwner = getActivePresetOwner(config);
-  const catalog = config?.catalogs?.[selectedCatalog || activeOwner?.catalogName || config?.active_catalog || 'default'];
+  const activeOwner = getActivePresetOwner(localConfig);
+  const catalog = localConfig?.catalogs?.[selectedCatalog || activeOwner?.catalogName || localConfig?.active_catalog || 'default'];
   const preset = catalog?.presets?.[activePresetName];
-  const isActive = activePresetName === config?.active_preset;
+  const isActive = activePresetName === localConfig?.active_preset;
 
   if (!preset) {
     return h(Text, { color: colors.red }, `Preset '${activePresetName}' not found.`);
@@ -83,10 +83,11 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
     }
   }
 
+  const isVisible = preset?.hidden !== true && catalog?.enabled !== false;
+
   const actions = [
     { label: 'Edit phases', value: 'edit', description: 'Open the phase/lane editor to modify models, roles, and fallbacks.' },
     { label: 'Edit Identity', value: 'edit-identity', description: 'Configure agent context, prompt, and AGENTS.md inheritance for this preset.' },
-    ...(!isActive ? [{ label: 'Activate', value: 'activate', description: `Set '${activePresetName}' as the active routing preset.` }] : []),
     { label: isVisible ? 'Hide from TAB' : 'Show in TAB', value: 'toggle-visibility', description: isVisible ? 'Hide this preset from TAB cycling in OpenCode.' : 'Make this preset visible in TAB cycling.' },
     { label: 'Export', value: 'export', description: 'Export this preset as YAML to stdout.' },
     { label: 'Copy', value: 'copy', description: 'Clone this preset with a new name.' },
@@ -104,9 +105,9 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
         onSubmit: async (newName) => {
           if (!newName.trim()) { setSubView('menu'); return; }
           try {
-            const mod = await import('../../../router-config.js');
+            const mod = await import('../../../router-localConfig.js');
             const path = await import('node:path');
-            const routerDir = path.dirname(configPath);
+            const routerDir = path.dirname(localConfigPath);
             mod.copyProfile(activePresetName, newName.trim(), routerDir);
             await reloadConfig();
             showResult(`Preset '${activePresetName}' copied to '${newName.trim()}'.`);
@@ -118,8 +119,6 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
       }),
     );
   }
-
-  const isVisible = preset?.hidden !== true && catalog?.enabled !== false;
 
   return h(Box, { flexDirection: 'column' },
     h(Box, { flexDirection: 'row' },
@@ -141,8 +140,8 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
       onSelect: async (value) => {
         if (value === '__back__') { router.pop(); return; }
 
-        const mod = await import('../../../router-config.js');
-        const routerDir = configPath ? configPath.replace(/\/router\.yaml$/, '') : null;
+        const mod = await import('../../../router-localConfig.js');
+        const routerDir = localConfigPath ? localConfigPath.replace(/\/router\.yaml$/, '') : null;
 
         if (value === 'edit') {
           router.push('edit-profile');
@@ -154,27 +153,30 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
           return;
         }
 
-        if (value === 'activate') {
-          try {
-            const currentConfig = mod.loadRouterConfig(configPath);
-            const nextConfig = mod.setActiveProfile(currentConfig, activePresetName);
-            mod.saveRouterConfig(nextConfig, configPath, currentConfig);
-            await reloadConfig();
-            showResult(`Active preset switched to: ${activePresetName}`);
-          } catch (err) {
-            showResult(`Error: ${err.message}`);
-          }
-          return;
-        }
-
         if (value === 'toggle-visibility') {
           try {
             const path = await import('node:path');
-            const routerDir = path.dirname(configPath);
+            const routerDir = path.dirname(localConfigPath);
             const newHidden = isVisible ? true : false;
             mod.updatePresetMetadata(activePresetName, { hidden: newHidden }, routerDir);
-            await reloadConfig();
-            showResult(`Preset '${activePresetName}' is now ${newHidden ? 'hidden' : 'visible'} in TAB cycling.`);
+            
+            // Clear cache and reload fresh localConfig
+            const cacheKey = Object.keys(require.cache).find(k => k.includes('adapters/opencode/index'));
+            if (cacheKey) delete require.cache[cacheKey];
+            
+            const { discoverConfigPath: disc, loadRouterConfig: load } = await import('../../../adapters/opencode/index.js');
+            const newConfigPath = disc([process.cwd()]);
+            const newConfig = load(newConfigPath);
+            
+            if (setLocalConfig) {
+              setLocalConfig(newConfig);
+            }
+            
+            if (updateConfig) {
+              updateConfig(newConfig);
+            }
+            
+            showResult(`Preset '${activePresetName}' is now ${newHidden ? 'hidden' : 'visible'}. Run 'gsr sync' to update OpenCode.`);
           } catch (err) {
             showResult(`Error: ${err.message}`);
           }
@@ -183,7 +185,7 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
 
         if (value === 'export') {
           try {
-            const yaml = mod.exportPreset(config, activePresetName);
+            const yaml = mod.exportPreset(localConfig, activePresetName);
             showResult(`# Preset: ${activePresetName}\n${yaml}`);
           } catch (err) {
             showResult(`Error: ${err.message}`);

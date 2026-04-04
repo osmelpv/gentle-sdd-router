@@ -6,29 +6,28 @@ import { colors, cursor as cursorChar } from '../theme.js';
 
 const h = React.createElement;
 
-// Keep MODEL_REGISTRY as a named export for backward compat (tests, etc.)
-export const MODEL_REGISTRY = {}; // deprecated, dynamic now
+const VIEWPORT_SIZE = 15;
+const MAX_VISIBLE_ITEMS = 12;
 
 export function ModelPicker({ onSelect, onCancel, setDescription, excludeTarget, excludeTargets }) {
-  const [mode, setMode] = useState('loading'); // 'loading' | 'provider' | 'model' | 'custom'
+  const [mode, setMode] = useState('loading');
   const [providers, setProviders] = useState({});
   const [providerList, setProviderList] = useState([]);
   const [selectedProvider, setSelectedProvider] = useState(null);
   const [cursor, setCursor] = useState(0);
   const [sources, setSources] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const allExcluded = new Set([
     ...(excludeTarget ? [excludeTarget] : []),
     ...(excludeTargets || []),
   ]);
 
-  // Fetch models on mount
   useEffect(() => {
     let cancelled = false;
     fetchAllModels().then(result => {
       if (cancelled) return;
       setProviders(result.providers);
-      // Sort providers: put well-known ones first, then alphabetical
       const knownOrder = ['anthropic', 'openai', 'google', 'meta-llama', 'mistralai', 'qwen', 'nvidia', 'ollama'];
       const keys = Object.keys(result.providers);
       keys.sort((a, b) => {
@@ -46,11 +45,14 @@ export function ModelPicker({ onSelect, onCancel, setDescription, excludeTarget,
     return () => { cancelled = true; };
   }, []);
 
-  // Current items based on mode
+  const filteredProviders = searchQuery
+    ? providerList.filter(p => p.toLowerCase().includes(searchQuery.toLowerCase()))
+    : providerList;
+
   const items = (() => {
     if (mode === 'provider') {
       return [
-        ...providerList.map(p => {
+        ...filteredProviders.map(p => {
           const group = providers[p];
           const count = group?.models?.length || 0;
           return {
@@ -64,7 +66,14 @@ export function ModelPicker({ onSelect, onCancel, setDescription, excludeTarget,
     }
     if (mode === 'model' && selectedProvider) {
       const group = providers[selectedProvider];
-      return (group?.models || []).map(m => {
+      const allModels = group?.models || [];
+      const filteredModels = searchQuery
+        ? allModels.filter(m => 
+            m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            m.id.toLowerCase().includes(searchQuery.toLowerCase())
+          )
+        : allModels;
+      return filteredModels.map(m => {
         const isExcluded = allExcluded.has(m.id);
         const cost = m.costIn === 0 ? 'free' : `$${m.costIn}/$${m.costOut}`;
         const ctxStr = m.contextWindow >= 1_000_000 ? `${m.contextWindow / 1_000_000}M` : `${Math.round(m.contextWindow / 1000)}K`;
@@ -79,19 +88,17 @@ export function ModelPicker({ onSelect, onCancel, setDescription, excludeTarget,
           value: m.id,
           hint: isExcluded ? 'This is the primary model — cannot be used as fallback.' : (m.description || m.name),
           excluded: isExcluded,
-          model: m, // keep full model data for detailed display
+          model: m,
         };
       });
     }
     return [];
   })();
 
-  // Reset cursor when items change
   useEffect(() => {
-    setCursor(prev => (prev >= items.length ? 0 : prev));
+    setCursor(prev => (prev >= items.length ? Math.max(0, items.length - 1) : prev));
   }, [items.length]);
 
-  // Update footer description when cursor moves
   useEffect(() => {
     if (mode === 'loading') {
       if (setDescription) setDescription('Loading models from OpenRouter and Ollama...');
@@ -107,39 +114,52 @@ export function ModelPicker({ onSelect, onCancel, setDescription, excludeTarget,
     }
   }, [cursor, mode, items.length]);
 
-  // Handle ESC in custom mode
   useInput((input, key) => {
-    if (mode !== 'custom') return;
-    if (key.escape) {
-      setMode('provider');
-      setCursor(0);
-    }
-  });
+    if (mode === 'loading') return;
 
-  // Main input handler
-  useInput((input, key) => {
-    if (mode === 'custom' || mode === 'loading') return;
+    if (mode === 'custom' || mode === 'search') {
+      if (key.escape) {
+        if (mode === 'search') {
+          setMode(selectedProvider ? 'model' : 'provider');
+          setSearchQuery('');
+        } else {
+          setMode('provider');
+        }
+        setCursor(0);
+      }
+      return;
+    }
 
     if (key.escape) {
       if (mode === 'model') {
         setMode('provider');
         setSelectedProvider(null);
         setCursor(0);
+        setSearchQuery('');
       } else {
         if (onCancel) onCancel();
       }
       return;
     }
 
-    // Left arrow: same as ESC (go back one level)
     if (key.leftArrow) {
       if (mode === 'model') {
         setMode('provider');
         setSelectedProvider(null);
         setCursor(0);
+        setSearchQuery('');
       } else {
         if (onCancel) onCancel();
       }
+      return;
+    }
+
+    if (input === '/' && mode !== 'custom') {
+      setMode('search');
+      return;
+    }
+
+    if (mode === 'search') {
       return;
     }
 
@@ -161,15 +181,20 @@ export function ModelPicker({ onSelect, onCancel, setDescription, excludeTarget,
         setSelectedProvider(item.value);
         setMode('model');
         setCursor(0);
+        setSearchQuery('');
       } else if (mode === 'model') {
-        if (item.excluded) return; // Block excluded
-        // For OpenRouter models, the id is already in provider/model format
+        if (item.excluded) return;
         onSelect(item.value);
       }
     }
   });
 
-  // Loading state
+  const handleSearchSubmit = (value) => {
+    setSearchQuery(value);
+    setMode(selectedProvider ? 'model' : 'provider');
+    setCursor(0);
+  };
+
   if (mode === 'loading') {
     return h(Box, { flexDirection: 'column' },
       h(Text, { color: colors.lavender }, 'Loading models...'),
@@ -177,7 +202,27 @@ export function ModelPicker({ onSelect, onCancel, setDescription, excludeTarget,
     );
   }
 
-  // Custom input
+  if (mode === 'search') {
+    return h(Box, { flexDirection: 'column' },
+      h(Text, { bold: true, color: colors.lavender }, 'Search:'),
+      h(TextInput, {
+        placeholder: 'Type to filter...',
+        onSubmit: handleSearchSubmit,
+        onChange: (value) => {
+          setSearchQuery(value);
+          const filtered = selectedProvider
+            ? (providers[selectedProvider]?.models || []).filter(m => 
+                m.name.toLowerCase().includes(value.toLowerCase()) ||
+                m.id.toLowerCase().includes(value.toLowerCase())
+              )
+            : providerList.filter(p => p.toLowerCase().includes(value.toLowerCase()));
+          setCursor(0);
+        },
+      }),
+      h(Text, { color: colors.subtext }, 'Press Enter to filter, ESC to cancel. Use / to search.'),
+    );
+  }
+
   if (mode === 'custom') {
     return h(Box, { flexDirection: 'column' },
       h(Text, { bold: true, color: colors.lavender }, 'Enter model ID (provider/model):'),
@@ -200,18 +245,31 @@ export function ModelPicker({ onSelect, onCancel, setDescription, excludeTarget,
     ? `Select provider (${sources.join(' + ')})`
     : `Select model (${selectedProvider})`;
 
+  const startIdx = Math.max(0, cursor - Math.floor(MAX_VISIBLE_ITEMS / 2));
+  const endIdx = Math.min(items.length, startIdx + MAX_VISIBLE_ITEMS);
+  const visibleItems = items.slice(startIdx, endIdx);
+
+  const hasMoreAbove = startIdx > 0;
+  const hasMoreBelow = endIdx < items.length;
+
   return h(Box, { flexDirection: 'column' },
     h(Text, { bold: true, color: colors.lavender }, title),
+    h(Text, { color: colors.subtext }, searchQuery ? `Filter: "${searchQuery}" (${items.length} results) | Press / to search, ESC to clear` : `Press / to search | ${items.length} items`),
     h(Text, null, ''),
-    ...items.map((item, idx) => {
-      const isSelected = idx === cursor;
+    hasMoreAbove ? h(Text, { color: colors.overlay }, '  ... more above ...') : null,
+    ...visibleItems.map((item, idx) => {
+      const actualIdx = startIdx + idx;
+      const isSelected = actualIdx === cursor;
       const prefix = isSelected ? cursorChar : '  ';
       const color = item.excluded
-        ? colors.overlay // dimmed
+        ? colors.overlay
         : isSelected ? colors.lavender : colors.text;
-      return h(Text, { key: item.value || idx, color, bold: isSelected },
+      return h(Text, { key: item.value || actualIdx, color, bold: isSelected },
         prefix, item.label,
       );
     }),
+    hasMoreBelow ? h(Text, { color: colors.overlay }, '  ... more below ...') : null,
+    h(Text, null, ''),
+    h(Text, { color: colors.subtext }, '↑↓ navigate | Enter select | ESC back | / search'),
   );
 }

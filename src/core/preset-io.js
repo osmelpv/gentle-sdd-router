@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, statSync, unlinkSync, rmdirSync, renameSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { join, basename, resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { get } from 'node:https';
 import { parseYaml, stringifyYaml } from './router.js';
@@ -229,7 +230,7 @@ export { COMPACT_PREFIX };
 /**
  * Find the file path for a profile by name.
  * If catalog is provided (and not 'default'), searches only that catalog subdirectory.
- * Otherwise, searches the default flat directory first, then named subdirectories.
+ * Otherwise, searches the project profiles directory first, then the plugin global profiles directory.
  * @param {string} name
  * @param {string} routerDir
  * @param {string|undefined} catalog
@@ -243,20 +244,48 @@ function findProfilePath(name, routerDir, catalog) {
     return existsSync(p) ? p : null;
   }
 
-  // Search default (flat) first
+  // Search project profiles first
   const flat = join(profilesDir, `${name}.router.yaml`);
   if (existsSync(flat)) return flat;
 
-  // Search named subdirectories
+  // Search project subdirectories
   if (existsSync(profilesDir)) {
     let entries;
     try {
       entries = readdirSync(profilesDir);
     } catch {
+      // continue to global search
+    }
+    if (entries) {
+      for (const entry of entries) {
+        const entryPath = join(profilesDir, entry);
+        try {
+          if (statSync(entryPath).isDirectory()) {
+            const candidate = join(entryPath, `${name}.router.yaml`);
+            if (existsSync(candidate)) return candidate;
+          }
+        } catch {
+          // skip
+        }
+      }
+    }
+  }
+
+  // Search plugin global profiles (built-in presets like sdd-debug-mono)
+  const __pluginDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const globalProfilesDir = join(__pluginDir, 'router', 'profiles');
+  if (globalProfilesDir !== profilesDir && existsSync(globalProfilesDir)) {
+    const globalFlat = join(globalProfilesDir, `${name}.router.yaml`);
+    if (existsSync(globalFlat)) return globalFlat;
+
+    let globalEntries;
+    try {
+      globalEntries = readdirSync(globalProfilesDir);
+    } catch {
       return null;
     }
-    for (const entry of entries) {
-      const entryPath = join(profilesDir, entry);
+    for (const entry of globalEntries) {
+      const entryPath = join(globalProfilesDir, entry);
       try {
         if (statSync(entryPath).isDirectory()) {
           const candidate = join(entryPath, `${name}.router.yaml`);

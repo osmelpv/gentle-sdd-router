@@ -5,7 +5,7 @@ import { colors, cursor as cursorChar } from '../theme.js';
 
 const h = React.createElement;
 
-export function PresetsScreen({ config, configPath, router, setDescription, showResult, reloadConfig, setSelectedProfile }) {
+export function PresetsScreen({ config, configPath, router, setDescription, showResult, reloadConfig, setSelectedProfile, setConfig }) {
   const [lastMessage, setLastMessage] = useState(null);
   const [selectedPresetName, setSelectedPresetName] = useState(null);
 
@@ -49,25 +49,32 @@ export function PresetsScreen({ config, configPath, router, setDescription, show
     setSelectedPresetName(value);
   };
 
-  const handleActivate = async (value) => {
+  const handleToggleVisibility = async (value) => {
     if (value === '__none__') return;
 
     const preset = presets.find(p => p.label === value);
     if (!preset) return;
 
-    if (preset.isActive) {
-      showResult(`Preset '${preset.label}' is already active.`);
-      return;
-    }
-    
     try {
       const mod = await import('../../../router-config.js');
+      const pathMod = await import('node:path');
+      const routerDir = pathMod.dirname(configPath);
       
-      const nextConfig = mod.setActiveProfile(config, preset.label);
-      mod.saveRouterConfig(nextConfig, configPath, config);
-      await reloadConfig();
+      mod.updatePresetMetadata(preset.label, { hidden: !preset.isVisible }, routerDir);
       
-      setLastMessage(`Preset '${preset.label}' is now active. Run 'gsr sync' to update the host.`);
+      // Clear require cache to force fresh config load
+      const cacheKey = Object.keys(require.cache).find(k => k.includes('adapters/opencode/index'));
+      if (cacheKey) delete require.cache[cacheKey];
+      
+      const { discoverConfigPath: disc, loadRouterConfig: load } = await import('../../../adapters/opencode/index.js');
+      const newConfigPath = disc([process.cwd()]);
+      const newConfig = load(newConfigPath);
+      
+      if (setConfig) {
+        setConfig(newConfig);
+      }
+      
+      showResult(`Preset '${preset.label}' is now ${!preset.isVisible ? 'hidden' : 'visible'}. Run 'gsr sync' to update OpenCode.`);
     } catch (err) {
       showResult(`Error: ${err.message}`);
     }
@@ -118,7 +125,7 @@ export function PresetsScreen({ config, configPath, router, setDescription, show
 
     const actions = [
       { label: 'View details', value: 'view', description: 'View preset phases and configuration.' },
-      ...(!preset.isActive ? [{ label: 'Activate', value: 'activate', description: `Set '${preset.label}' as the active routing preset.` }] : []),
+      { label: preset.isVisible ? 'Hide from TAB' : 'Show in TAB', value: 'toggle-visibility', description: preset.isVisible ? 'Hide this preset from TAB cycling.' : 'Make this preset visible in TAB cycling.' },
       ...(!preset.isActive ? [{ label: 'Delete preset', value: 'delete', description: 'Permanently delete this preset from disk.' }] : []),
     ];
 
@@ -137,8 +144,8 @@ export function PresetsScreen({ config, configPath, router, setDescription, show
             setSelectedPresetName(null);
             return;
           }
-          if (value === 'activate') {
-            await handleActivate(selectedPresetName);
+          if (value === 'toggle-visibility') {
+            await handleToggleVisibility(selectedPresetName);
             setSelectedPresetName(null);
             return;
           }
@@ -159,22 +166,22 @@ export function PresetsScreen({ config, configPath, router, setDescription, show
     h(Text, { color: colors.subtext }, 'Browse and manage routing presets.'),
     h(Text, null, ''),
     lastMessage ? h(Text, { color: colors.peach }, lastMessage) : null,
-    h(Text, { color: colors.subtext }, 'ENTER = select | A = activate | D = delete | ESC = back'),
+    h(Text, { color: colors.subtext }, 'ENTER = select | V = toggle visibility | D = delete | ESC = back'),
     h(Text, null, ''),
     h(PresetMenu, {
       items: presets,
       onSelect: handleSelect,
-      onActivate: handleActivate,
+      onToggleVisibility: handleToggleVisibility,
       onDelete: handleDelete,
       setDescription,
       showBack: true,
     }),
     h(Text, null, ''),
-    h(Text, { color: colors.overlay }, 'Legend: [active] = currently selected | visible/hidden = shows in TAB cycling'),
+    h(Text, { color: colors.overlay }, 'Legend: visible/hidden = shows in TAB cycling | [active] = currently selected for routing'),
   );
 }
 
-function PresetMenu({ items, onSelect, onActivate, onDelete, setDescription, showBack }) {
+function PresetMenu({ items, onSelect, onToggleVisibility, onDelete, setDescription, showBack }) {
   const [cursor, setCursor] = useState(0);
 
   const allItems = showBack
@@ -203,10 +210,10 @@ function PresetMenu({ items, onSelect, onActivate, onDelete, setDescription, sho
       const item = allItems[cursor];
       if (item) onSelect(item.label);
     }
-    if (input === 'a' || input === 'A') {
+    if (input === 'v' || input === 'V') {
       const item = allItems[cursor];
-      if (item && item.label !== '__back__' && item.label !== '__none__' && onActivate) {
-        onActivate(item.label);
+      if (item && item.label !== '__back__' && item.label !== '__none__' && onToggleVisibility) {
+        onToggleVisibility(item.label);
       }
     }
     if (input === 'd' || input === 'D') {
@@ -229,6 +236,7 @@ function PresetMenu({ items, onSelect, onActivate, onDelete, setDescription, sho
       if (isSelected) color = colors.lavender;
       else if (isBack) color = colors.overlay;
       else if (isActive) color = colors.green;
+      else if (item.isVisible) color = colors.green;
       
       const suffix = item.tag ? ` [${item.tag}]` : '';
       const displayText = isBack ? item.displayLabel : (item.displayLabel || item.label);
