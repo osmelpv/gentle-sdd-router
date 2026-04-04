@@ -15,28 +15,18 @@ Manage routing preset selection and activation state.
 - `/gsr-route-activate` — Activate gsr routing control
 - `/gsr-route-deactivate` — Hand routing control back to the host
 
-## Catalog
+## Preset
 
-Enable, disable, and switch between model catalogs.
+Manage routing presets.
 
-- `/gsr-catalog-list` — List all catalogs with enable/disable status
-- `/gsr-catalog-use` — Set the active catalog and preset
-- `/gsr-catalog-enable` — Enable a catalog for TUI TAB cycling
-- `/gsr-catalog-disable` — Disable a catalog from TUI TAB cycling
-- `gsr catalog move <profile> <catalog>` — Move a profile to a different catalog (**CLI-only**)
-
-## Profile
-
-Manage routing profiles within a catalog.
-
-- `/gsr-profile-list` — List all routing profiles with catalog info
-- `/gsr-profile-create` — Create a new empty routing profile
-- `gsr profile show [name]` — Show routes for a profile (**CLI-only**)
-- `gsr profile delete <name>` — Delete a profile (**CLI-only**)
-- `gsr profile rename <old> <new>` — Rename a profile (**CLI-only**)
-- `gsr profile copy <src> <dest>` — Clone a profile (**CLI-only**)
-- `gsr profile export <name> [--compact]` — Export a profile for sharing (**CLI-only**)
-- `gsr profile import <source>` — Import a profile from file/URL/gsr:// (**CLI-only**)
+- `gsr preset list` — List all routing presets with SDD/scope/visibility info (**CLI-only**)
+- `gsr preset create <name>` — Create a new empty routing preset (**CLI-only**)
+- `gsr preset show [name]` — Show routes for a preset (**CLI-only**)
+- `gsr preset delete <name>` — Delete a preset (**CLI-only**)
+- `gsr preset rename <old> <new>` — Rename a preset (**CLI-only**)
+- `gsr preset copy <src> <dest>` — Clone a preset (**CLI-only**)
+- `gsr preset export <name> [--compact]` — Export a preset for sharing (**CLI-only**)
+- `gsr preset import <source>` — Import a preset from file/URL/gsr:// (**CLI-only**)
 
 ## Inspect
 

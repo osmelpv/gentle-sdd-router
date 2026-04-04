@@ -525,7 +525,7 @@ test('wizardManageProfiles create returns command object', async () => {
 test('wizardManageProfiles delete returns command object', async () => {
   const prompts = createPromptStub({
     selectResult(payload) {
-      if (payload.message === 'Profile management:') return 'profile-delete';
+      if (payload.message === 'Preset management:') return 'profile-delete';
       return 'balanced';
     },
   });

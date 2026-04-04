@@ -93,10 +93,12 @@ gsr status
 ✅ Ready — Synchronized
 
 Preset      multivendor (8 phases)
-Catalog     default (SDD-Orchestrator)
+SDD         agent-orchestrator
+Scope       project
+Visible     visible
 Identity    AGENTS.md inherited
 Debug       sdd-debug-mono → on_issues
-Catalogs    2 enabled: default, sdd-debug
+SDDs        2 visible: agent-orchestrator, sdd-debug
 Connections SDD-Orchestrator/verify → sdd-debug-mono (on_issues)
 
   gsr status --verbose   full routes, pricing & SDD graph
@@ -110,36 +112,21 @@ For full details including routes, pricing, all presets, and the SDD connections
 gsr status --verbose
 ```
 
-**Expected output** includes: configuration (schema, controller, manifest), active preset with identity and debug wiring, resolved routes per phase with pricing and context window, all catalogs and presets, and an ASCII **SDD CONNECTIONS** graph showing how SDDs invoke each other (e.g., verify → sdd-debug).
+**Expected output** includes: configuration (schema, controller, manifest), active preset with identity and debug wiring, resolved routes per phase with pricing and context window, all SDDs and presets, and an ASCII **SDD CONNECTIONS** graph showing how SDDs invoke each other (e.g., verify → sdd-debug).
 
-### Step 5 — Create a catalog (optional)
-
-```bash
-gsr catalog create my-catalog
-```
-
-**Expected output**:
-```
-Created catalog 'my-catalog' at router/profiles/my-catalog/
-...
-Synchronized.
-```
-
-`catalog create` auto-enables and auto-syncs. New agents appear in the TUI host after reopening.
-
-### Step 6 — Create a preset (optional)
+### Step 5 — Create a preset (optional)
 
 ```bash
 # Create empty preset
-gsr profile create my-preset
+gsr preset create my-preset
 
 # Or clone an existing preset as a starting point
-gsr profile copy multivendor my-preset
+gsr preset copy multivendor my-preset
 ```
 
 **Expected output**:
 ```
-Created profile 'my-preset' → router/profiles/my-preset.router.yaml
+Created preset 'my-preset' → router/profiles/my-preset.router.yaml
 ...
 Synchronized.
 ```
@@ -176,7 +163,7 @@ Created SDD 'game-design' at router/catalogs/game-design/
 When created through the normal GSR flows, the SDD is left functional immediately:
 - `sdd.yaml` is created
 - phase contracts are scaffolded automatically
-- hidden project-local `sdd-<catalog>-<phase>` agents are materialized into `./opencode.json`
+- hidden project-local `sdd-<sdd>-<phase>` agents are materialized into `./opencode.json`
 
 List custom SDDs:
 
@@ -334,7 +321,7 @@ gsr profile export multivendor --compact
 gsr profile import ./shared.router.yaml
 ```
 
-> **Backward-compat aliases**: The old commands `gsr list`, `gsr use claude`, `gsr reload`, and `gsr install` still work. The new tree (`gsr profile list`, `gsr route use`, etc.) is the recommended form going forward.
+> **Backward-compat aliases**: The old commands `gsr list`, `gsr use claude`, `gsr reload`, and `gsr install` still work. The new tree (`gsr preset list`, `gsr route use`, etc.) is the recommended form going forward.
 
 ---
 
@@ -405,29 +392,17 @@ gsr route activate                  gsr takes routing control
 gsr route deactivate                Host takes control back
 ```
 
-### Profile
+### Preset
 
 ```
-gsr profile list                    List profiles with catalog info
-gsr profile show [name]             Show routes for a profile
-gsr profile create <name>           Create empty profile (auto-syncs)
-gsr profile delete <name>           Delete profile
-gsr profile rename <old> <new>      Rename profile
-gsr profile copy <src> <dest>       Clone profile
-gsr profile export <name>           Export for sharing (--compact for gsr:// string)
-gsr profile import <source>         Import from file/URL/gsr://
-```
-
-### Catalog
-
-```
-gsr catalog list                    List catalogs with status
-gsr catalog create <name>           Create catalog (auto-enables + auto-syncs)
-gsr catalog delete <name>           Delete empty catalog
-gsr catalog enable <name>           Show in TUI host (TAB cycling) + auto-sync
-gsr catalog disable <name>          Hide from TUI host + auto-sync
-gsr catalog move <profile> <cat>    Move a profile to a different catalog
-gsr catalog use <name> [preset]     Set active catalog and preset
+gsr preset list                     List presets with SDD/scope/visibility info
+gsr preset show [name]              Show routes for a preset
+gsr preset create <name>            Create empty preset (auto-syncs)
+gsr preset delete <name>            Delete preset
+gsr preset rename <old> <new>       Rename preset
+gsr preset copy <src> <dest>        Clone preset
+gsr preset export <name>            Export for sharing (--compact for gsr:// string)
+gsr preset import <source>          Import from file/URL/gsr://
 ```
 
 ### Inspect

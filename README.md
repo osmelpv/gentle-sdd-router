@@ -46,7 +46,7 @@ Here's the thing — most tools name themselves after a feature. `gsr` names its
 | Pillar | WHO / WHAT / WITH WHAT | What it does |
 |--------|------------------------|--------------|
 | **gentle** | **WHO** your agents are | Identity, AGENTS.md inheritance, persona contracts |
-| **sdd** | **WHAT** they do | Custom phases, cross-catalog invocation, department workflows |
+| **sdd** | **WHAT** they do | Custom phases, cross-SDD invocation, department workflows |
 | **router** | **WITH WHAT** they work | Phase-based model assignment, fallbacks, judge/radar patterns |
 
 Think of it this way: **Gentle** gives your agents personality. **SDD** gives them purpose. **Router** gives them the right tools for each job. All three compose into one coherent AI operations layer — declarative, non-executing, report-only.
@@ -73,22 +73,22 @@ gsr status
 
 ```bash
 gsr route use <preset>                     # Switch routing preset
-gsr catalog create <name>                  # Create catalog (auto-syncs)
+gsr preset create <name>                   # Create preset (auto-syncs)
 gsr sdd create <name>                      # Create custom SDD workflow (contracts + hidden phase agents auto-created)
 gsr sdd global-sync                        # Materialize global sdd-* agents from GSR presets
 gsr identity show                          # Check resolved agent identity
-gsr sdd invoke <catalog>/<sdd> \
-  --from <caller-catalog>/<caller-sdd> \
-  --phase <phase>                          # Cross-catalog invocation record
+gsr sdd invoke <target-sdd>/<entry> \
+  --from <caller-sdd>/<entry> \
+  --phase <phase>                          # Cross-SDD invocation record
 gsr sync                                   # Full sync (idempotent, always safe)
 ```
 
 ### What You Need to Know
 
-- `gsr sdd create` and the SDD TUI flows leave a new SDD functional immediately — contracts are scaffolded and project-local hidden `sdd-<catalog>-<phase>` agents are materialized automatically.
+- `gsr sdd create` and the SDD TUI flows leave a new SDD functional immediately — contracts are scaffolded and project-local hidden `sdd-<sdd>-<phase>` agents are materialized automatically.
 - `gsr sync` does EVERYTHING — contracts, overlay, commands, validation, and SDD agent reconciliation. Run it freely when YAML was edited manually or something drifted.
 - `gsr sdd global-sync` patches the global inherited `sdd-*` agents (the ones in `~/.config/opencode/opencode.json`) so they also route through GSR presets like `local-hybrid`.
-- Creating catalogs and profiles auto-triggers sync. You don't need to call it manually after those.
+- Creating presets auto-triggers sync. You don't need to call it manually after that.
 - `gsr status` tells you if everything is OK. `gsr status --verbose` gives full route details for debugging.
 - Identity inherits from `AGENTS.md` automatically — no manual configuration needed.
 - **GSR NEVER executes** — it writes config and records that the host reads and acts on.
@@ -212,12 +212,12 @@ Start here if you want **consistent AI personas** and **inherited context** acro
 
 ### 🔵 SDD — Dynamic Workflow Factory
 
-The **sdd** pillar turns your project into a factory of named workflows. Each workflow (SDD) defines its own phases, role contracts, and — most powerfully — **cross-catalog invocations**.
+The **sdd** pillar turns your project into a factory of named SDDs. Each SDD defines its own phases, role contracts, and — most powerfully — **cross-SDD invocations**.
 
 #### Custom SDDs
 
 ```bash
-gsr sdd create game-design            # Scaffold a new SDD catalog
+gsr sdd create game-design            # Scaffold a new SDD
 gsr sdd list                          # List all SDD workflows
 gsr sdd show game-design              # Show phases and invoke declarations
 ```
@@ -231,9 +231,9 @@ description: "Game design workflow"
 phases:
   concept:
     intent: "Define the game concept"
-    execution: parallel
-    agents: 2
-    judge: true
+    mode: multi
+    agent_execution: parallel
+    radar: false
   level-design:
     intent: "Design levels and encounters"
     depends_on:
@@ -245,9 +245,9 @@ phases:
       await: true
 ```
 
-#### Cross-Catalog Invocation — The Key Differentiator
+#### Cross-SDD Invocation — The Key Differentiator
 
-A phase can declare its intent to **invoke another SDD catalog**. `gsr` writes an invocation record to `.gsr/invocations/` — a pure data operation. **No execution happens here.** The host or orchestrator reads the record and launches the callee.
+A phase can declare its intent to **invoke another SDD**. `gsr` writes an invocation record to `.gsr/invocations/` — a pure data operation. **No execution happens here.** The host or orchestrator reads the record and launches the callee.
 
 ##### How to connect two SDDs
 
@@ -332,7 +332,7 @@ gsr sdd invocations [--status pending|completed|failed]
 
 #### Built-in Example: sdd-debug — How GSR Uses Its Own Invocation System
 
-GSR ships with a real cross-catalog invocation out of the box: **sdd-debug**. This is not a toy example — it's how the default SDD-Orchestrator handles bugs found during verify.
+GSR ships with a real cross-SDD invocation out of the box: **sdd-debug**. This is not a toy example — it's how the default SDD-Orchestrator handles bugs found during verify.
 
 **How it works:**
 
@@ -349,7 +349,7 @@ SDD-Orchestrator (default)
             └─ FAIL → judge evaluates: revert | escalate | retry (max 2 cycles)
 ```
 
-**The sdd-debug catalog** (`router/catalogs/sdd-debug/`) ships globally with GSR and includes:
+**The sdd-debug SDD** (`router/catalogs/sdd-debug/`) ships globally with GSR and includes:
 - **7 phases** with a strict dependency chain — no shortcuts
 - **7 role contracts** (explorer, triager, diagnostician, fix-proposer, fix-implementer, fix-validator, debug-archiver) — each with professional constraints, red lines, and security-first rules
 - **7 phase contracts** with input/output specifications and required skills
@@ -383,11 +383,11 @@ debug_invoke:
 
 #### Do the Same for Your Own SDDs
 
-The sdd-debug pattern is exactly what you'd build for any cross-catalog workflow. You can connect any SDD to any other SDD from any phase:
+The sdd-debug pattern is exactly what you'd build for any cross-SDD workflow. You can connect any SDD to any other SDD from any phase:
 
 > **Example**: A game studio with department collaboration:
 > ```bash
-> # 1. Create department catalogs
+> # 1. Create department SDDs
 > gsr sdd create game-design
 > gsr sdd create art-production
 > gsr sdd create sound-design
@@ -546,22 +546,14 @@ gsr route show                      Show resolved routes
 gsr route activate                  gsr takes routing control
 gsr route deactivate                Host takes control back
 
-gsr profile list                    List profiles with catalog info
-gsr profile show [name]             Show routes for a profile
-gsr profile create <name>           Create empty profile (auto-syncs)
-gsr profile delete <name>           Delete profile
-gsr profile rename <old> <new>      Rename profile
-gsr profile copy <src> <dest>       Clone profile
-gsr profile export <name>           Export for sharing (--compact)
-gsr profile import <source>         Import from file/URL/gsr://
-
-gsr catalog list                    List catalogs with status
-gsr catalog create <name>           Create catalog (auto-enables + auto-syncs)
-gsr catalog delete <name>           Delete empty catalog
-gsr catalog enable <name>           Show in TUI host (TAB cycling) + auto-sync
-gsr catalog disable <name>          Hide from TUI host + auto-sync
-gsr catalog move <profile> <cat>    Move a profile to a different catalog
-gsr catalog use <name> [preset]     Set active catalog and preset
+gsr preset list                     List presets with SDD/scope/visibility info
+gsr preset show [name]              Show routes for a preset
+gsr preset create <name>            Create empty preset (auto-syncs)
+gsr preset delete <name>            Delete preset
+gsr preset rename <old> <new>       Rename preset
+gsr preset copy <src> <dest>        Clone preset
+gsr preset export <name>            Export for sharing (--compact)
+gsr preset import <source>          Import from file/URL/gsr://
 
 gsr inspect browse [selector]       Multimodel metadata
 gsr inspect compare <a> <b>         Compare two presets
@@ -580,8 +572,8 @@ gsr sdd list                        List custom SDDs
 gsr sdd show <name>                 Show SDD phases and triggers
 gsr sdd delete <name> [--yes]       Delete custom SDD
 
-gsr sdd invoke <catalog>/<sdd>      Create cross-catalog invocation record
-  --from <catalog>/<sdd>              Caller identity (required)
+gsr sdd invoke <target-sdd>/<entry> Create cross-SDD invocation record
+  --from <caller-sdd>/<entry>         Caller identity (required)
   --phase <name>                      Calling phase name (required)
   --payload <string>                  Data to pass to callee (optional)
 
@@ -595,11 +587,11 @@ gsr sdd invocations                 List all invocations
 
 gsr role create <name> --sdd <sdd>  Create role contract for a custom SDD
 gsr phase create <name> --sdd <sdd> Create phase contract for a custom SDD
-gsr phase invoke <name> --sdd <sdd> --target <catalog>/<sdd> --trigger <trigger>
-                                    Add/update invoke declaration on a phase
+gsr phase invoke <name> --sdd <sdd> --target <target-sdd>/<entry> --trigger <trigger>
+                                     Add/update invoke declaration on a phase
 ```
 
-Each category supports `help`: `gsr route help`, `gsr catalog help`, `gsr sdd help`, etc.
+Each category supports `help`: `gsr route help`, `gsr preset help`, `gsr sdd help`, etc.
 
 ---
 
@@ -647,14 +639,15 @@ The record is data. Your orchestrator decides what to do with it.
 | Version | Structure | Status |
 |---------|-----------|--------|
 | v1 | Single file, profiles with phases | Supported (backward compat) |
-| v3 | Single file, catalogs with presets and metadata | Supported (backward compat) |
-| v4 | Multi-file: core + profiles directory | **Current** (default for new installs) |
+| v3 | Single file, internal sources with presets and metadata | Supported (backward compat) |
+| v4 | Multi-file: core + profiles directory | Supported (backward compat) |
+| v5 | Multi-file: core + profiles directory + active_sdd/sdds | **Current** (default for new installs) |
 
 ---
 
-## Profile Structure
+## Preset Structure
 
-### Multi-file v4 layout
+### Multi-file v5 layout
 
 ```
 router/
@@ -668,24 +661,24 @@ router/
 ### Core file (`router/router.yaml`)
 
 ```yaml
-version: 4
+version: 5
+active_sdd: agent-orchestrator
 active_preset: multivendor
 activation_state: active
 metadata:
   installation_contract:
     source_of_truth: router/router.yaml
     runtime_execution: false
-catalogs:
-  default:
+sdds:
+  agent-orchestrator:
     displayName: SDD-Orchestrator
-    enabled: true
 ```
 
 ---
 
 ## Sync Manifest Versions
 
-The `.sync-manifest.json` file version reflects what the catalog contains:
+The `.sync-manifest.json` file version reflects what the active SDD set contains:
 
 | Version | When generated | Contents |
 |---------|---------------|----------|
@@ -735,7 +728,7 @@ router/contracts/
 - GSR uses a **neutral agent persona** — no Gentleman accent, no ecosystem branding
 - All SDD contracts ship **with GSR** (self-contained) — no dependency on gentle-ai files
 - **File-based persistence** is used instead of Engram
-- **All features work** — routing, custom SDDs, cross-catalog invocations, identity resolution, TUI
+- **All features work** — routing, custom SDDs, cross-SDD invocations, identity resolution, TUI
 - The controller label defaults to `host` and execution owners to `['host']`
 
 ### When gentle-ai IS installed
@@ -769,7 +762,7 @@ These phrases form the contractual boundary of `gsr` and are referenced by coher
 
 **Render and orchestration**: render opencode also surfaces a multimodel orchestration manager plan that only labels split/dispatch/merge/judge/radar steps. Preview the OpenCode provider-execution, host-session sync, handoff, schema metadata, and multimodel orchestration manager boundaries without implying execution.
 
-**Compatibility and routing**: compatibility is explicit: schema v1, v3, and v4 are supported; v3 powers multimodel browse/compare and v4 is the current multi-file format. Compatibility: router.yaml versions 1, 3, and 4 are supported; v3 powers multimodel browse/compare and v4 is the current multi-file format. Select the active profile in router/router.yaml without changing who is in control.
+**Compatibility and routing**: compatibility is explicit: schema v1, v3, and v4 are supported; v3 powers multimodel browse/compare and v4 is the current multi-file format. Compatibility: router.yaml versions 1, 3, and 4 are supported; v3 powers multimodel browse/compare and v4 is the current multi-file format. Select the active preset in router/router.yaml without changing who is in control.
 
 **Setup and status**: Quickstart: run gsr status, then gsr bootstrap if router/router.yaml is missing. Show current router status. Use --verbose or --debug for full details. Inspect or apply a YAML-first install intent to router/router.yaml. Show or apply a step-by-step bootstrap path for adoption.
 

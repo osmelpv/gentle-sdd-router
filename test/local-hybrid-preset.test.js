@@ -241,9 +241,9 @@ describe('local-hybrid preset — identity section', () => {
   });
 });
 
-// ─── Catalog registration ─────────────────────────────────────────────────────
+// ─── SDD ownership registration ───────────────────────────────────────────────
 
-describe('local-hybrid preset — catalog registration in router.yaml', () => {
+describe('local-hybrid preset — SDD registration in router.yaml', () => {
   const ROUTER_YAML_PATH = path.join(__dirname, '../router/router.yaml');
 
   test('router.yaml exists', () => {
@@ -258,6 +258,6 @@ describe('local-hybrid preset — catalog registration in router.yaml', () => {
     const profiles = loadV4Profiles(routerDir);
     const localHybrid = profiles.find((p) => p.content.name === 'local-hybrid');
     assert.ok(localHybrid, 'local-hybrid must be discoverable via loadV4Profiles on the project router dir');
-    assert.equal(localHybrid.catalogName, 'default');
+    assert.equal(localHybrid.sddName, 'agent-orchestrator');
   });
 });

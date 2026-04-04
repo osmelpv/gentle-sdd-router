@@ -128,20 +128,24 @@ export function loadPhaseMetadataForCatalog(sddName, catalogsDir) {
   // Build phase metadata map from sdd.yaml phases
   const result = {};
   for (const [phaseName, phase] of Object.entries(sdd.phases)) {
+    const mode = phase.mode ?? ((phase.agents ?? 1) > 1 || phase.judge === true || phase.radar === true ? 'multi' : 'single');
+    const agentExecution = phase.agent_execution ?? phase.execution ?? (mode === 'multi' ? 'parallel' : 'sequential');
     result[phaseName] = {
       description: phase.intent,
-      defaultExecution: phase.execution ?? 'sequential',
+      defaultExecution: agentExecution,
+      mode,
+      agentExecution,
       agents: phase.agents ?? 1,
-      judge: phase.judge ?? false,
-      radar: phase.radar ?? false,
+      judge: mode === 'multi',
+      radar: mode === 'multi' ? (phase.radar ?? false) : false,
       depends_on: phase.depends_on ?? [],
       // Provide compatible fields for TUI wizard usage
-      alwaysMono: (phase.agents ?? 1) === 1 && phase.execution !== 'parallel',
-      fixedRoles: phase.agents && phase.agents > 1
-        ? Array.from({ length: phase.agents }, () => 'agent')
+      alwaysMono: mode === 'single',
+      fixedRoles: mode === 'multi'
+        ? Array.from({ length: Math.max(2, phase.agents ?? 2) }, () => 'agent')
         : ['agent'],
-      optionalRoles: [],
-      judgeContract: phase.judge ? 'Custom phase judge contract.' : null,
+      optionalRoles: mode === 'multi' ? ['judge', 'radar'] : [],
+      judgeContract: mode === 'multi' ? 'Custom phase judge contract.' : null,
     };
   }
 

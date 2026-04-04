@@ -520,12 +520,12 @@ test('gsr reload runs without error and produces output', async () => {
   }
 });
 
-test('gsr list runs without error and shows profiles', async () => {
+test('gsr list runs without error and shows presets', async () => {
   const tempDir = makeMultivendorV4TempDir();
 
   try {
     const output = await captureRunCli(['list'], tempDir);
-    assert.match(output, /Profiles:/);
+    assert.match(output, /Presets:/);
     assert.match(output, /multivendor/);
   } finally {
     fs.rmSync(tempDir, { recursive: true });

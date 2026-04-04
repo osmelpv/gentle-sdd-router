@@ -40,7 +40,7 @@ src/
 │   ├── status-reporter.js          # Simple status vocabulary (emoji + one-liner)
 │   ├── unified-sync.js             # Unified sync: contracts + overlay + commands + validate
 │   ├── sdd-catalog-io.js           # Custom SDD create/read/delete in router/catalogs/
-│   ├── sdd-invocation-io.js        # Cross-catalog invocation records in .gsr/invocations/
+│   ├── sdd-invocation-io.js        # Cross-SDD invocation records in .gsr/invocations/
 │   ├── sync.js                     # Low-level contract manifest generation (v1/v2/v3)
 │   └── migrations/
 │       ├── index.js                # Migration planner, runner, backup/restore
@@ -62,12 +62,12 @@ src/
         └── screens/                # Split-panel screens (@inkjs/ui)
             ├── home.js             # Home screen, navigation hub
             ├── status.js           # Router status screen
-            ├── manage.js           # Profile/catalog management
-            ├── catalog-profiles.js # Catalog + profiles view
-            ├── catalogs.js         # Catalog list screen
-            ├── profile-detail.js   # Profile detail and route view
-            ├── create-profile-wizard.js  # Profile creation wizard
-            ├── edit-profile-wizard.js    # Profile editing wizard
+            ├── manage.js           # Preset management
+            ├── catalog-profiles.js # Internal source + preset view (legacy bridge)
+            ├── catalogs.js         # Internal source list screen (legacy bridge)
+            ├── profile-detail.js   # Preset detail and route view
+            ├── create-profile-wizard.js  # Preset creation wizard
+            ├── edit-profile-wizard.js    # Preset editing wizard
             ├── agent-identity-editor.js  # Identity resolution viewer
             ├── sdd-list.js         # Custom SDD list
             ├── sdd-detail.js       # Custom SDD detail view (shows invoke per phase)
@@ -233,11 +233,11 @@ All file writes use temp-file + rename pattern. For v4 multi-file saves, profile
 
 ### Auto-wiring
 
-`catalog create`, `catalog enable`, `catalog disable`, and `profile create` automatically trigger `unifiedSync`. This means a single operation keeps contracts, overlay, and commands in sync without requiring a manual `gsr sync`.
+`preset create` and legacy internal-source operations automatically trigger `unifiedSync`. This means a single operation keeps contracts, overlay, and commands in sync without requiring a manual `gsr sync`.
 
 ### Simple status vocabulary
 
-`gsr status` (without flags) shows: state header (Ready/Needs sync/Not installed), active preset with phase count, catalog, identity, debug wiring, enabled catalogs, and a one-line SDD connections summary. `--verbose` adds: full configuration, routes with pricing, all presets with debug variants, and an ASCII **SDD CONNECTIONS** graph showing phase trees with invoke arrows between SDDs.
+`gsr status` (without flags) shows: state header (Ready/Needs sync/Not installed), active preset with phase count, SDD, scope, visibility, identity, debug wiring, and a one-line SDD connections summary. `--verbose` adds: full configuration, routes with pricing, all presets with debug variants, and an ASCII **SDD CONNECTIONS** graph showing phase trees with invoke arrows between SDDs.
 
 ## Dependencies
 

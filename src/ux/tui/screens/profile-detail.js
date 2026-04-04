@@ -3,6 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import { TextInput } from '@inkjs/ui';
 import { Menu } from '../components/menu.js';
 import { colors } from '../theme.js';
+import { getActivePresetOwner } from '../../../core/public-preset-metadata.js';
 
 const h = React.createElement;
 
@@ -25,12 +26,13 @@ export function ProfileDetailScreen({ config, configPath, router, setDescription
     router.pop();
   });
 
-  const catalog = config?.catalogs?.[selectedCatalog || config?.active_catalog || 'default'];
+  const activeOwner = getActivePresetOwner(config);
+  const catalog = config?.catalogs?.[selectedCatalog || activeOwner?.catalogName || config?.active_catalog || 'default'];
   const preset = catalog?.presets?.[selectedProfile];
   const isActive = selectedProfile === config?.active_preset;
 
   if (!preset) {
-    return h(Text, { color: colors.red }, `Profile '${selectedProfile}' not found.`);
+    return h(Text, { color: colors.red }, `Preset '${selectedProfile}' not found.`);
   }
 
   // Build phase detail lines
@@ -51,18 +53,18 @@ export function ProfileDetailScreen({ config, configPath, router, setDescription
 
   const actions = [
     { label: 'Edit phases', value: 'edit', description: 'Open the phase/lane editor to modify models, roles, and fallbacks.' },
-    { label: 'Edit Identity', value: 'edit-identity', description: 'Configure agent context, prompt, and AGENTS.md inheritance for this profile.' },
+    { label: 'Edit Identity', value: 'edit-identity', description: 'Configure agent context, prompt, and AGENTS.md inheritance for this preset.' },
     ...(!isActive ? [{ label: 'Activate', value: 'activate', description: `Set '${selectedProfile}' as the active routing preset.` }] : []),
-    { label: 'Export', value: 'export', description: 'Export this profile as YAML to stdout.' },
-    { label: 'Copy', value: 'copy', description: 'Clone this profile with a new name.' },
-    { label: 'Delete', value: 'delete', description: 'Delete this profile from disk.' },
+    { label: 'Export', value: 'export', description: 'Export this preset as YAML to stdout.' },
+    { label: 'Copy', value: 'copy', description: 'Clone this preset with a new name.' },
+    { label: 'Delete', value: 'delete', description: 'Delete this preset from disk.' },
   ];
 
-  // Sub-view: TextInput for copying profile with a new name
+  // Sub-view: TextInput for copying preset with a new name
   if (subView === 'copying') {
     return h(Box, { flexDirection: 'column' },
-      h(Text, { bold: true, color: colors.lavender }, `Copy Profile: ${selectedProfile}`),
-      h(Text, { color: colors.subtext }, 'Enter the new profile name (press Enter to confirm, empty to cancel):'),
+      h(Text, { bold: true, color: colors.lavender }, `Copy Preset: ${selectedProfile}`),
+      h(Text, { color: colors.subtext }, 'Enter the new preset name (press Enter to confirm, empty to cancel):'),
       h(Text, null, ''),
       h(TextInput, {
         placeholder: 'new-profile-name',
@@ -74,7 +76,7 @@ export function ProfileDetailScreen({ config, configPath, router, setDescription
             const routerDir = path.dirname(configPath);
             mod.copyProfile(selectedProfile, newName.trim(), routerDir);
             await reloadConfig();
-            showResult(`Profile '${selectedProfile}' copied to '${newName.trim()}'.`);
+            showResult(`Preset '${selectedProfile}' copied to '${newName.trim()}'.`);
           } catch (err) {
             showResult(`Error: ${err.message}`);
           }
@@ -129,7 +131,7 @@ export function ProfileDetailScreen({ config, configPath, router, setDescription
         if (value === 'export') {
           try {
             const yaml = mod.exportPreset(config, selectedProfile);
-            showResult(`# Profile: ${selectedProfile}\n${yaml}`);
+            showResult(`# Preset: ${selectedProfile}\n${yaml}`);
           } catch (err) {
             showResult(`Error: ${err.message}`);
           }
@@ -146,7 +148,7 @@ export function ProfileDetailScreen({ config, configPath, router, setDescription
             mod.deleteProfile(selectedProfile, routerDir);
             await reloadConfig();
             router.pop();
-            showResult(`Profile '${selectedProfile}' deleted.`);
+            showResult(`Preset '${selectedProfile}' deleted.`);
           } catch (err) {
             showResult(`Error: ${err.message}`);
           }

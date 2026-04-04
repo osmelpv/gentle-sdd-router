@@ -1,15 +1,17 @@
 ---
-description: "[Profile] List all routing profiles with catalog info"
+description: "[Preset] List all routing presets with SDD/scope/visibility info"
 ---
 
-Run `gsr profile list` and display all available profiles to the user.
+Run `gsr preset list` and display all available presets to the user.
 
-Shows each profile with:
+Shows each preset with:
 - Active marker (*)
 - Phase count
-- Catalog membership
+- SDD ownership
+- Scope
+- Visibility
 - Tags (local, budget, etc.)
 
 CONTEXT:
 - Working directory: !`echo -n "$(pwd)"`
-- Command: !`gsr profile list`
+- Command: !`gsr preset list`

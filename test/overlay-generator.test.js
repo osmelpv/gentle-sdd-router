@@ -469,7 +469,7 @@ describe('writeOpenCodeConfig', () => {
 // ── deployGsrCommands / removeGsrCommands ────────────────────────────────────
 
 describe('deployGsrCommands', () => {
-  test('deploys 18 markdown files including gsr.md', () => {
+  test('deploys 15 markdown files including gsr.md', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-deploy-'));
 
     try {
@@ -478,15 +478,15 @@ describe('deployGsrCommands', () => {
       // No error from source-dir lookup
       assert.equal(result.error, undefined, 'no error finding source directory');
 
-      // 17 gsr-*.md + 1 gsr.md = 18 total files in target dir
+      // 13 gsr-*.md + 1 gsr.md = 14 total files in target dir
       const deployed = fs.readdirSync(tempDir).filter(f => f.endsWith('.md'));
-      assert.equal(deployed.length, 18, `expected 18 .md files, got ${deployed.length}: ${deployed.join(', ')}`);
+      assert.equal(deployed.length, 14, `expected 14 .md files, got ${deployed.length}: ${deployed.join(', ')}`);
 
       // gsr.md specifically must be present
       assert.ok(deployed.includes('gsr.md'), 'gsr.md dispatcher was deployed');
 
       // All written count matches
-      assert.equal(result.written, 18, 'deployGsrCommands reports 18 written files');
+      assert.equal(result.written, 14, 'deployGsrCommands reports 14 written files');
     } finally {
       fs.rmSync(tempDir, { recursive: true });
     }
@@ -496,14 +496,14 @@ describe('deployGsrCommands', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-redeploy-'));
 
     try {
-      // First deploy — all 18 written
+      // First deploy — all 14 written
       const first = deployGsrCommands({ commandsDir: tempDir });
-      assert.equal(first.written, 18, 'first deploy writes all 18 files');
+      assert.equal(first.written, 14, 'first deploy writes all 14 files');
 
-      // Second deploy — all 18 skipped (identical content)
+      // Second deploy — all 14 skipped (identical content)
       const second = deployGsrCommands({ commandsDir: tempDir });
       assert.equal(second.written, 0, 'second deploy writes 0 files (all identical)');
-      assert.equal(second.skipped, 18, 'second deploy skips all 18 identical files');
+      assert.equal(second.skipped, 14, 'second deploy skips all 14 identical files');
     } finally {
       fs.rmSync(tempDir, { recursive: true });
     }
@@ -686,17 +686,17 @@ describe('removeGsrCommands', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-remove-'));
 
     try {
-      // Deploy all 18 files first
+      // Deploy all 14 files first
       deployGsrCommands({ commandsDir: tempDir });
 
       const beforeRemove = fs.readdirSync(tempDir).filter(f => f.endsWith('.md'));
-      assert.equal(beforeRemove.length, 18, 'precondition: 18 files deployed');
+      assert.equal(beforeRemove.length, 14, 'precondition: 14 files deployed');
 
       // Remove gsr-*.md files
       const result = removeGsrCommands({ commandsDir: tempDir });
 
-      // 17 gsr-*.md files should be removed
-      assert.equal(result.removed, 17, 'removeGsrCommands removes 17 gsr-*.md files');
+      // 13 gsr-*.md files should be removed
+      assert.equal(result.removed, 13, 'removeGsrCommands removes 13 gsr-*.md files');
 
       const afterRemove = fs.readdirSync(tempDir).filter(f => f.endsWith('.md'));
 

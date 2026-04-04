@@ -272,9 +272,9 @@ test('help output lists the available commands', async () => {
   assert.match(output, /Multimodel browse\/compare expose shareable schema v3 metadata only\./i);
   assert.match(output, /Compatibility: router\.yaml versions 1, 3, and 4 are supported; v3 powers multimodel browse\/compare and v4 is the current multi-file format\./i);
   assert.match(output, /Quickstart: run gsr status, then gsr bootstrap if router\/router\.yaml is missing\./i);
-  assert.match(output, /use <profile>\s+Select the active profile in router\/router\.yaml without changing who is in control\./i);
+  assert.match(output, /use <preset>\s+Select the active preset in router\/router\.yaml without changing who is in control\./i);
   assert.match(output, /status\s+Show current router status\./i);
-  assert.match(output, /list\s+List available profiles and mark the active one\./i);
+  assert.match(output, /list\s+List available presets and mark the active one\./i);
   assert.match(output, /browse \[selector\]\s+Inspect shareable multimodel metadata projected from schema v3 without recommending or executing anything\./i);
   assert.match(output, /compare <left> <right>\s+Compare two shareable multimodel projections without recommending or executing anything\./i);
   assert.match(output, /activate\s+Take control of routing without changing the active profile\./i);
@@ -787,7 +787,7 @@ test('v4 save round-trip: modify active_preset then reload matches', () => {
   }
 });
 
-test('v4 save round-trip without previousConfig: setActiveProfile preserves _v4Source so v4 structure is not destroyed', () => {
+test('v4/v5 save round-trip without previousConfig: setActiveProfile preserves _v4Source so multi-file structure is not destroyed', () => {
   // This is the regression test for the bug where `gsr use <profile>` would destroy
   // the v4 multi-file structure because saveRouterConfig was called without previousConfig.
   // The fix: setActiveProfile now preserves the non-enumerable _v4Source property.
@@ -814,9 +814,9 @@ test('v4 save round-trip without previousConfig: setActiveProfile preserves _v4S
     // now fixed by setActiveProfile preserving _v4Source)
     saveRouterConfig(updated, configPath);
 
-    // The core router.yaml must still be a v4 core file (small, version: 4)
+    // The core router.yaml must still be a compact multi-file core file.
     const coreRaw = fs.readFileSync(configPath, 'utf8');
-    assert.match(coreRaw, /^version: 4/m, 'core router.yaml still has version: 4');
+    assert.match(coreRaw, /^version: 5/m, 'core router.yaml now uses version: 5');
     assert.doesNotMatch(coreRaw, /catalogs:/, 'core router.yaml must not contain catalogs (that would be a v3 monolith)');
 
     // Profile files must still exist

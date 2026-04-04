@@ -549,9 +549,10 @@ describe('disassembleV4Config', () => {
       const assembled = assembleV4Config(MINIMAL_CORE_CONFIG, profiles);
       const { coreFields, profiles: disassembled } = disassembleV4Config(assembled);
 
-      assert.equal(coreFields.version, 4);
+      assert.equal(coreFields.version, 5);
       assert.equal(coreFields.active_preset, 'balanced');
       assert.equal(coreFields.activation_state, 'active');
+      assert.equal(coreFields.active_sdd, 'agent-orchestrator');
 
       assert.equal(disassembled.length, 2);
 
@@ -560,10 +561,12 @@ describe('disassembleV4Config', () => {
 
       assert.ok(balancedOut, 'balanced preserved');
       assert.equal(balancedOut.catalog, 'default');
+      assert.equal(balancedOut.sdd, 'agent-orchestrator');
       assert.ok(balancedOut.content.phases, 'phases preserved');
 
       assert.ok(safetyOut, 'safety preserved');
       assert.equal(safetyOut.catalog, 'default');
+      assert.equal(safetyOut.sdd, 'agent-orchestrator');
     } finally {
       cleanup(dir);
     }
@@ -730,7 +733,7 @@ phases:
     }
   });
 
-  test('write plan coreContent has version 4', () => {
+  test('write plan coreContent has version 5', () => {
     const dir = makeTempDir();
 
     try {
@@ -745,8 +748,9 @@ phases:
 
       const plan = buildV4WritePlan(oldConfig, newConfig);
 
-      assert.equal(plan.coreContent.version, 4);
+      assert.equal(plan.coreContent.version, 5);
       assert.equal(plan.coreContent.activation_state, 'inactive');
+      assert.equal(plan.coreContent.active_sdd, 'agent-orchestrator');
     } finally {
       cleanup(dir);
     }

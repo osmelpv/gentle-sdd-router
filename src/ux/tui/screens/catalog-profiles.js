@@ -18,7 +18,7 @@ export function CatalogProfilesScreen({ config, router, setDescription, selected
 
   // Guard: catalog might not exist yet (newly created, config reload pending)
   const displayName = !selectedCatalog
-    ? 'Unknown Catalog'
+    ? 'Unknown SDD source'
     : selectedCatalog === 'default'
       ? (catalog?.displayName ?? 'SDD-Orchestrator') + ' (default)'
       : (catalog?.displayName ?? selectedCatalog);
@@ -30,15 +30,15 @@ export function CatalogProfilesScreen({ config, router, setDescription, selected
     return {
       label: `${name}${marker} — ${phaseCount} phase(s)`,
       value: name,
-      description: `View or edit profile '${name}'. ${phaseCount} phases configured.`,
+      description: `View or edit preset '${name}'. ${phaseCount} phases configured.`,
     };
   });
 
-  items.push({ label: '+ Create new profile', value: '__create__', description: 'Start the guided profile creation wizard.' });
+  items.push({ label: '+ Create new preset', value: '__create__', description: 'Start the guided preset creation wizard.' });
 
   return h(Box, { flexDirection: 'column' },
     h(Text, { bold: true, color: colors.lavender }, displayName),
-    h(Text, { color: colors.subtext }, `${Object.keys(presets).length} profile(s) in this catalog.`),
+    h(Text, { color: colors.subtext }, `${Object.keys(presets).length} preset(s) in this source.`),
     h(Text, null, ''),
     h(Menu, {
       items,

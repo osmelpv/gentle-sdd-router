@@ -21,6 +21,7 @@ import { TextInput } from '@inkjs/ui';
 import { Menu } from '../components/menu.js';
 import { colors } from '../theme.js';
 import { resolveIdentity } from '../../../core/agent-identity.js';
+import { getActivePresetOwner } from '../../../core/public-preset-metadata.js';
 
 const h = React.createElement;
 
@@ -191,7 +192,9 @@ export function AgentIdentityEditor({
             );
             const pathMod = await import('node:path');
             const routerDir = configPath ? pathMod.dirname(configPath) : process.cwd();
-            const profileData = mod.loadRouterConfig(configPath)?.catalogs?.[selectedCatalog || 'default']?.presets?.[selectedProfile];
+            const loadedConfig = mod.loadRouterConfig(configPath);
+            const activeOwner = getActivePresetOwner(loadedConfig);
+            const profileData = loadedConfig?.catalogs?.[selectedCatalog || activeOwner?.catalogName || 'default']?.presets?.[selectedProfile];
 
             if (!profileData) {
               dispatch({ type: 'SET_ERROR', value: `Profile '${selectedProfile}' not found.` });

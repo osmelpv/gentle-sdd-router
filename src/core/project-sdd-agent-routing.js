@@ -2,6 +2,7 @@ import path from 'node:path';
 import { loadRouterConfig } from '../adapters/opencode/index.js';
 import { loadCustomSdds } from './sdd-catalog-io.js';
 import { resolveIdentity } from './agent-identity.js';
+import { getActivePresetOwner } from './public-preset-metadata.js';
 
 function pickPrimaryLane(lanes = []) {
   if (!Array.isArray(lanes) || lanes.length === 0) return null;
@@ -21,8 +22,7 @@ function baseTools() {
 }
 
 function fallbackLaneFromActivePreset(config) {
-  const activeCatalog = config.catalogs?.[config.active_catalog];
-  const activePreset = activeCatalog?.presets?.[config.active_preset];
+  const activePreset = getActivePresetOwner(config)?.preset;
   if (!activePreset) return null;
   return pickPrimaryLane(activePreset.phases?.orchestrator ?? []);
 }
@@ -39,13 +39,13 @@ function pickLaneForCustomPhase(config, sddName, phaseName) {
     if (orchestratorLane?.target) return { lane: orchestratorLane, source: `${sddName}/${presetName}/orchestrator`, preset };
   }
 
-  const activeCatalog = config.catalogs?.[config.active_catalog];
-  const activePreset = activeCatalog?.presets?.[config.active_preset];
+  const activeOwner = getActivePresetOwner(config);
+  const activePreset = activeOwner?.preset;
   const activeSamePhase = pickPrimaryLane(activePreset?.phases?.[phaseName] ?? []);
-  if (activeSamePhase?.target) return { lane: activeSamePhase, source: `${config.active_catalog}/${config.active_preset}/${phaseName}`, preset: activePreset };
+  if (activeSamePhase?.target) return { lane: activeSamePhase, source: `${activeOwner?.catalogName ?? 'default'}/${config.active_preset}/${phaseName}`, preset: activePreset };
 
   const fallback = fallbackLaneFromActivePreset(config);
-  if (fallback?.target) return { lane: fallback, source: `${config.active_catalog}/${config.active_preset}/orchestrator`, preset: activePreset };
+  if (fallback?.target) return { lane: fallback, source: `${activeOwner?.catalogName ?? 'default'}/${config.active_preset}/orchestrator`, preset: activePreset };
 
   return { lane: null, source: null, preset: activePreset ?? null };
 }

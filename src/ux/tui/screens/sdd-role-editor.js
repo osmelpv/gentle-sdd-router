@@ -1,5 +1,5 @@
 /**
- * SDD Role Editor — CRUD for catalog-scoped role contracts.
+ * SDD Role Editor — CRUD for SDD-scoped role contracts.
  *
  * Allows:
  *   - Adding a new role contract (.md file)
@@ -22,7 +22,7 @@ description: >
 metadata:
   author: user
   version: "1.0"
-  scope: catalog
+  scope: sdd
 ---
 
 ## Role Definition

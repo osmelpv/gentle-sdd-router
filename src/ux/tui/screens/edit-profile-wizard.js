@@ -3,11 +3,13 @@ import { Box, Text, useInput } from 'ink';
 import { SplitPanelEdit } from '../components/split-panel-edit.js';
 import { Menu } from '../components/menu.js';
 import { colors } from '../theme.js';
+import { getActivePresetOwner } from '../../../core/public-preset-metadata.js';
 
 const h = React.createElement;
 
 export function EditProfileWizard({ config, configPath, router, setDescription, showResult, reloadConfig, profileName, catalogName }) {
-  const catalog = config?.catalogs?.[catalogName || config?.active_catalog || 'default'];
+  const activeOwner = getActivePresetOwner(config);
+  const catalog = config?.catalogs?.[catalogName || activeOwner?.catalogName || config?.active_catalog || 'default'];
   const preset = catalog?.presets?.[profileName];
   const [phases, setPhases] = useState(() => JSON.parse(JSON.stringify(preset?.phases || {})));
   const [hasChanges, setHasChanges] = useState(false);

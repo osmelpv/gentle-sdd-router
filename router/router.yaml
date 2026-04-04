@@ -1,16 +1,7 @@
-version: 4
-active_catalog: default
-active_preset: multivendor
+version: 5
+active_sdd: agent-orchestrator
+active_preset: local-hybrid
 activation_state: active
-persona: neutral
-catalogs:
-  default:
-    displayName: SDD-Orchestrator
-    enabled: true
-    active_preset: multivendor
-  sdd-debug:
-    displayName: SDD-Debug
-    enabled: true
 metadata:
   installation_contract:
     source_of_truth: router/router.yaml
@@ -18,3 +9,8 @@ metadata:
     bootstrap_command: gsr bootstrap
     shell_fallback: gsr bootstrap --no-apply
     runtime_execution: false
+sdds:
+  agent-orchestrator:
+    displayName: SDD-Orchestrator
+  sdd-debug:
+    displayName: SDD-Debug

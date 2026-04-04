@@ -226,12 +226,12 @@ export async function wizardImport(context, prompts = p) {
 
 export async function wizardManageProfiles(context, prompts = p) {
   const action = await prompts.select({
-    message: 'Profile management:',
+    message: 'Preset management:',
     options: [
-      { value: 'profile-create', label: 'Create profile', hint: 'Create a new empty profile' },
-      { value: 'profile-delete', label: 'Delete profile', hint: 'Delete an existing profile' },
-      { value: 'profile-rename', label: 'Rename profile', hint: 'Rename an existing profile' },
-      { value: 'profile-copy', label: 'Copy profile', hint: 'Clone an existing profile' },
+      { value: 'profile-create', label: 'Create preset', hint: 'Create a new empty preset' },
+      { value: 'profile-delete', label: 'Delete preset', hint: 'Delete an existing preset' },
+      { value: 'profile-rename', label: 'Rename preset', hint: 'Rename an existing preset' },
+      { value: 'profile-copy', label: 'Copy preset', hint: 'Clone an existing preset' },
     ],
   });
 
@@ -239,7 +239,7 @@ export async function wizardManageProfiles(context, prompts = p) {
 
   if (action === 'profile-create') {
     const name = await prompts.text({
-      message: 'New profile name:',
+      message: 'New preset name:',
       validate(value) { if (!value || !value.trim()) return 'Name is required.'; },
     });
     if (prompts.isCancel(name)) return null;
@@ -255,7 +255,7 @@ export async function wizardManageProfiles(context, prompts = p) {
       }
     }
     if (presets.length === 0) {
-      prompts.log.warn('No profiles found.');
+      prompts.log.warn('No presets found.');
       return null;
     }
     const selected = await prompts.select({ message: 'Select profile to delete:', options: presets });

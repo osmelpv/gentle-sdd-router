@@ -1,4 +1,5 @@
 name: heavyweight
+sdd: agent-orchestrator
 availability: stable
 complexity: extreme
 debug_invoke:

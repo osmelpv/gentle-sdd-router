@@ -66,6 +66,7 @@ import {
   materializeGlobalSddAgents,
   materializeProjectSddAgents,
 } from './router-config.js';
+import { getPublicPresetMetadata, getActivePublicPresetMetadata } from './core/public-preset-metadata.js';
 import { resolveControllerLabel, resolvePersona } from './core/controller.js';
 import { resolveIdentity, resetIdentityCache } from './core/agent-identity.js';
 import { getSimpleStatus, getVerboseStatus } from './core/status-reporter.js';
@@ -209,6 +210,9 @@ export async function runCli(argv) {
       return runRoute(rest);
     case 'identity':
       return runIdentityCommand(rest);
+    case 'preset':
+      return runPreset(rest);
+    case 'preset':
     case 'profile':
       return runProfile(rest);
     case 'catalog':
@@ -320,7 +324,7 @@ function runUse(args) {
   const nextConfig = setActiveProfile(currentConfig, profileName);
   saveRouterConfig(nextConfig, configPath, currentConfig);
 
-  process.stdout.write(`Active profile set to: ${profileName}\n`);
+  process.stdout.write(`Active preset set to: ${profileName}\n`);
 }
 
 function runReload() {
@@ -383,26 +387,20 @@ function runList() {
   maybeWarnOutdatedConfig();
   const configPath = getConfigPath();
   const config = loadRouterConfig(configPath);
-  const profiles = listProfiles(config);
+  const presets = getPublicPresetMetadata(config);
 
-  // Build a map: presetName -> catalogName
-  const presetCatalogMap = {};
-  for (const [catalogName, catalog] of Object.entries(config.catalogs ?? {})) {
-    for (const presetName of Object.keys(catalog.presets ?? {})) {
-      presetCatalogMap[presetName] = catalogName;
-    }
-  }
-
-  process.stdout.write('Profiles:\n');
-  for (const profile of profiles) {
-    const marker = profile.active ? '*' : ' ';
-    const tags = buildProfileTags(config, profile.name);
+  process.stdout.write('Presets:\n');
+  for (const preset of presets) {
+    const marker = preset.active ? '*' : ' ';
+    const tags = buildProfileTags(config, preset.name);
     const tagSuffix = tags.length > 0 ? ` ${tags.map((t) => `[${t}]`).join(' ')}` : '';
-    const catalogName = presetCatalogMap[profile.name] ?? 'default';
-    const catalogMeta = config.catalogs?.[catalogName];
-    const catalogLabel = getCatalogDisplayName(catalogName, catalogMeta);
-    process.stdout.write(`${marker} ${profile.name} (${profile.phases.length} phases) — ${catalogLabel}${tagSuffix}\n`);
+    process.stdout.write(`${marker} ${preset.name} (${preset.phases} phases) — ${preset.sdd} (${preset.scope}, ${preset.visibility})${tagSuffix}\n`);
   }
+}
+
+function runPreset(args) {
+  const [subcommand, ...rest] = args;
+  return runProfile([subcommand, ...rest]);
 }
 
 function runBrowse(args) {
@@ -1138,7 +1136,7 @@ async function runProfileCreate(args) {
   const name = args.find((a) => !a.startsWith('--'));
   if (!name) {
     printUsage();
-    throw new Error('gsr profile create requires a profile name.');
+    throw new Error('gsr preset create requires a preset name.');
   }
 
   const catalogIndex = args.indexOf('--catalog');
@@ -1155,7 +1153,7 @@ async function runProfileCreate(args) {
   const routerDir = path.dirname(configPath);
   const result = createProfile(name, routerDir, { catalog, target });
   const catalogLabel = result.catalog !== 'default' ? ` (catalog: ${result.catalog})` : '';
-  process.stdout.write(`Created profile '${result.presetName}'${catalogLabel} → ${result.path}\n`);
+  process.stdout.write(`Created preset '${result.presetName}'${catalogLabel} → ${result.path}\n`);
 
   // Auto-trigger unified sync after successful profile creation (REQ-7)
   try {
@@ -1175,7 +1173,7 @@ function runProfileDelete(args) {
   const name = args.find((a) => !a.startsWith('--'));
   if (!name) {
     printUsage();
-    throw new Error('gsr profile delete requires a profile name.');
+    throw new Error('gsr preset delete requires a preset name.');
   }
 
   const catalogIndex = args.indexOf('--catalog');
@@ -1189,7 +1187,7 @@ function runProfileDelete(args) {
 
   const routerDir = path.dirname(configPath);
   const result = deleteProfile(name, routerDir, { catalog });
-  process.stdout.write(`Deleted profile '${result.presetName}' from ${result.path}\n`);
+  process.stdout.write(`Deleted preset '${result.presetName}' from ${result.path}\n`);
 }
 
 function runProfileRename(args) {
@@ -1199,7 +1197,7 @@ function runProfileRename(args) {
 
   if (!oldName || !newName) {
     printUsage();
-    throw new Error('gsr profile rename requires <old-name> <new-name>.');
+    throw new Error('gsr preset rename requires <old-name> <new-name>.');
   }
 
   const catalogIndex = args.indexOf('--catalog');
@@ -1213,7 +1211,7 @@ function runProfileRename(args) {
 
   const routerDir = path.dirname(configPath);
   const result = renameProfile(oldName, newName, routerDir, { catalog });
-  process.stdout.write(`Renamed profile '${result.oldName}' → '${result.newName}' (${result.path})\n`);
+  process.stdout.write(`Renamed preset '${result.oldName}' → '${result.newName}' (${result.path})\n`);
 }
 
 function runProfileCopy(args) {
@@ -1223,7 +1221,7 @@ function runProfileCopy(args) {
 
   if (!sourceName || !destName) {
     printUsage();
-    throw new Error('gsr profile copy requires <source> <dest>.');
+    throw new Error('gsr preset copy requires <source> <dest>.');
   }
 
   const catalogIndex = args.indexOf('--catalog');
@@ -1237,7 +1235,7 @@ function runProfileCopy(args) {
 
   const routerDir = path.dirname(configPath);
   const result = copyProfile(sourceName, destName, routerDir, { catalog });
-  process.stdout.write(`Copied profile '${result.sourceName}' → '${result.destName}' (${result.path})\n`);
+  process.stdout.write(`Copied preset '${result.sourceName}' → '${result.destName}' (${result.path})\n`);
 }
 
 function runCatalogList(_args) {
@@ -1251,12 +1249,12 @@ function runCatalogList(_args) {
   const config = loadRouterConfig(configPath);
   const catalogs = listCatalogs(routerDir);
 
-  process.stdout.write('Catalogs:\n');
+  process.stdout.write('Preset sources (legacy):\n');
   for (const cat of catalogs) {
     const meta = config.catalogs?.[cat.name];
     const displayLabel = getCatalogDisplayName(cat.name, meta);
-    const enabledFlag = meta?.enabled === false ? ' [disabled]' : ' [enabled]';
-    process.stdout.write(`  ${displayLabel}${enabledFlag} (${cat.profileCount} profile(s))\n`);
+    const visibility = meta?.enabled === false ? 'hidden' : 'visible';
+    process.stdout.write(`  ${displayLabel} [${visibility}] (${cat.profileCount} preset(s))\n`);
   }
 }
 
@@ -1275,7 +1273,7 @@ async function runCatalogCreate(args) {
 
   const routerDir = path.dirname(configPath);
   const result = createCatalog(name, routerDir);
-  process.stdout.write(`Created catalog '${result.name}' at ${result.path}\n`);
+  process.stdout.write(`Created preset source '${result.name}' at ${result.path}\n`);
 
   // Auto-enable + trigger unified sync (REQ-6)
   try {
@@ -1307,7 +1305,7 @@ function runCatalogDelete(args) {
 
   const routerDir = path.dirname(configPath);
   const result = deleteCatalog(name, routerDir);
-  process.stdout.write(`Deleted catalog '${result.name}' from ${result.path}\n`);
+  process.stdout.write(`Deleted preset source '${result.name}' from ${result.path}\n`);
 }
 
 async function runCatalogEnable(args) {
@@ -1323,7 +1321,7 @@ async function runCatalogEnable(args) {
   }
   const routerDir = path.dirname(configPath);
   setCatalogEnabled(name, true, routerDir);
-  process.stdout.write(`Catalog '${name}' enabled.\n`);
+  process.stdout.write(`Preset source '${name}' is now visible.\n`);
 
   // Auto-sync after enable (REQ-6)
   try {
@@ -1348,7 +1346,7 @@ async function runCatalogDisable(args) {
   }
   const routerDir = path.dirname(configPath);
   setCatalogEnabled(name, false, routerDir);
-  process.stdout.write(`Catalog '${name}' disabled.\n`);
+  process.stdout.write(`Preset source '${name}' is now hidden.\n`);
 
   // Auto-sync after disable to remove agents from opencode.json (REQ-6)
   try {
@@ -1367,7 +1365,7 @@ function runCatalogMove(args) {
 
   if (!name || !targetCatalog) {
     printUsage();
-    throw new Error('gsr catalog move requires: gsr catalog move <profile> <target-catalog>');
+    throw new Error('gsr catalog move requires: gsr catalog move <preset> <target-source>');
   }
 
   const fromIndex = args.indexOf('--from');
@@ -1380,7 +1378,7 @@ function runCatalogMove(args) {
   }
   const routerDir = path.dirname(configPath);
   const result = moveProfile(name, targetCatalog, routerDir, { sourceCatalog });
-  process.stdout.write(`Moved profile '${result.name}' from '${result.from}' to '${result.to}'\n`);
+  process.stdout.write(`Moved preset '${result.name}' from '${result.from}' to '${result.to}'\n`);
 }
 
 function runCatalogUse(args) {
@@ -1388,7 +1386,7 @@ function runCatalogUse(args) {
   const presetOverride = args[1]; // optional
   if (!catalogName) {
     printUsage();
-    throw new Error('gsr catalog use requires a catalog name.');
+    throw new Error('gsr catalog use requires a source name.');
   }
   const configPath = discoverConfigPath();
   if (!configPath) {
@@ -1400,7 +1398,7 @@ function runCatalogUse(args) {
 
   // Verify catalog exists
   if (!config.catalogs?.[catalogName]) {
-    throw new Error(`Catalog '${catalogName}' not found.`);
+    throw new Error(`Source '${catalogName}' not found.`);
   }
 
   // Determine which preset to activate
@@ -1410,7 +1408,7 @@ function runCatalogUse(args) {
     ?? null;
 
   if (!preset) {
-    throw new Error(`Catalog '${catalogName}' has no profiles.`);
+    throw new Error(`Source '${catalogName}' has no presets.`);
   }
 
   // Update router.yaml
@@ -1423,7 +1421,7 @@ function runCatalogUse(args) {
   fs.writeFileSync(tempPath, yaml, 'utf8');
   fs.renameSync(tempPath, configPath);
 
-  process.stdout.write(`Active catalog: ${catalogName}\nActive preset: ${preset}\n`);
+  process.stdout.write(`Active SDD source: ${catalogName}\nActive preset: ${preset}\n`);
 }
 
 // === CATEGORY DISPATCHERS ===
@@ -1552,28 +1550,22 @@ function renderGeneralHelp() {
     '  sync                      Push global contracts to Engram (dev/repair).',
     '',
     '  route                     Control which models serve each phase.',
-    '    use <preset>            Select the active profile in router/router.yaml without changing who is in control.',
+    '    use <preset>            Select the active preset in router/router.yaml without changing who is in control.',
     '    show                    Show resolved routes for current preset.',
     '    activate                gsr takes control of routing.',
     `    deactivate              Hand control back to ${controllerLabel} without changing the active profile.`,
     '',
-    '  profile                   Manage routing profiles.',
-    '    list                    List available profiles and mark the active one.',
-    '    create <name>           Create an empty profile.',
-    '    delete <name>           Delete a profile.',
-    '    rename <old> <new>      Rename a profile.',
-    '    copy <src> <dest>       Clone a profile.',
+    '  preset                    Manage routing presets (canonical public term).',
+    '    list                    List available presets and mark the active one.',
+    '    create <name>           Create an empty preset.',
+    '    delete <name>           Delete a preset.',
+    '    rename <old> <new>      Rename a preset.',
+    '    copy <src> <dest>       Clone a preset.',
     '    export <name>           Export for sharing (--compact for gsr:// string).',
     '    import <source>         Import from file, URL, or gsr:// string.',
+    '  profile                   Legacy alias for preset commands.',
     '',
-    '  catalog                   Manage profile catalogs and TUI visibility.',
-    '    list                    List catalogs with status.',
-    '    create <name>           Create a catalog (disabled by default).',
-    '    delete <name>           Delete an empty catalog.',
-    '    enable <name>           Enable catalog in TUI host (TAB cycling).',
-    '    disable <name>          Disable catalog from TUI host.',
-    '    move <name> <catalog>   Move a profile to another catalog.',
-    '    use <name> [preset]     Set active catalog (and optionally preset).',
+    '  catalog                   Legacy/advanced compatibility commands (scheduled for removal).',
     '',
     '  inspect                   Read-only views of metadata and boundaries.',
     '    browse [selector]       Inspect shareable multimodel metadata projected from schema v3 without recommending or executing anything.',
@@ -1588,8 +1580,8 @@ function renderGeneralHelp() {
     '    apply <target>          Generate TUI overlay (--apply to write).',
     '',
     'Backward-compat aliases (old commands still work at root):',
-    '    use <profile>       Select the active profile in router/router.yaml without changing who is in control.',
-    '    list                List available profiles and mark the active one.',
+    '    use <preset>        Select the active preset in router/router.yaml without changing who is in control.',
+    '    list                List available presets and mark the active one.',
     '    browse [selector]   Inspect shareable multimodel metadata projected from schema v3 without recommending or executing anything.',
     '    compare <left> <right>  Compare two shareable multimodel projections without recommending or executing anything.',
     '    render opencode     Preview the OpenCode provider-execution, host-session sync, handoff, schema metadata, and multimodel orchestration manager boundaries without implying execution.',
@@ -1740,61 +1732,61 @@ function renderCommandHelp(topic, subtopic) {
     ].join('\n') + '\n';
   }
 
-  if (normalized === 'profile') {
+  if (normalized === 'preset' || normalized === 'profile') {
     const sub = subtopic?.toLowerCase();
     if (!sub) {
       return [
-        'Usage: gsr profile <subcommand> [args]',
-        'Manage routing profiles.',
+        'Usage: gsr preset <subcommand> [args]',
+        'Manage routing presets. (`profile` remains as a legacy alias.)',
         '',
-        '  list                    List available profiles.',
-        '  create <name>           Create a new empty profile.',
-        '  delete <name>           Delete a profile.',
-        '  rename <old> <new>      Rename a profile.',
-        '  copy <src> <dst>        Copy/clone a profile.',
+        '  list                    List available presets.',
+        '  create <name>           Create a new empty preset.',
+        '  delete <name>           Delete a preset.',
+        '  rename <old> <new>      Rename a preset.',
+        '  copy <src> <dst>        Copy/clone a preset.',
         '  export <name> [--compact] [--out <path>]  Export a preset for sharing.',
         '  import <source> [--catalog <name>] [--force]  Import a preset.',
       ].join('\n') + '\n';
     }
     if (sub === 'create') {
       return [
-        'Usage: gsr profile create <name> [--catalog <catalog>] [--target <model>]',
-        'Create a new empty profile with a single orchestrator phase.',
-        '  <name>           Profile name.',
+        'Usage: gsr preset create <name> [--catalog <catalog>] [--target <model>]',
+        'Create a new empty preset with a single orchestrator phase.',
+        '  <name>           Preset name.',
         '  --catalog <name> Place in a named catalog subdirectory.',
         '  --target <model> Model target (default: anthropic/claude-sonnet).',
       ].join('\n') + '\n';
     }
     if (sub === 'delete') {
       return [
-        'Usage: gsr profile delete <name> [--catalog <catalog>]',
-        'Delete a profile file.',
-        '  <name>           Profile name.',
+        'Usage: gsr preset delete <name> [--catalog <catalog>]',
+        'Delete a preset file.',
+        '  <name>           Preset name.',
         '  --catalog <name> Look in a specific catalog.',
       ].join('\n') + '\n';
     }
     if (sub === 'rename') {
       return [
-        'Usage: gsr profile rename <old> <new> [--catalog <catalog>]',
-        'Rename a profile (updates the file and the name field).',
+        'Usage: gsr preset rename <old> <new> [--catalog <catalog>]',
+        'Rename a preset (updates the file and the name field).',
       ].join('\n') + '\n';
     }
     if (sub === 'copy') {
       return [
-        'Usage: gsr profile copy <source> <dest> [--catalog <catalog>]',
-        'Copy/clone a profile to a new name.',
+        'Usage: gsr preset copy <source> <dest> [--catalog <catalog>]',
+        'Copy/clone a preset to a new name.',
       ].join('\n') + '\n';
     }
     if (sub === 'list') {
       return [
-        'Usage: gsr profile list',
-        'List available profiles and mark the active one.',
+        'Usage: gsr preset list',
+        'List available presets and mark the active one.',
       ].join('\n') + '\n';
     }
     if (sub === 'show') {
       return [
-        'Usage: gsr profile show',
-        'Show resolved routes for the active profile.',
+        'Usage: gsr preset show',
+        'Show resolved routes for the active preset.',
       ].join('\n') + '\n';
     }
     if (sub === 'export') {
@@ -1811,51 +1803,50 @@ function renderCommandHelp(topic, subtopic) {
     if (!sub) {
       return [
         'Usage: gsr catalog <subcommand> [args]',
-        'Manage profile catalogs and TUI visibility.',
+        'Legacy/advanced compatibility commands for internal preset sources.',
         '',
-        '  list               List catalogs with enable/disable status.',
-        '  create <name>      Create a catalog (disabled by default).',
-        '  delete <name>      Delete an empty catalog.',
-        '  enable <name>      Enable catalog — its presets appear in TUI host.',
-        '  disable <name>     Disable catalog — its presets are hidden from TUI host.',
-        '  move <name> <catalog>  Move a profile to another catalog.',
-        '  use <name> [preset]  Set active catalog (and optionally preset).',
+        '  list               List internal preset sources and host visibility.',
+        '  create <name>      Create an internal preset source (legacy).',
+        '  delete <name>      Delete an empty preset source.',
+        '  enable <name>      Make a source visible in the host.',
+        '  disable <name>     Hide a source from the host.',
+        '  move <name> <catalog>  Move a preset to another source.',
+        '  use <name> [preset]  Set active source (and optionally preset).',
         '',
-        'Note: Only enabled catalogs generate agents in the TUI host (e.g., OpenCode TAB cycling).',
-        'The SDD-Orchestrator (default) catalog is enabled by default. New catalogs start disabled.',
+        'Note: Presets are the canonical public concept. `catalog` remains temporarily for compatibility only.',
       ].join('\n') + '\n';
     }
     if (sub === 'list') {
       return [
         'Usage: gsr catalog list',
-        'List all catalogs (directories under profiles/ + default).',
+        'List internal preset sources (legacy compatibility view).',
       ].join('\n') + '\n';
     }
     if (sub === 'create') {
       return [
         'Usage: gsr catalog create <name>',
-        'Create a new catalog directory under profiles/.',
+        'Create a new internal preset source directory (legacy).',
       ].join('\n') + '\n';
     }
     if (sub === 'delete') {
       return [
         'Usage: gsr catalog delete <name>',
-        'Delete an empty catalog. Fails if the catalog contains profiles.',
+        'Delete an empty internal preset source. Fails if it contains presets.',
       ].join('\n') + '\n';
     }
     if (sub === 'enable') {
-      return 'Usage: gsr catalog enable <name>\nEnable a catalog so its presets appear in TUI host TAB cycling.\n';
+      return 'Usage: gsr catalog enable <name>\nMake an internal preset source visible in the host.\n';
     }
     if (sub === 'disable') {
-      return 'Usage: gsr catalog disable <name>\nDisable a catalog so its presets are hidden from TUI host.\n';
+      return 'Usage: gsr catalog disable <name>\nHide an internal preset source from the host.\n';
     }
     if (sub === 'move') {
       return [
-        'Usage: gsr catalog move <profile> <target-catalog> [--from <source-catalog>]',
-        'Move a profile to another catalog.',
-        '  <profile>         Profile name.',
-        '  <target-catalog>  Destination catalog name.',
-        '  --from <catalog>  Specify the source catalog explicitly (optional).',
+        'Usage: gsr catalog move <preset> <target-source> [--from <source-catalog>]',
+        'Move a preset to another internal source.',
+        '  <preset>          Preset name.',
+        '  <target-source>   Destination source name.',
+        '  --from <catalog>  Specify the source explicitly (optional).',
       ].join('\n') + '\n';
     }
     return null;

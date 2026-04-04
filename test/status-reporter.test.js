@@ -202,21 +202,20 @@ describe('getSimpleStatus — ready', () => {
   });
 });
 
-// ── getSimpleStatus — catalogs ───────────────────────────────────────────────
+// ── getSimpleStatus — SDDs ────────────────────────────────────────────────────
 
-describe('getSimpleStatus — catalogs section', () => {
-  test('shows catalog count when multiple catalogs', () => {
+describe('getSimpleStatus — SDDs section', () => {
+  test('shows visible SDD count when multiple sources exist', () => {
     const result = getSimpleStatus(configMultiCatalog, { manifestExists: true });
-    assert.ok(result.includes('Catalogs'), `should have Catalogs field. Got: ${result}`);
-    // 2 enabled catalogs
+    assert.ok(result.includes('SDDs'), `should have SDDs field. Got: ${result}`);
     assert.ok(result.includes('2'), `should show count 2. Got: ${result}`);
   });
 
-  test('shows catalog name in catalogs field', () => {
+  test('shows SDD name in SDDs field', () => {
     const result = getSimpleStatus(configMultiCatalog, { manifestExists: true });
     assert.ok(
-      result.includes('default') || result.includes('sdd-debug'),
-      `should show catalog names. Got: ${result}`
+      result.includes('agent-orchestrator') || result.includes('sdd-debug'),
+      `should show SDD names. Got: ${result}`
     );
   });
 });
@@ -388,25 +387,25 @@ describe('getVerboseStatus — ROUTES section', () => {
   });
 });
 
-// ── getVerboseStatus — CATALOGS section ──────────────────────────────────────
+// ── getVerboseStatus — SDDS section ──────────────────────────────────────────
 
-describe('getVerboseStatus — CATALOGS section', () => {
-  test('shows CATALOGS section when multiple catalogs exist', () => {
+describe('getVerboseStatus — SDDS section', () => {
+  test('shows SDDS section when multiple sources exist', () => {
     const result = getVerboseStatus(configMultiCatalog, { manifestExists: true });
-    assert.ok(result.includes('CATALOGS'), `should have CATALOGS section. Got: ${result}`);
+    assert.ok(result.includes('SDDS'), `should have SDDS section. Got: ${result}`);
   });
 
-  test('shows enabled state for each catalog', () => {
+  test('shows visible/hidden counts for each SDD', () => {
     const result = getVerboseStatus(configMultiCatalog, { manifestExists: true });
     assert.ok(
-      result.includes('enabled') || result.includes('●'),
-      `should show enabled state. Got: ${result}`
+      result.includes('visible') || result.includes('hidden'),
+      `should show visible/hidden state. Got: ${result}`
     );
   });
 
-  test('shows catalog name in CATALOGS section', () => {
+  test('shows SDD name in SDDS section', () => {
     const result = getVerboseStatus(configMultiCatalog, { manifestExists: true });
-    assert.ok(result.includes('sdd-debug'), `should show sdd-debug catalog. Got: ${result}`);
+    assert.ok(result.includes('sdd-debug'), `should show sdd-debug SDD. Got: ${result}`);
   });
 });
 

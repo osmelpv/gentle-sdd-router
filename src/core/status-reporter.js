@@ -5,8 +5,8 @@
  * `gsr status --verbose`.
  *
  * Two modes:
- *   - Simple (default):  clean aligned text, no box drawing, preset/catalog/debug summary
- *   - Verbose:           full sections — CONFIGURATION, PRESET, ROUTES, CATALOGS, SDD CONNECTIONS
+ *   - Simple (default):  clean aligned text, no box drawing, preset/SDD/debug summary
+ *   - Verbose:           full sections — CONFIGURATION, PRESET, ROUTES, SDDS, PRESETS, SDD CONNECTIONS
  *
  * All output is string-based: no React/Ink, no internal terms leaked.
  *
@@ -72,12 +72,10 @@ function getPresetPhaseNames(preset) {
  * @param {object} config
  * @returns {{ count: number, names: string[] }}
  */
-function getEnabledCatalogs(config) {
-  if (!config?.catalogs) return { count: 0, names: [] };
-  const names = Object.entries(config.catalogs)
-    .filter(([, meta]) => meta?.enabled !== false)
-    .map(([name]) => name);
-  return { count: names.length, names };
+function getVisibleSdds(config) {
+  const presets = getPublicPresetMetadata(config);
+  const visibleSdds = new Set(presets.filter((p) => p.visibility === 'visible').map((p) => p.sdd));
+  return { count: visibleSdds.size, names: [...visibleSdds] };
 }
 
 /**
@@ -272,13 +270,12 @@ export function getSimpleStatus(config, options = {}) {
 
   // ── Derive state ───────────────────────────────────────────────────────────
   const preset = getActivePreset(config);
-  const presetName = config.active_preset ?? config.active_profile ?? '—';
+  const publicPreset = getActivePublicPresetMetadata(config);
+  const presetName = publicPreset?.name ?? config.active_preset ?? config.active_profile ?? '—';
   const phaseNames = getPresetPhaseNames(preset);
   const phaseCount = phaseNames.length;
-  const catalogName = config.active_catalog ?? 'default';
-  const catalogMeta = config.catalogs?.[catalogName];
-  const catalogDisplayName = catalogMeta?.displayName ?? (catalogName === 'default' ? 'SDD-Orchestrator' : catalogName);
-  const { count: catalogCount, names: enabledCatalogNames } = getEnabledCatalogs(config);
+  const sddLabel = publicPreset?.sdd ?? 'agent-orchestrator';
+  const { count: visibleSddCount, names: visibleSddNames } = getVisibleSdds(config);
   const debugInvoke = preset?.debug_invoke ?? null;
   const identityLabel = resolveIdentityLabel(preset, config);
   const isActive = config.activation_state === 'active';
@@ -297,7 +294,13 @@ export function getSimpleStatus(config, options = {}) {
 
   // ── Fields ─────────────────────────────────────────────────────────────────
   lines.push(`${padLabel('Preset', LABEL_WIDTH)}${presetName} (${phaseCount} phases)`);
-  lines.push(`${padLabel('Catalog', LABEL_WIDTH)}${catalogName} (${catalogDisplayName})`);
+  lines.push(`${padLabel('SDD', LABEL_WIDTH)}${sddLabel}`);
+  if (publicPreset?.scope) {
+    lines.push(`${padLabel('Scope', LABEL_WIDTH)}${publicPreset.scope}`);
+  }
+  if (publicPreset?.visibility) {
+    lines.push(`${padLabel('Visible', LABEL_WIDTH)}${publicPreset.visibility}`);
+  }
 
   if (identityLabel) {
     lines.push(`${padLabel('Identity', LABEL_WIDTH)}${identityLabel} (AGENTS.md inherited)`);
@@ -310,16 +313,16 @@ export function getSimpleStatus(config, options = {}) {
     lines.push(`${padLabel('Debug', LABEL_WIDTH)}${debugInvoke.preset}${trigger}`);
   }
 
-  if (catalogCount > 0) {
-    const catalogList = enabledCatalogNames.join(', ');
-    lines.push(`${padLabel('Catalogs', LABEL_WIDTH)}${catalogCount} enabled: ${catalogList}`);
+  if (visibleSddCount > 0) {
+    const sddList = visibleSddNames.join(', ');
+    lines.push(`${padLabel('SDDs', LABEL_WIDTH)}${visibleSddCount} visible: ${sddList}`);
   }
 
   // SDD connections summary (one-line: most important invoke)
   if (debugInvoke?.preset) {
     const debugPhase = debugInvoke.phase ?? 'verify';
     const triggerSuffix = debugInvoke.trigger ? ` (${debugInvoke.trigger})` : '';
-    lines.push(`${padLabel('Connections', LABEL_WIDTH)}${catalogDisplayName}/${debugPhase} → ${debugInvoke.preset}${triggerSuffix}`);
+    lines.push(`${padLabel('Connections', LABEL_WIDTH)}${sddLabel}/${debugPhase} → ${debugInvoke.preset}${triggerSuffix}`);
   }
 
   lines.push('');
@@ -343,7 +346,7 @@ export function getSimpleStatus(config, options = {}) {
 /**
  * Build the verbose status output string.
  *
- * Sections: CONFIGURATION, PRESET, ROUTES, CATALOGS, PRESETS, SDD CONNECTIONS
+ * Sections: CONFIGURATION, PRESET, ROUTES, SDDS, PRESETS, SDD CONNECTIONS
  *
  * @param {object|null} config - Loaded router config (or null if not installed)
  * @param {object} options
@@ -371,10 +374,9 @@ export function getVerboseStatus(config, options = {}) {
   const isV4 = Object.getOwnPropertyDescriptor(config, '_v4Source') !== undefined;
   const schemaVersion = isV4 ? 4 : (config.version ?? 3);
   const preset = getActivePreset(config);
-  const presetName = config.active_preset ?? '—';
-  const catalogName = config.active_catalog ?? 'default';
-  const catalogMeta = config.catalogs?.[catalogName];
-  const catalogDisplayName = catalogMeta?.displayName ?? (catalogName === 'default' ? 'SDD-Orchestrator' : catalogName);
+  const publicPreset = getActivePublicPresetMetadata(config);
+  const presetName = publicPreset?.name ?? config.active_preset ?? '—';
+  const sddLabel = publicPreset?.sdd ?? 'agent-orchestrator';
   const phaseNames = getPresetPhaseNames(preset);
   const phaseCount = phaseNames.length;
   const isActive = config.activation_state === 'active';
@@ -408,7 +410,9 @@ export function getVerboseStatus(config, options = {}) {
 
   // ── PRESET section ─────────────────────────────────────────────────────────
   lines.push('PRESET');
-  lines.push(`  ${padLabel('Active', LABEL_WIDTH)}${presetName} (${phaseCount} phases, catalog: ${catalogName})`);
+  lines.push(`  ${padLabel('Active', LABEL_WIDTH)}${presetName} (${phaseCount} phases, SDD: ${sddLabel})`);
+  if (publicPreset?.scope) lines.push(`  ${padLabel('Scope', LABEL_WIDTH)}${publicPreset.scope}`);
+  if (publicPreset?.visibility) lines.push(`  ${padLabel('Visible', LABEL_WIDTH)}${publicPreset.visibility}`);
 
   if (identityLabel) {
     lines.push(`  ${padLabel('Identity', LABEL_WIDTH)}${identityLabel} (AGENTS.md inherited)`);
@@ -442,37 +446,35 @@ export function getVerboseStatus(config, options = {}) {
   }
   lines.push('');
 
-  // ── CATALOGS section ───────────────────────────────────────────────────────
-  if (config.catalogs && Object.keys(config.catalogs).length > 0) {
-    lines.push('CATALOGS');
-    for (const [catName, catMeta] of Object.entries(config.catalogs)) {
-      const enabled = catMeta?.enabled !== false;
-      const dot = enabled ? '●' : '○';
-      const displayName = catMeta?.displayName ?? (catName === 'default' ? 'SDD-Orchestrator' : catName);
-      const presetCount = Object.keys(catMeta?.presets ?? {}).length;
-      const state = enabled ? 'enabled' : 'disabled';
-      lines.push(`  ${dot} ${catName.padEnd(16)}${displayName.padEnd(18)} ${state}   ${presetCount} presets`);
+  // ── SDDS section ───────────────────────────────────────────────────────────
+  const publicPresets = getPublicPresetMetadata(config);
+  const sddMap = new Map();
+  for (const row of publicPresets) {
+    if (!sddMap.has(row.sdd)) sddMap.set(row.sdd, { visible: 0, hidden: 0, presets: 0 });
+    const entry = sddMap.get(row.sdd);
+    entry.presets += 1;
+    entry[row.visibility === 'hidden' ? 'hidden' : 'visible'] += 1;
+  }
+  if (sddMap.size > 0) {
+    lines.push('SDDS');
+    for (const [sddName, meta] of sddMap.entries()) {
+      lines.push(`  ● ${sddName.padEnd(18)} ${String(meta.presets).padEnd(3)} presets   ${meta.visible} visible, ${meta.hidden} hidden`);
     }
     lines.push('');
   }
 
   // ── PRESETS section ────────────────────────────────────────────────────────
-  const allPresets = [];
-  for (const [catName, catMeta] of Object.entries(config.catalogs ?? {})) {
-    for (const [pName, pMeta] of Object.entries(catMeta?.presets ?? {})) {
-      allPresets.push({ name: pName, catalog: catName, meta: pMeta, active: pName === presetName });
-    }
-  }
+  const allPresets = publicPresets.map((p) => ({ ...p, meta: p.preset ?? p.meta ?? null }));
 
   if (allPresets.length > 0) {
     lines.push('PRESETS');
     for (const p of allPresets) {
       const marker = p.active ? '*' : ' ';
-      const pPhaseCount = Object.keys(p.meta?.phases ?? {}).length;
-      const debugLabel = p.meta?.debug_invoke?.preset
-        ? `debug: ${p.meta.debug_invoke.preset}`
-        : 'debug: disabled';
-      lines.push(`  ${marker} ${p.name.padEnd(16)}${pPhaseCount} phases   ${debugLabel}`);
+      const pPhaseCount = p.phases ?? Object.keys(p.meta?.phases ?? {}).length;
+      const debugLabel = p.preset?.debug_invoke?.preset || p.meta?.debug_invoke?.preset
+        ? `debug: ${(p.preset?.debug_invoke?.preset ?? p.meta?.debug_invoke?.preset)}`
+        : 'debug: none';
+      lines.push(`  ${marker} ${p.name.padEnd(16)}${String(pPhaseCount).padEnd(2)} phases   ${p.sdd.padEnd(18)} ${p.scope}/${p.visibility}   ${debugLabel}`);
     }
     lines.push('');
   }
@@ -497,3 +499,4 @@ export function getVerboseStatus(config, options = {}) {
 
   return lines.join('\n');
 }
+import { getPublicPresetMetadata, getActivePublicPresetMetadata } from './public-preset-metadata.js';

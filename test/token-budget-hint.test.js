@@ -403,16 +403,20 @@ describe('factory presets: contextWindow', () => {
     }
   });
 
-  test('token budget hint works with live config', () => {
+  test('token budget hint works with live config (multivendor)', () => {
     const config = loadRouterConfig();
     const state = resolveRouterState(config);
-    const hint = createTokenBudgetHint(config, state);
+    
+    // Override to use multivendor which has pricing data
+    const testState = { ...state, selectedPresetName: 'multivendor' };
+    const hint = createTokenBudgetHint(config, testState);
 
+    // multivendor has pricing data
     assert.notEqual(hint, null, 'Token budget hint should not be null for multivendor');
     assert.equal(hint.kind, 'token-budget-hint');
     assert.ok(Object.keys(hint.phases).length > 0, 'Should have at least one phase');
 
-    // Every phase should have contextWindow
+    // Every phase should have contextWindow for multivendor
     for (const [phaseName, phaseData] of Object.entries(hint.phases)) {
       assert.ok(phaseData.target, `${phaseName} should have a target`);
       assert.ok(phaseData.contextWindow > 0, `${phaseName} should have positive contextWindow`);

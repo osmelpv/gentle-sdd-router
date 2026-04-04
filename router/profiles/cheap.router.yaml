@@ -1,4 +1,5 @@
 name: cheap
+sdd: agent-orchestrator
 availability: stable
 complexity: low
 debug_invoke:

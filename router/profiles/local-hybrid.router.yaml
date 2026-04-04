@@ -1,4 +1,5 @@
 name: local-hybrid
+sdd: agent-orchestrator
 availability: stable
 complexity: medium
 debug_invoke:

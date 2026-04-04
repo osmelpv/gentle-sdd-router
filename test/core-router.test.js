@@ -227,12 +227,18 @@ test('validateRouterConfig accepts a v4 assembled (v3-shaped) config', () => {
   assert.equal(validateRouterConfig(assembled), true);
 });
 
-test('validateRouterConfig rejects a raw v4 config (must assemble first)', () => {
+test('validateRouterConfig rejects a raw v4/v5 config (must assemble first)', () => {
   const rawV4 = { version: 4, active_preset: 'default', active_catalog: 'default' };
 
   assert.throws(
     () => validateRouterConfig(rawV4),
-    /raw v4 config.*version: 4.*cannot be validated directly/i
+    /raw v4 config.*cannot be validated directly/i
+  );
+
+  const rawV5 = { version: 5, active_preset: 'default', active_sdd: 'agent-orchestrator' };
+  assert.throws(
+    () => validateRouterConfig(rawV5),
+    /raw v5 config.*cannot be validated directly/i
   );
 });
 

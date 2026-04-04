@@ -503,7 +503,7 @@ describe('local-hybrid preset — debug phase removed', () => {
 
 // ─── Task E: router.yaml has sdd-debug catalog ────────────────────────────────
 
-describe('router.yaml — sdd-debug catalog registered', () => {
+describe('router.yaml — sdd-debug SDD registered', () => {
   function loadRouterYaml() {
     const raw = fs.readFileSync(ROUTER_YAML, 'utf8');
     return parseYaml(raw);
@@ -516,42 +516,33 @@ describe('router.yaml — sdd-debug catalog registered', () => {
     );
   });
 
-  test('router.yaml has sdd-debug catalog entry', () => {
+  test('router.yaml has sdd-debug SDD entry', () => {
     const config = loadRouterYaml();
     assert.ok(
-      config.catalogs?.['sdd-debug'],
-      'router.yaml must have a sdd-debug entry under catalogs'
+      config.sdds?.['sdd-debug'],
+      'router.yaml must have a sdd-debug entry under sdds'
     );
   });
 
-  test('sdd-debug catalog has displayName "SDD-Debug"', () => {
+  test('sdd-debug SDD has displayName "SDD-Debug"', () => {
     const config = loadRouterYaml();
     assert.equal(
-      config.catalogs['sdd-debug']?.displayName,
+      config.sdds['sdd-debug']?.displayName,
       'SDD-Debug',
-      'sdd-debug catalog displayName must be "SDD-Debug"'
+      'sdd-debug SDD displayName must be "SDD-Debug"'
     );
   });
 
-  test('sdd-debug catalog is enabled by default', () => {
+  test('sdd-debug SDD exists without enable/disable semantics', () => {
     const config = loadRouterYaml();
-    assert.equal(
-      config.catalogs['sdd-debug']?.enabled,
-      true,
-      'sdd-debug catalog must be enabled = true'
-    );
+    assert.ok(config.sdds['sdd-debug']);
   });
 
-  test('default catalog is still present and enabled', () => {
+  test('agent-orchestrator SDD is still present', () => {
     const config = loadRouterYaml();
     assert.ok(
-      config.catalogs?.default,
-      'default catalog must still be present in router.yaml'
-    );
-    assert.equal(
-      config.catalogs.default.enabled,
-      true,
-      'default catalog must still be enabled'
+      config.sdds?.['agent-orchestrator'],
+      'agent-orchestrator SDD must still be present in router.yaml'
     );
   });
 });

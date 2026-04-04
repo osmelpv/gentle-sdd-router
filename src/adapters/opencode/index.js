@@ -525,16 +525,25 @@ export function createOpenCodeSessionSyncContract(source = {}) {
  * @returns {object|null} Token budget hint contract, or null when data is unavailable
  */
 export function createTokenBudgetHint(config, state) {
-  if (!config?.catalogs || !state) return null;
+  if (!config || !state) return null;
 
-  const catalogName = state.selectedCatalogName ?? null;
-  const presetName = state.selectedPresetName ?? state.activeProfileName ?? null;
-  if (!catalogName || !presetName) return null;
+  const presetName = state.selectedPresetName ?? state.activeProfileName ?? config.active_preset ?? null;
+  if (!presetName) return null;
 
-  const catalog = config.catalogs[catalogName];
-  if (!catalog) return null;
+  // v5 format: presets directly on config
+  // v4 format: presets under catalogs[catalogName].presets
+  let preset = config.presets?.[presetName];
 
-  const preset = catalog.presets?.[presetName];
+  // Fallback to v4 format if not found in v5
+  if (!preset) {
+    if (!config?.catalogs) return null;
+    const catalogName = state.selectedCatalogName ?? null;
+    if (!catalogName) return null;
+    const catalog = config.catalogs[catalogName];
+    if (!catalog) return null;
+    preset = catalog.presets?.[presetName];
+  }
+
   if (!preset?.phases) return null;
 
   const phases = {};
@@ -564,10 +573,14 @@ export function createTokenBudgetHint(config, state) {
 
   if (!hasAnyBudgetData) return null;
 
+  // Resolve catalog name for backward compatibility
+  const resolvedCatalogName = state?.selectedCatalogName 
+    ?? (config.active_catalog ?? 'default');
+
   return {
     kind: 'token-budget-hint',
     contractVersion: TOKEN_BUDGET_HINT_VERSION,
-    catalogName,
+    catalogName: resolvedCatalogName,
     presetName,
     phases,
     policy: {

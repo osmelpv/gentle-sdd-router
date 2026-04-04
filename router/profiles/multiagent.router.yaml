@@ -1,4 +1,5 @@
 name: multiagent
+sdd: agent-orchestrator
 availability: stable
 complexity: high
 debug_invoke:

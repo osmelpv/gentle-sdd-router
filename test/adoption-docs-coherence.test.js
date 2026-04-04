@@ -29,7 +29,7 @@ test('README and CLI help share adoption wording', async () => {
     'Multimodel browse/compare expose shareable schema v3 metadata only.',
     'Compatibility: router.yaml versions 1, 3, and 4 are supported; v3 powers multimodel browse/compare and v4 is the current multi-file format.',
     'Quickstart: run gsr status, then gsr bootstrap if router/router.yaml is missing.',
-    'Select the active profile in router/router.yaml without changing who is in control.',
+    'Select the active preset in router/router.yaml without changing who is in control.',
     'Show current router status. Use --verbose or --debug for full details.',
     'Inspect shareable multimodel metadata projected from schema v3 without recommending or executing anything.',
     'Compare two shareable multimodel projections without recommending or executing anything.',

@@ -30,25 +30,25 @@ export function CatalogsScreen({ config, configPath, router, setDescription, sho
     const enabled = catalog.enabled !== false;
 
     catalogs.push({
-      label: `${displayName} — ${presetCount} profile(s)`,
+      label: `${displayName} — ${presetCount} preset(s)`,
       value: name,
-      tag: enabled ? 'enabled' : 'disabled',
-      description: `Browse profiles in ${displayName}. ${presetCount} profile(s).`,
+      tag: enabled ? 'visible' : 'hidden',
+      description: `Browse presets in ${displayName}. ${presetCount} preset(s).`,
     });
   }
 
   if (catalogs.length === 0) {
-    catalogs.push({ label: 'No catalogs found', value: '__none__', description: 'Install gsr first.' });
+    catalogs.push({ label: 'No preset sources found', value: '__none__', description: 'Install gsr first.' });
   }
 
-  catalogs.push({ label: 'Create catalog', value: '__create__', description: 'Create a new catalog (disabled by default).' });
-  catalogs.push({ label: 'Enable/Disable catalog', value: '__toggle__', description: 'Toggle catalog visibility in TUI host TAB cycling.' });
+  catalogs.push({ label: 'Create source (legacy)', value: '__create__', description: 'Create a new internal source grouping (legacy/advanced).' });
+  catalogs.push({ label: 'Show/Hide source (legacy)', value: '__toggle__', description: 'Toggle source visibility in the host (legacy/advanced).' });
 
   // Sub-view: TextInput for creating a new catalog
   if (subView === 'creating') {
     return h(Box, { flexDirection: 'column' },
-      h(Text, { bold: true, color: colors.lavender }, 'Create Catalog'),
-      h(Text, { color: colors.subtext }, 'Enter the catalog name (press Enter to confirm, empty to cancel):'),
+      h(Text, { bold: true, color: colors.lavender }, 'Create Preset Source (legacy)'),
+      h(Text, { color: colors.subtext }, 'Enter the internal source name (press Enter to confirm, empty to cancel):'),
       h(Text, null, ''),
       h(TextInput, {
         placeholder: 'catalog-name',
@@ -82,20 +82,20 @@ export function CatalogsScreen({ config, configPath, router, setDescription, sho
         ? (catalog.displayName ?? 'SDD-Orchestrator') + ' (default)'
         : (catalog.displayName ?? name);
       return {
-        label: `${displayName} — ${enabled ? 'enabled' : 'disabled'}`,
+        label: `${displayName} — ${enabled ? 'visible' : 'hidden'}`,
         value: name,
-        tag: enabled ? 'enabled' : 'disabled',
-        description: `Click to ${enabled ? 'disable' : 'enable'} '${name}'.`,
+        tag: enabled ? 'visible' : 'hidden',
+        description: `Click to ${enabled ? 'hide' : 'show'} '${name}' in the host.`,
       };
     });
 
     if (toggleItems.length === 0) {
-      toggleItems.push({ label: 'No catalogs to toggle', value: '__none__', description: 'No catalogs found.' });
+      toggleItems.push({ label: 'No preset sources to toggle', value: '__none__', description: 'No sources found.' });
     }
 
     return h(Box, { flexDirection: 'column' },
-      h(Text, { bold: true, color: colors.lavender }, 'Enable/Disable Catalog'),
-      h(Text, { color: colors.subtext }, 'Select a catalog to toggle its enabled state.'),
+      h(Text, { bold: true, color: colors.lavender }, 'Show/Hide Preset Source (legacy)'),
+      h(Text, { color: colors.subtext }, 'Select an internal source to toggle host visibility.'),
       h(Text, null, ''),
       h(Menu, {
         items: toggleItems,
@@ -108,7 +108,7 @@ export function CatalogsScreen({ config, configPath, router, setDescription, sho
             const currentEnabled = configCatalogs[value]?.enabled !== false;
             mod.setCatalogEnabled(value, !currentEnabled, routerDir);
             await reloadConfig();
-            setLastMessage(`Catalog '${value}' ${!currentEnabled ? 'enabled' : 'disabled'}. Run 'gsr setup apply opencode --apply' to update OpenCode.`);
+            setLastMessage(`Source '${value}' is now ${!currentEnabled ? 'visible' : 'hidden'}. Run 'gsr sync' to update the host.`);
             // Stay inline — don't break flow with showResult
           } catch (err) {
             showResult(`Error: ${err.message}`);
@@ -122,8 +122,8 @@ export function CatalogsScreen({ config, configPath, router, setDescription, sho
   }
 
   return h(Box, { flexDirection: 'column' },
-    h(Text, { bold: true, color: colors.lavender }, 'Catalogs'),
-    h(Text, { color: colors.subtext }, 'Select a catalog to browse its profiles.'),
+    h(Text, { bold: true, color: colors.lavender }, 'Presets'),
+    h(Text, { color: colors.subtext }, 'Select an SDD source to browse its presets.'),
     h(Text, null, ''),
     lastMessage ? h(Text, { color: colors.peach }, lastMessage) : null,
     h(Menu, {

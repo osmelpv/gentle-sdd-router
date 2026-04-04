@@ -23,6 +23,7 @@ const EXECUTION_HINT_FIELDS = new Set([
 ]);
 
 const ALLOWED_IDENTITY_KEYS = new Set(['context', 'prompt', 'inherit_agents_md', 'persona']);
+const VALID_PRESET_SCOPES = new Set(['global', 'project']);
 
 const VALID_DEBUG_INVOKE_TRIGGERS = new Set(['on_issues', 'always', 'never', 'manual']);
 
@@ -148,6 +149,14 @@ export function validateProfileFile(profile, filePath) {
 
   if (typeof profile.name !== 'string' || !profile.name.trim()) {
     throw new Error(`Profile file "${filePath}" requires a non-empty "name" field.`);
+  }
+
+  if (profile.sdd !== undefined && (typeof profile.sdd !== 'string' || !profile.sdd.trim())) {
+    throw new Error(`Profile file "${filePath}" has "sdd" but it must be a non-empty string.`);
+  }
+
+  if (profile.scope !== undefined && !VALID_PRESET_SCOPES.has(profile.scope)) {
+    throw new Error(`Profile file "${filePath}" has invalid "scope". Must be "global" or "project".`);
   }
 
   if (!isObject(profile.phases) || Object.keys(profile.phases).length === 0) {
@@ -296,7 +305,8 @@ function _loadProfilesFromDir(profilesDir, results, skipNames) {
         if (skipNames && skipNames.has(presetName)) continue;
 
         validateProfileFile(content, filePath);
-        results.push({ filePath, fileName, catalogName, content });
+        const sddName = content.sdd ?? catalogName;
+        results.push({ filePath, fileName, catalogName, sddName, content });
       }
     } else if (entry.endsWith('.router.yaml')) {
       const filePath = entryPath;
@@ -309,7 +319,8 @@ function _loadProfilesFromDir(profilesDir, results, skipNames) {
       if (skipNames && skipNames.has(presetName)) continue;
 
       validateProfileFile(content, filePath);
-      results.push({ filePath, fileName, catalogName, content });
+      const sddName = content.sdd ?? 'agent-orchestrator';
+      results.push({ filePath, fileName, catalogName, sddName, content });
     }
   }
 }
@@ -317,7 +328,7 @@ function _loadProfilesFromDir(profilesDir, results, skipNames) {
 export function assembleV4Config(coreConfig, profiles) {
   const seenPresets = new Map();
 
-  for (const { content, filePath, catalogName } of profiles) {
+  for (const { content, filePath, catalogName, sddName } of profiles) {
     const presetName = content.name;
 
     if (seenPresets.has(presetName)) {
@@ -327,24 +338,35 @@ export function assembleV4Config(coreConfig, profiles) {
       );
     }
 
-    seenPresets.set(presetName, { filePath, catalogName });
+    seenPresets.set(presetName, { filePath, catalogName, sddName });
   }
 
+  const sddMap = {};
   const catalogsMap = {};
 
-  for (const { content, filePath, catalogName } of profiles) {
+  for (const { content, filePath, catalogName, sddName } of profiles) {
     const presetName = content.name;
+
+    if (!sddMap[sddName]) {
+      const sddMeta = coreConfig.sdds?.[sddName] ?? {};
+      sddMap[sddName] = {
+        displayName: sddMeta.displayName ?? (sddName === 'agent-orchestrator' ? 'SDD-Orchestrator' : sddName),
+      };
+    }
 
     if (!catalogsMap[catalogName]) {
       const coreCatalogMeta = isObject(coreConfig.catalogs) ? coreConfig.catalogs[catalogName] : undefined;
+      const resolvedSddName = sddName;
+      const sddMeta = coreConfig.sdds?.[resolvedSddName] ?? {};
 
       catalogsMap[catalogName] = {
         availability: coreCatalogMeta?.availability ?? 'stable',
         ...(coreCatalogMeta?.complexity != null ? { complexity: coreCatalogMeta.complexity } : {}),
         ...(coreCatalogMeta?.guidance != null ? { guidance: coreCatalogMeta.guidance } : {}),
         ...(coreCatalogMeta?.enabled != null ? { enabled: coreCatalogMeta.enabled } : { enabled: catalogName === 'default' }),
-        ...(coreCatalogMeta?.displayName != null ? { displayName: coreCatalogMeta.displayName } : {}),
+        ...(coreCatalogMeta?.displayName != null ? { displayName: coreCatalogMeta.displayName } : (sddMeta?.displayName ? { displayName: sddMeta.displayName } : {})),
         ...(coreCatalogMeta?.active_preset != null ? { active_preset: coreCatalogMeta.active_preset } : {}),
+        sdd: resolvedSddName,
         presets: {},
       };
     }
@@ -353,20 +375,29 @@ export function assembleV4Config(coreConfig, profiles) {
     catalogsMap[catalogName].presets[presetName] = presetContent;
   }
 
+  const activePreset = coreConfig.active_preset;
+  const activeSdd = coreConfig.active_sdd
+    ?? (activePreset ? profiles.find((p) => p.content.name === activePreset)?.sddName : null)
+    ?? 'agent-orchestrator';
+  const activeCatalog = profiles.find((p) => p.content.name === activePreset)?.catalogName
+    ?? (activeSdd === 'agent-orchestrator' ? 'default' : activeSdd);
+
   const assembled = {
     version: 3,
-    active_catalog: coreConfig.active_catalog ?? 'default',
+    active_catalog: coreConfig.active_catalog ?? activeCatalog,
+    active_sdd: activeSdd,
     active_preset: coreConfig.active_preset,
     active_profile: coreConfig.active_preset,
     activation_state: coreConfig.activation_state,
     metadata: coreConfig.metadata,
+    sdds: sddMap,
     catalogs: catalogsMap,
     ...(coreConfig.persona !== undefined ? { persona: coreConfig.persona } : {}),
     ...(coreConfig.identity !== undefined ? { identity: coreConfig.identity } : {}),
   };
 
   const profileMap = new Map(
-    profiles.map(({ filePath, catalogName, content }) => [content.name, { filePath, catalogName }])
+    profiles.map(({ filePath, catalogName, sddName, content }) => [content.name, { filePath, catalogName, sddName }])
   );
 
   Object.defineProperty(assembled, '_v4Source', {
@@ -391,11 +422,12 @@ export function disassembleV4Config(config) {
   }
 
   const coreFields = {
-    version: 4,
-    active_catalog: config.active_catalog,
+    version: config.active_sdd || config.sdds ? 5 : 4,
+    ...(config.active_sdd ? { active_sdd: config.active_sdd } : { active_catalog: config.active_catalog }),
     active_preset: config.active_preset,
     activation_state: config.activation_state,
     metadata: config.metadata,
+    ...(config.sdds ? { sdds: config.sdds } : {}),
   };
 
   const profilesOut = [];
@@ -407,9 +439,11 @@ export function disassembleV4Config(config) {
       profilesOut.push({
         name: presetName,
         catalog: catalogName,
+        sdd: catalog.sdd ?? sourceInfo?.sddName ?? (catalogName === 'default' ? 'agent-orchestrator' : catalogName),
         filePath: sourceInfo?.filePath ?? null,
         content: {
           name: presetName,
+          sdd: catalog.sdd ?? sourceInfo?.sddName ?? (catalogName === 'default' ? 'agent-orchestrator' : catalogName),
           ...preset,
         },
       });
@@ -440,17 +474,20 @@ export function buildV4WritePlan(oldConfig, newConfig) {
   const oldCore = oldConfig ? (oldSource?.coreConfig ?? serializableConfig(oldConfig)) : null;
   const newCore = newSource?.coreConfig ?? serializableConfig(newConfig);
 
-  const coreFields = ['active_catalog', 'active_preset', 'active_profile', 'activation_state', 'metadata'];
+  const coreFields = ['active_catalog', 'active_sdd', 'active_preset', 'active_profile', 'activation_state', 'metadata', 'sdds'];
   const coreChanged = !oldCore || coreFields.some(
     (field) => JSON.stringify(oldCore[field]) !== JSON.stringify(newCore[field])
   );
 
   const coreContent = {
-    version: 4,
-    active_catalog: newCore.active_catalog ?? newConfig.active_catalog,
+    version: newCore.active_sdd || newConfig.active_sdd || newCore.sdds || newConfig.sdds ? 5 : 4,
+    ...(newCore.active_sdd || newConfig.active_sdd
+      ? { active_sdd: newCore.active_sdd ?? newConfig.active_sdd }
+      : { active_catalog: newCore.active_catalog ?? newConfig.active_catalog }),
     active_preset: newCore.active_preset ?? newConfig.active_preset,
     activation_state: newCore.activation_state ?? newConfig.activation_state,
     metadata: newCore.metadata ?? newConfig.metadata,
+    ...((newCore.sdds ?? newConfig.sdds) ? { sdds: newCore.sdds ?? newConfig.sdds } : {}),
   };
 
   const profileWrites = [];
@@ -484,7 +521,11 @@ export function buildV4WritePlan(oldConfig, newConfig) {
         filePath,
         presetName,
         catalogName,
-        content: { name: presetName, ...preset },
+        content: {
+          name: presetName,
+          ...(catalogName ? { sdd: newSource?.profileMap?.get(presetName)?.sddName ?? newConfig.catalogs?.[catalogName]?.sdd ?? (catalogName === 'default' ? 'agent-orchestrator' : catalogName) } : {}),
+          ...preset,
+        },
       });
     }
   }

@@ -1,4 +1,5 @@
 name: sdd-debug-multi
+sdd: sdd-debug
 catalog: sdd-debug
 availability: stable
 hidden: true

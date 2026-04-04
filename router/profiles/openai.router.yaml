@@ -1,4 +1,5 @@
 name: openai
+sdd: agent-orchestrator
 availability: stable
 complexity: medium
 debug_invoke:

@@ -448,7 +448,7 @@ function makeRouterDirWithContracts(tmpDir) {
 }
 
 describe('gsr profile create (CLI)', () => {
-  test('creates a profile in temp dir', async () => {
+  test('creates a preset in temp dir', async () => {
     const tmpDir = makeTempDir();
     const routerDir = makeRouterDir(tmpDir);
 
@@ -456,17 +456,17 @@ describe('gsr profile create (CLI)', () => {
     try {
       process.chdir(tmpDir);
       const output = await captureStdout(() => runCli(['profile', 'create', 'newprofile']));
-      assert.match(output, /Created profile 'newprofile'/);
+      assert.match(output, /Created preset 'newprofile'/);
 
       const profilePath = path.join(routerDir, 'profiles', 'newprofile.router.yaml');
-      assert.ok(fs.existsSync(profilePath), 'profile file should exist');
+      assert.ok(fs.existsSync(profilePath), 'preset file should exist');
     } finally {
       process.chdir(originalCwd);
       cleanup(tmpDir);
     }
   });
 
-  test('profile create triggers unified sync after creation (REQ-7)', async () => {
+  test('preset create triggers unified sync after creation (REQ-7)', async () => {
     const tmpDir = makeTempDir();
     makeRouterDirWithContracts(tmpDir);
 
@@ -475,8 +475,8 @@ describe('gsr profile create (CLI)', () => {
       process.chdir(tmpDir);
       // Use profile name without "sync" to avoid false-positive regex match
       const output = await captureStdout(() => runCli(['profile', 'create', 'autotest']));
-      // Must create the profile
-      assert.match(output, /Created profile 'autotest'/);
+      // Must create the preset
+      assert.match(output, /Created preset 'autotest'/);
       // Must report sync output (sync ran after creation)
       // "Synced N role contracts" or "No agents generated" are both valid sync outputs
       assert.match(output, /Synced \d+ role contracts|No agents generated/);
@@ -486,7 +486,7 @@ describe('gsr profile create (CLI)', () => {
     }
   });
 
-  test('profile create sync failure is non-blocking (REQ-7)', async () => {
+  test('preset create sync failure is non-blocking (REQ-7)', async () => {
     // Router dir without contracts — sync will fail, but profile still creates
     const tmpDir = makeTempDir();
     makeRouterDir(tmpDir); // no contracts dir
@@ -495,8 +495,8 @@ describe('gsr profile create (CLI)', () => {
     try {
       process.chdir(tmpDir);
       const output = await captureStdout(() => runCli(['profile', 'create', 'blocking-test']));
-      // Profile is still created even when sync fails
-      assert.match(output, /Created profile 'blocking-test'/);
+      // Preset is still created even when sync fails
+      assert.match(output, /Created preset 'blocking-test'/);
     } finally {
       process.chdir(originalCwd);
       cleanup(tmpDir);
@@ -505,7 +505,7 @@ describe('gsr profile create (CLI)', () => {
 });
 
 describe('gsr profile delete (CLI)', () => {
-  test('removes a profile in temp dir', async () => {
+  test('removes a preset in temp dir', async () => {
     const tmpDir = makeTempDir();
     const routerDir = makeRouterDir(tmpDir);
 
@@ -513,10 +513,10 @@ describe('gsr profile delete (CLI)', () => {
     try {
       process.chdir(tmpDir);
       const output = await captureStdout(() => runCli(['profile', 'delete', 'balanced']));
-      assert.match(output, /Deleted profile 'balanced'/);
+      assert.match(output, /Deleted preset 'balanced'/);
 
       const profilePath = path.join(routerDir, 'profiles', 'balanced.router.yaml');
-      assert.ok(!fs.existsSync(profilePath), 'profile file should be gone');
+      assert.ok(!fs.existsSync(profilePath), 'preset file should be gone');
     } finally {
       process.chdir(originalCwd);
       cleanup(tmpDir);
@@ -533,7 +533,7 @@ describe('gsr catalog list (CLI)', () => {
     try {
       process.chdir(tmpDir);
       const output = await captureStdout(() => runCli(['catalog', 'list']));
-      assert.match(output, /Catalogs:/);
+      assert.match(output, /Preset sources \(legacy\):/);
       assert.match(output, /default/);
     } finally {
       process.chdir(originalCwd);
@@ -577,15 +577,12 @@ describe('slash command manifest', () => {
       'import',
       'version',
       'uninstall',
-      'profile-list',
-      'profile-show',
-      'profile-create',
-      'profile-delete',
-      'profile-rename',
-      'profile-copy',
-      'catalog-list',
-      'catalog-create',
-      'catalog-delete',
+      'preset-list',
+      'preset-show',
+      'preset-create',
+      'preset-delete',
+      'preset-rename',
+      'preset-copy',
     ];
 
     for (const id of expectedNew) {
@@ -599,11 +596,11 @@ describe('slash command manifest', () => {
     assert.ok(manifest.commands.length >= 27, `expected at least 27 commands, got ${manifest.commands.length}`);
   });
 
-  test('slash command manifest includes catalog enable/disable commands', () => {
+  test('slash command manifest no longer advertises catalog legacy commands publicly', () => {
     const manifest = createOpenCodeSlashCommandManifest();
     const ids = manifest.commands.map((c) => c.id);
-    assert.ok(ids.includes('catalog-enable'), "manifest should include 'catalog-enable'");
-    assert.ok(ids.includes('catalog-disable'), "manifest should include 'catalog-disable'");
+    assert.ok(!ids.includes('catalog-enable'), "manifest should not include 'catalog-enable'");
+    assert.ok(!ids.includes('catalog-disable'), "manifest should not include 'catalog-disable'");
   });
 
   test('slash command manifest has route category commands', () => {
@@ -633,10 +630,10 @@ describe('slash command manifest', () => {
     assert.ok(ids.includes('inspect-render'), "manifest should include 'inspect-render'");
   });
 
-  test('slash command manifest includes catalog-move command', () => {
+  test('slash command manifest no longer advertises catalog-move publicly', () => {
     const manifest = createOpenCodeSlashCommandManifest();
     const ids = manifest.commands.map((c) => c.id);
-    assert.ok(ids.includes('catalog-move'), "manifest should include 'catalog-move'");
+    assert.ok(!ids.includes('catalog-move'), "manifest should not include 'catalog-move'");
   });
 });
 
@@ -786,7 +783,7 @@ describe('moveProfile', () => {
         await runCli(['catalog', 'move', 'balanced', 'team']);
         const output = chunks.join('');
         assert.ok(
-          output.includes("Moved profile 'balanced'"),
+          output.includes("Moved preset 'balanced'"),
           `Expected move confirmation in: ${output}`,
         );
       } finally {

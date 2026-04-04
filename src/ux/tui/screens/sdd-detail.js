@@ -4,7 +4,7 @@
  * Shows:
  *   - SDD name and description
  *   - All phases with intent and execution type (plus invoke target if present)
- *   - Catalog-scoped role names
+ *   - SDD-scoped role names
  *   - Trigger fields if present
  *   - Navigation to phase/role editors
  *   - ESC returns to sdd-list
@@ -62,7 +62,7 @@ export function SddDetailScreen({
         const loaded = loadCustomSdd(catalogsDir, selectedSdd);
         setSdd(loaded);
 
-        // Load catalog-scoped role contracts
+        // Load SDD-scoped role contracts
         const rolesDir = pathMod.join(catalogsDir, selectedSdd, 'contracts', 'roles');
         let roleFiles = [];
         if (fsMod.existsSync(rolesDir)) {
@@ -102,7 +102,7 @@ export function SddDetailScreen({
 
   const items = [
     { label: 'Edit phases', value: 'phases', description: 'Add, edit, or delete phases for this SDD.' },
-    { label: 'Manage roles', value: 'roles', description: 'Create or delete catalog-scoped role contracts.' },
+    { label: 'Manage roles', value: 'roles', description: 'Create or delete SDD-scoped role contracts.' },
   ];
 
   return h(Box, { flexDirection: 'column' },
@@ -115,7 +115,7 @@ export function SddDetailScreen({
       const invokeStr = formatPhaseInvoke(phase.invoke);
       return [
         h(Text, { key: phaseName },
-          `  ${phaseName}: ${phase.intent} [${phase.execution}]`
+          `  ${phaseName}: ${phase.intent} [${phase.mode ?? 'single'} / ${phase.agent_execution ?? phase.execution ?? 'sequential'}${phase.radar ? ' / radar' : ''}]`
         ),
         invokeStr
           ? h(Text, { key: `${phaseName}-invoke`, color: colors.subtext }, `    ${invokeStr}`)

@@ -32,6 +32,7 @@ import { parseYaml, stringifyYaml } from './router.js';
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 const VALID_EXECUTION_VALUES = new Set(['parallel', 'sequential']);
+const VALID_PHASE_MODES = new Set(['single', 'multi']);
 const VALID_PAYLOAD_FROM_VALUES = new Set(['output', 'input', 'custom']);
 
 /** Valid trigger values for per-phase invoke declarations. */
@@ -94,20 +95,41 @@ export function validateSddYaml(parsed, filePath) {
       throw new Error(`[${filePath}] Phase '${phaseName}' is missing required field 'intent'.`);
     }
 
-    // execution must be valid enum if present
-    const execution = phase.execution ?? 'sequential';
-    if (!VALID_EXECUTION_VALUES.has(execution)) {
+    // New composition model:
+    // - mode: single | multi
+    // - agent_execution: parallel | sequential (meaningful in multi)
+    // Backward compat:
+    // - infer mode from agents/judge/radar when absent
+    // - execution aliases agent_execution
+    const inferredMode = (phase.mode ?? ((phase.agents ?? 1) > 1 || phase.judge === true || phase.radar === true ? 'multi' : 'single'));
+    if (!VALID_PHASE_MODES.has(inferredMode)) {
       throw new Error(
-        `[${filePath}] Phase '${phaseName}' has invalid 'execution' value: "${execution}". ` +
+        `[${filePath}] Phase '${phaseName}' has invalid 'mode' value: "${inferredMode}". ` +
+        `Allowed values: single, multi.`
+      );
+    }
+
+    const executionAlias = phase.agent_execution ?? phase.execution ?? (inferredMode === 'multi' ? 'parallel' : 'sequential');
+    if (!VALID_EXECUTION_VALUES.has(executionAlias)) {
+      throw new Error(
+        `[${filePath}] Phase '${phaseName}' has invalid 'agent_execution' value: "${executionAlias}". ` +
         `Allowed values: parallel, sequential.`
       );
     }
 
-    // agents must be integer >= 1 if present
-    const agents = phase.agents != null ? Number(phase.agents) : 1;
-    if (!Number.isInteger(agents) || agents < 1) {
+    // agents must be integer >= 1 if present; multi implies at least 2 agents
+    const rawAgents = phase.agents != null ? Number(phase.agents) : (inferredMode === 'multi' ? 2 : 1);
+    if (!Number.isInteger(rawAgents) || rawAgents < 1) {
       throw new Error(`[${filePath}] Phase '${phaseName}' 'agents' must be an integer >= 1.`);
     }
+    const agents = inferredMode === 'multi' ? Math.max(2, rawAgents) : 1;
+
+    if (inferredMode === 'single' && phase.radar === true) {
+      throw new Error(`[${filePath}] Phase '${phaseName}' cannot enable radar in single mode.`);
+    }
+
+    const judge = inferredMode === 'multi';
+    const radar = inferredMode === 'multi' ? phase.radar === true : false;
 
     // depends_on must reference existing phases
     const depends_on = Array.isArray(phase.depends_on) ? phase.depends_on : [];
@@ -124,10 +146,12 @@ export function validateSddYaml(parsed, filePath) {
 
     normalizedPhases[phaseName] = {
       intent: phase.intent.trim(),
-      execution,
+      mode: inferredMode,
+      agent_execution: executionAlias,
+      execution: executionAlias,
       agents,
-      judge: phase.judge === true,
-      radar: phase.radar === true,
+      judge,
+      radar,
       input: typeof phase.input === 'string' ? phase.input : '',
       output: typeof phase.output === 'string' ? phase.output : '',
       depends_on,
@@ -527,8 +551,10 @@ export function scaffoldPhaseContract(catalogsDir, sddName, phaseName, phaseConf
   }
 
   const intent = phaseConfig.intent || '';
+  const mode = phaseConfig.mode ?? ((phaseConfig.agents ?? 1) > 1 || phaseConfig.judge === true || phaseConfig.radar === true ? 'multi' : 'single');
+  const agentExecution = phaseConfig.agent_execution ?? phaseConfig.execution ?? (mode === 'multi' ? 'parallel' : 'sequential');
   const agents = phaseConfig.agents ?? 1;
-  const judge = phaseConfig.judge === true ? 'yes' : 'no';
+  const judge = mode === 'multi' ? 'yes (implicit/required)' : 'no';
   const radar = phaseConfig.radar === true ? 'yes' : 'no';
   const inputContract = typeof phaseConfig.input === 'string' && phaseConfig.input.trim()
     ? phaseConfig.input.trim()
@@ -543,6 +569,8 @@ export function scaffoldPhaseContract(catalogsDir, sddName, phaseName, phaseConf
 ${intent}
 
 ## Composition
+- Mode: ${mode}
+- Agent execution: ${agentExecution}
 - Agents: ${agents}
 - Judge: ${judge}
 - Radar: ${radar}

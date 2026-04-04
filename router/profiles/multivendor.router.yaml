@@ -1,4 +1,5 @@
 name: multivendor
+sdd: agent-orchestrator
 availability: stable
 aliases: latest
 complexity: high
