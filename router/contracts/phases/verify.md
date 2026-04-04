@@ -1,3 +1,34 @@
+<!--
+AI-GUIDE: verify phase
+───────────────────────
+When creating or configuring verification, ask:
+
+1. WHAT TO VERIFY:
+   - List all acceptance criteria from the spec phase
+   - List all failing tests from the tasks phase
+   - List all security/risk requirements
+
+2. VERIFICATION APPROACH:
+   - 2+ agents for independent verification
+   - Compare results to detect false positives
+   - Judge synthesizes and decides pass/fail
+
+3. CONFIDENCE LEVELS:
+   - HIGH: 2+ agents agree on pass
+   - MEDIUM: Agents agree on pass but note different gaps
+   - LOW: Agents diverge on pass/fail → escalate to user
+
+4. WHEN ISSUES FOUND:
+   - Check active preset's `debug_invoke.preset` (sdd-debug-mono or sdd-debug-multi)
+   - Use gsr sdd invoke for cross-SDD debugging
+   - Only invoke if `required_fields` are present in payload
+
+5. RE-VERIFY LOOP:
+   - After sdd-debug completes, verify runs again
+   - Max 2 cycles before escalation to orchestrator
+   - Infinite loops are PROHIBITED
+-->
+
 ---
 name: verify
 phase_order: 8

@@ -493,6 +493,45 @@ export function updateProfile(name, phases, routerDir, options = {}) {
   return { presetName: name, path: profilePath };
 }
 
+/**
+ * Update preset metadata fields (hidden, identity, etc.) without changing phases.
+ * @param {string} name - Preset name
+ * @param {object} updates - Object with fields to update (e.g., { hidden: true })
+ * @param {string} routerDir - Path to router/ directory
+ * @param {{ catalog?: string }} options
+ * @returns {{ presetName: string, path: string }}
+ */
+export function updatePresetMetadata(name, updates, routerDir, options = {}) {
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    throw new Error('Preset name is required and must be a non-empty string.');
+  }
+  if (!updates || typeof updates !== 'object') {
+    throw new Error('Updates object is required.');
+  }
+
+  const profilePath = findProfilePath(name, routerDir, options.catalog);
+  if (!profilePath) {
+    throw new Error(`Preset '${name}' not found.`);
+  }
+
+  const rawYaml = readFileSync(profilePath, 'utf8');
+  const existing = parseYaml(rawYaml);
+
+  // Apply updates, preserving name and phases
+  const updated = { ...existing, ...updates };
+  // Ensure name is preserved
+  updated.name = existing.name;
+
+  validateProfileFile(updated, profilePath);
+
+  const yaml = stringifyYaml(updated);
+  const tempPath = `${profilePath}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tempPath, yaml, 'utf8');
+  renameSync(tempPath, profilePath);
+
+  return { presetName: name, path: profilePath };
+}
+
 // === CATALOG CRUD ===
 
 /**

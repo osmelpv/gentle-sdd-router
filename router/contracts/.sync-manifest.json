@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "generated_at": "2026-04-04T05:26:29.633Z",
+  "generated_at": "2026-04-04T08:03:59.972Z",
   "contracts": [
     {
       "type": "role",
       "name": "agent",
       "topic_key": "gsr/contracts/roles/agent",
       "file": "router/contracts/roles/agent.md",
-      "checksum": "94b301537b897bf7bb8eb22f86a06e7cd01f0f86018a66d2a57fef1a4eb900d1"
+      "checksum": "4c652ba2a897256e6b2080b99324b35d38ddd3de876dd4325c23d01e245a2c06"
     },
     {
       "type": "role",
@@ -28,7 +28,7 @@
       "name": "judge",
       "topic_key": "gsr/contracts/roles/judge",
       "file": "router/contracts/roles/judge.md",
-      "checksum": "6c906049eac82eeed0b48e85200aa50c8150e22ef09863f329fb9d705a8c6bff"
+      "checksum": "f381e427188383db4ad6758a46e47566c9e0d30987686849857536e63518cb78"
     },
     {
       "type": "role",
@@ -98,14 +98,14 @@
       "name": "explore",
       "topic_key": "gsr/contracts/phases/explore",
       "file": "router/contracts/phases/explore.md",
-      "checksum": "c8a8b4a93c7043b4ff4fdc1d1899b8a69536d9dbfd078cf8be62c72342b763b2"
+      "checksum": "d6e284ed287c78a1bfbfb6807ac227416a175489d885b4fcbc7cfecb9fd02424"
     },
     {
       "type": "phase",
       "name": "orchestrator",
       "topic_key": "gsr/contracts/phases/orchestrator",
       "file": "router/contracts/phases/orchestrator.md",
-      "checksum": "bc07970b54da816461b1f06fbdb355d924ee3cbdc9b8d9de65b558eb5d5d1f1a"
+      "checksum": "b96e8e08cbb11c59a827171c39cbad8daecbac718f6aef4993629ad0244f05e3"
     },
     {
       "type": "phase",
@@ -133,7 +133,7 @@
       "name": "verify",
       "topic_key": "gsr/contracts/phases/verify",
       "file": "router/contracts/phases/verify.md",
-      "checksum": "3efca57557f93a4adfdcf600637f1f7732c9336d6f19af483c1186e4d5249645"
+      "checksum": "ce782c248bf2e25512d0c1386557f7eb8be0b2e3d071b8d0e80534f681defbe3"
     }
   ]
 }

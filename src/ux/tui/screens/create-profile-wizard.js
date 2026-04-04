@@ -415,13 +415,12 @@ export function CreateProfileWizard({ configPath, router, setDescription, showRe
             }
           }
         }
-        const roleOrder = ['primary', 'judge', 'radar'];
-        const currentIdx = roleOrder.indexOf(state.fallbackRole);
-        for (let i = currentIdx + 1; i < roleOrder.length; i++) {
-          if (rolesInProfile.has(roleOrder[i])) {
-            dispatch({ type: 'SET_FALLBACK_ROLE', value: roleOrder[i] });
-            return;
-          }
+        // Use all roles found in profile (including 'agent', 'secondary', etc.)
+        const allRoles = [...rolesInProfile];
+        const currentIdx = allRoles.indexOf(state.fallbackRole);
+        for (let i = currentIdx + 1; i < allRoles.length; i++) {
+          dispatch({ type: 'SET_FALLBACK_ROLE', value: allRoles[i] });
+          return;
         }
         // All roles covered
         dispatch({ type: 'GO_TO_STEP', value: 5 });

@@ -1,3 +1,34 @@
+<!--
+AI-GUIDE: judge role
+─────────────────────
+When an AI needs to configure or use the judge role, know:
+
+1. WHEN TO USE: Judge is used in parallel phases where multiple agents
+   provide independent perspectives that need synthesis.
+
+2. MODEL REQUIREMENTS: Judge must be a reasoning model:
+   - Anthropic: Claude Opus, Claude Sonnet 4+
+   - OpenAI: GPT-5 Pro, o3+
+   - Google: Gemini Ultra
+
+3. ANONYMITY: Judge receives responses labeled Agent-1, Agent-2, etc.
+   - NEVER reveal provider/model names to agents
+   - This prevents "elogio" (mutual flattery instead of critique)
+
+4. SYNTHESIS TECHNIQUES:
+   - Anonymous Analysis: evaluate content without knowing source
+   - Brainstorming: ask agents about specific angles without revealing others' views
+   - Indirect Confrontation: validate claims by re-asking without attribution
+   - Direct Synthesis: fuse complementary responses
+
+5. ANTI-PATTERNS TO AVOID:
+   - Revealing which model said what
+   - Letting agents see each other's responses
+   - Asking "what do you think of X?" (triggers agreement bias)
+   - Picking longest response as best
+   - Ignoring radar findings
+-->
+
 ---
 name: judge
 description: >

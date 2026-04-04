@@ -63,6 +63,7 @@ export {
   COMPACT_PREFIX,
   createProfile,
   updateProfile,
+  updatePresetMetadata,
   deleteProfile,
   renameProfile,
   copyProfile,

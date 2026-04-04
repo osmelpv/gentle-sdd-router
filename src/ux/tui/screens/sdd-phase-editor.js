@@ -1,6 +1,12 @@
 /**
  * SDD Phase Editor — CRUD for phases within a custom SDD.
  *
+ * AI-GUIDE: When adding a phase, the AI should ask:
+ *   1. What context does this phase need? (skills, files, previous outputs)
+ *   2. What roles participate? (agent, judge, radar, specialists)
+ *   3. What does this phase output? (structured output template)
+ *   4. Does this phase invoke another SDD?
+ *
  * Allows:
  *   - Adding a new phase (name + intent + optional invoke config)
  *   - Deleting a phase (warns about broken dependencies)
@@ -183,6 +189,7 @@ export function SddPhaseEditor({
   if (view === 'adding-name') {
     return h(Box, { flexDirection: 'column' },
       h(Text, { bold: true, color: colors.lavender }, 'Add Phase — Name'),
+      h(Text, { color: colors.subtext }, 'Enter a slug name (lowercase, hyphens). Example: level-design, asset-pipeline'),
       error ? h(Text, { color: colors.red }, error) : null,
       h(TextInput, {
         placeholder: 'phase-name',
@@ -202,6 +209,7 @@ export function SddPhaseEditor({
   if (view === 'adding-intent') {
     return h(Box, { flexDirection: 'column' },
       h(Text, { bold: true, color: colors.lavender }, `Add Phase "${newPhaseName}" — Intent`),
+      h(Text, { color: colors.subtext }, 'Describe what this phase does. Example: "Design game levels and encounters"'),
       h(TextInput, {
         placeholder: 'Describe what this phase does...',
         onSubmit: (value) => {
@@ -218,8 +226,8 @@ export function SddPhaseEditor({
   // View: adding invoke catalog (optional)
   if (view === 'adding-invoke-catalog') {
     return h(Box, { flexDirection: 'column' },
-      h(Text, { bold: true, color: colors.lavender }, `Add Phase "${newPhaseName}" — Invoke Catalog (optional)`),
-      h(Text, { color: colors.subtext }, 'Enter the target catalog slug to invoke, or leave empty to skip.'),
+      h(Text, { bold: true, color: colors.lavender }, `Add Phase "${newPhaseName}" — Invoke SDD (optional)`),
+      h(Text, { color: colors.subtext }, 'Enter the target SDD name to invoke after this phase, or leave empty to skip.'),
       error ? h(Text, { color: colors.red }, error) : null,
       h(TextInput, {
         placeholder: 'e.g. art-production (leave empty to skip)',
@@ -240,11 +248,11 @@ export function SddPhaseEditor({
   // View: adding invoke sdd (optional, only shown when catalog was filled)
   if (view === 'adding-invoke-sdd') {
     return h(Box, { flexDirection: 'column' },
-      h(Text, { bold: true, color: colors.lavender }, `Add Phase "${newPhaseName}" — Invoke SDD (optional)`),
-      h(Text, { color: colors.subtext }, `Catalog: ${invokeCatalog}. Enter the SDD slug or leave empty to use catalog name.`),
+      h(Text, { bold: true, color: colors.lavender }, `Add Phase "${newPhaseName}" — Sub-SDD (optional)`),
+      h(Text, { color: colors.subtext }, `Target: ${invokeCatalog}. Enter the SDD name or leave empty to use "${invokeCatalog}".`),
       error ? h(Text, { color: colors.red }, error) : null,
       h(TextInput, {
-        placeholder: `e.g. ${invokeCatalog} (leave empty to use catalog name)`,
+        placeholder: `e.g. ${invokeCatalog} (leave empty to use as SDD name)`,
         onSubmit: (value) => {
           setInvokeSdd(value.trim());
           setError(null);

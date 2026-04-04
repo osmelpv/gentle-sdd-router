@@ -1,3 +1,30 @@
+<!--
+AI-GUIDE: explore phase
+─────────────────────────
+When creating a new phase or SDD that involves exploration, ask:
+
+1. WHAT AREAS? What parts of the codebase will be affected?
+   - List specific files, modules, or directories
+   - Identify dependencies and side effects
+
+2. CONTEXT NEEDED:
+   - Previous exploration results (from Engram)
+   - Project skills for codebase navigation
+   - AGENTS.md inherited context
+
+3. OUTPUT STRUCTURE:
+   - Affected areas map
+   - Approach comparison (if multiple paths exist)
+   - Risk assessment
+   - Security notes (if applicable)
+
+4. AGENTS & ROLES:
+   - 2+ agents for diverse perspectives (different providers)
+   - Optional judge for synthesis
+   - Optional radar for blind spots
+   - Optional security-auditor for security scan
+-->
+
 ---
 name: explore
 phase_order: 2

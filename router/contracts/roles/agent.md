@@ -1,3 +1,29 @@
+<!--
+AI-GUIDE: agent role
+────────────────────
+When an AI needs to create or configure an agent for a phase, ask:
+
+1. CONTEXT: What skills, conventions, and files does this agent need?
+   - Check project .atl/skill-registry.md for available skills
+   - Check AGENTS.md for inherited context
+   - Check Engram for previous phase context
+
+2. OUTPUT: What structured output does this phase expect?
+   - Define the output template in the phase contract
+   - Specify required fields and optional fields
+   - Define how findings should be tagged for synthesis
+
+3. SCOPE: What is explicitly OUT of scope for this agent?
+   - Flag boundary conditions clearly
+   - Define what [UNCERTAIN] means for this context
+
+4. ROLES PARTICIPATING: List all roles that can work on this phase
+   - primary (agent): Main work
+   - judge: Synthesis and validation
+   - radar: Blind spot detection
+   - specialist roles: security, testing, etc.
+-->
+
 ---
 name: agent
 description: >

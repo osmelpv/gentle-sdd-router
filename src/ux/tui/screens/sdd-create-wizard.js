@@ -1,11 +1,18 @@
 /**
  * SDD Create Wizard — multi-step wizard for creating a new custom SDD.
  *
+ * AI-GUIDE: When an AI creates a new SDD, it should ask:
+ *   1. What is the purpose of this SDD?
+ *   2. What are the phases and their intents?
+ *   3. What context does each phase need?
+ *   4. What roles participate in each phase?
+ *   5. What outputs does each phase produce?
+ *
  * Steps:
  *   1. SDD name (slug validated)
- *   2. Description (optional)
+ *   2. Description (what this SDD does)
  *   3. First phase name
- *   4. Phase intent
+ *   4. Phase intent (what this phase does)
  *   5. Review + confirm
  *
  * On completion: creates router/catalogs/<name>/sdd.yaml and navigates to sdd-detail.
@@ -73,10 +80,10 @@ export function SddCreateWizard({
   useEffect(() => {
     if (!setDescription) return;
     const descs = {
-      1: 'Enter a slug name for the new SDD (lowercase, hyphens only).',
-      2: 'Enter a description (optional — press Enter to skip).',
-      3: 'Enter the name of the first phase.',
-      4: 'Enter the intent (purpose) of this phase.',
+      1: 'Enter a slug name for the new SDD (lowercase, hyphens only). Example: game-design, art-production',
+      2: 'Describe what this SDD does. Example: "Game design workflow for level creation and asset pipeline"',
+      3: 'Enter the name of the first phase. Example: level-design, asset-creation',
+      4: 'Enter the intent (purpose) of this phase. Example: "Design game levels and encounters"',
       5: 'Review your SDD and save.',
     };
     setDescription(descs[state.step] ?? '');

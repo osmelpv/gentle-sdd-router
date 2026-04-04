@@ -106,8 +106,10 @@ export function SplitPanelPicker({
 
     if (mode === 'fallbacks') {
       // Add fallback to the lane matching currentRole
+      // Treat undefined role as 'primary'
+      const effectiveRole = currentRole === 'agent' ? 'primary' : currentRole;
       const lanes = [...(phases[phaseName] || [])];
-      const laneIdx = lanes.findIndex(l => l.role === currentRole);
+      const laneIdx = lanes.findIndex(l => (l.role ?? 'primary') === effectiveRole);
       if (laneIdx >= 0) {
         const lane = lanes[laneIdx];
         const currentFallbacks = Array.isArray(lane.fallbacks) ? lane.fallbacks : (lane.fallbacks ? [lane.fallbacks] : []);
@@ -117,8 +119,9 @@ export function SplitPanelPicker({
       onPhasesChange(newPhases);
     } else {
       // Add or replace the lane for currentRole
+      const effectiveRole = currentRole === 'agent' ? 'primary' : currentRole;
       const lanes = [...(phases[phaseName] || [])];
-      const existingIdx = lanes.findIndex(l => l.role === currentRole);
+      const existingIdx = lanes.findIndex(l => (l.role ?? 'primary') === effectiveRole);
       const newLane = { target: modelId, role: currentRole, kind: 'lane', phase: phaseName };
       if (existingIdx >= 0) {
         lanes[existingIdx] = newLane;

@@ -7,8 +7,7 @@ import { ResultScreen } from './components/result.js';
 import { FreshInstallScreen } from './screens/fresh-install.js';
 import { HomeScreen } from './screens/home.js';
 import { StatusScreen } from './screens/status.js';
-import { CatalogsScreen } from './screens/catalogs.js';
-import { CatalogProfilesScreen } from './screens/catalog-profiles.js';
+import { PresetsScreen } from './screens/presets-list.js';
 import { ProfileDetailScreen } from './screens/profile-detail.js';
 import { CreateProfileWizard } from './screens/create-profile-wizard.js';
 import { EditProfileWizard } from './screens/edit-profile-wizard.js';
@@ -77,8 +76,7 @@ function App({ initialConfig, initialConfigPath }) {
     'fresh-install': h(FreshInstallScreen, ctx),
     'home': h(HomeScreen, ctx),
     'status': h(StatusScreen, ctx),
-    'catalogs': h(CatalogsScreen, ctx),
-    'catalog-profiles': h(CatalogProfilesScreen, ctx),
+    'presets': h(PresetsScreen, ctx),
     'profile-detail': h(ProfileDetailScreen, ctx),
     'create-profile': h(CreateProfileWizard, ctx),
     'edit-profile': h(EditProfileWizard, ctx),
