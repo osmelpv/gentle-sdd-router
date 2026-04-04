@@ -30,14 +30,14 @@ export function detectOpenCodeRuntimeCapabilities(context = {}) {
   const release = context.release ?? '';
   const isLinux = context.isLinux ?? platform === 'linux';
   const isWSL = context.isWSL ?? (platform === 'linux' && /microsoft|wsl/i.test(release));
-  const platformValidated = context.supported ?? (isLinux || isWSL);
+  const platformValidated = context.supported ?? true;
 
   return {
     platform: {
       state: platformValidated ? 'supported' : 'unsupported',
       reason: platformValidated
-        ? 'Linux or WSL runtime detected.'
-        : 'OpenCode runtime is only supported on Linux/WSL in v1.',
+        ? 'Configuration-backed file operations are supported on this platform.'
+        : 'OpenCode runtime is unavailable on this platform in this batch.',
     },
     providerExecution: {
       state: 'unsupported',

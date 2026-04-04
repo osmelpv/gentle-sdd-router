@@ -75,7 +75,7 @@ export function detectOpenCodeRuntimeContext(overrides = {}) {
   const moduleDir = overrides.moduleDir ?? MODULE_DIR;
   const isWSL = platform === 'linux' && /microsoft|wsl/i.test(release);
   const isLinux = platform === 'linux';
-  const supported = isLinux || isWSL;
+  const supported = overrides.supported ?? true;
 
   return {
     ...overrides,
@@ -104,8 +104,8 @@ export function getOpenCodeCapabilities(context = detectOpenCodeRuntimeContext()
     workspaceDiscovery: true,
     configPersistence: true,
     reason: runtimeCapabilities.supported
-      ? 'OpenCode adapter is configuration-backed and runtime-contract thin in this batch.'
-      : 'OpenCode adapter is only supported on Linux/WSL in this batch.',
+      ? 'OpenCode adapter is configuration-backed and file-based in this batch.'
+      : 'OpenCode adapter is unavailable on this platform in this batch.',
   };
 }
 
@@ -163,7 +163,7 @@ export function loadRouterConfig(configPath = getConfigPath()) {
   const raw = fs.readFileSync(configPath, 'utf8');
   const config = parseYaml(raw);
 
-  if (config.version === 4) {
+  if (config.version === 4 || config.version === 5) {
     const routerDir = path.dirname(configPath);
     const profiles = loadV4Profiles(routerDir);
     const assembled = assembleV4Config(config, profiles);
@@ -220,11 +220,13 @@ export function saveRouterConfig(config, configPath = getConfigPath(), previousC
             ...v4Source,
             coreConfig: {
               ...v4Source.coreConfig,
-              active_catalog: config.active_catalog,
-              active_preset: config.active_preset,
-              activation_state: config.activation_state,
-              metadata: config.metadata,
-            },
+               active_catalog: config.active_catalog,
+               active_sdd: config.active_sdd,
+               active_preset: config.active_preset,
+               activation_state: config.activation_state,
+               metadata: config.metadata,
+               sdds: config.sdds,
+             },
           },
           enumerable: false,
           configurable: true,
@@ -334,7 +336,7 @@ export function createOpenCodeSlashCommandManifest(state = {}, configPath = null
     activeProfileName: state.activeProfileName ?? null,
     commands: [
       // Root
-      createSlashCommand('status', 'Current router state, routes, and pricing.', '/gsr status', ['config', 'profile', 'catalog']),
+      createSlashCommand('status', 'Current router state, routes, and pricing.', '/gsr status', ['config', 'preset', 'sdd']),
       createSlashCommand('version', 'Show installed gsr version.', '/gsr version', []),
       createSlashCommand('help', 'Help for commands.', '/gsr help [command]', []),
       createSlashCommand('sync', 'Push global contracts to Engram.', '/gsr sync', ['config']),
@@ -345,28 +347,19 @@ export function createOpenCodeSlashCommandManifest(state = {}, configPath = null
       createSlashCommand('route-activate', 'gsr takes control of routing.', '/gsr route activate', ['config', 'activation']),
       createSlashCommand('route-deactivate', `Host takes control back.`, '/gsr route deactivate', ['config', 'activation']),
 
-      // Profile
-      createSlashCommand('profile-list', 'List profiles.', '/gsr profile list', ['profile']),
-      createSlashCommand('profile-create', 'Create an empty profile.', '/gsr profile create <name>', ['profile']),
-      createSlashCommand('profile-delete', 'Delete a profile.', '/gsr profile delete <name>', ['profile']),
-      createSlashCommand('profile-rename', 'Rename a profile.', '/gsr profile rename <old> <new>', ['profile']),
-      createSlashCommand('profile-copy', 'Clone a profile.', '/gsr profile copy <src> <dest>', ['profile']),
-      createSlashCommand('export', 'Export a preset for sharing.', '/gsr profile export <name> [--compact]', ['preset']),
-      createSlashCommand('import', 'Import a preset.', '/gsr profile import <source>', ['preset', 'profile']),
-
-      // Catalog
-      createSlashCommand('catalog-list', 'List catalogs with status.', '/gsr catalog list', ['catalog']),
-      createSlashCommand('catalog-create', 'Create a catalog (disabled by default).', '/gsr catalog create <name>', ['catalog']),
-      createSlashCommand('catalog-delete', 'Delete an empty catalog.', '/gsr catalog delete <name>', ['catalog']),
-      createSlashCommand('catalog-enable', 'Enable catalog in TUI host.', '/gsr catalog enable <name>', ['catalog']),
-      createSlashCommand('catalog-disable', 'Disable catalog from TUI host.', '/gsr catalog disable <name>', ['catalog']),
-      createSlashCommand('catalog-move', 'Move a profile to another catalog.', '/gsr catalog move <name> <catalog>', ['catalog', 'profile']),
-      createSlashCommand('catalog-use', 'Set active catalog and preset.', '/gsr catalog use <catalog> [preset]', ['catalog']),
+      // Preset
+      createSlashCommand('preset-list', 'List presets.', '/gsr preset list', ['preset']),
+      createSlashCommand('preset-create', 'Create an empty preset.', '/gsr preset create <name>', ['preset']),
+      createSlashCommand('preset-delete', 'Delete a preset.', '/gsr preset delete <name>', ['preset']),
+      createSlashCommand('preset-rename', 'Rename a preset.', '/gsr preset rename <old> <new>', ['preset']),
+      createSlashCommand('preset-copy', 'Clone a preset.', '/gsr preset copy <src> <dest>', ['preset']),
+      createSlashCommand('export', 'Export a preset for sharing.', '/gsr preset export <name> [--compact]', ['preset']),
+      createSlashCommand('import', 'Import a preset.', '/gsr preset import <source>', ['preset']),
 
       // Inspect
-      createSlashCommand('inspect-browse', 'Multimodel metadata for a preset.', '/gsr inspect browse [selector]', ['catalog', 'preset']),
-      createSlashCommand('inspect-compare', 'Side-by-side preset comparison.', '/gsr inspect compare <a> <b>', ['catalog', 'preset']),
-      createSlashCommand('inspect-render', 'Preview host boundary report.', '/gsr inspect render <target>', ['config', 'catalog', 'profile']),
+      createSlashCommand('inspect-browse', 'Multimodel metadata for a preset.', '/gsr inspect browse [selector]', ['preset', 'sdd']),
+      createSlashCommand('inspect-compare', 'Side-by-side preset comparison.', '/gsr inspect compare <a> <b>', ['preset', 'sdd']),
+      createSlashCommand('inspect-render', 'Preview host boundary report.', '/gsr inspect render <target>', ['config', 'preset', 'sdd']),
 
       // Setup
       createSlashCommand('setup-install', 'Install router config.', '/gsr setup install [--intent ...]', ['config']),
@@ -376,22 +369,22 @@ export function createOpenCodeSlashCommandManifest(state = {}, configPath = null
       createSlashCommand('setup-apply', 'Generate TUI overlay.', '/gsr setup apply <target> [--apply]', ['config']),
 
       // Backward-compat aliases (kept for existing integrations)
-      createSlashCommand('use', 'Select the active profile in router/router.yaml.', '/gsr use <profile>', ['profile']),
+      createSlashCommand('use', 'Select the active preset in router/router.yaml.', '/gsr use <preset>', ['preset']),
       createSlashCommand('reload', 'Reload the current config and print the resolved routes.', '/gsr reload', ['config']),
-      createSlashCommand('list', 'List available profiles and mark the active one.', '/gsr list', ['config', 'profile']),
-      createSlashCommand('browse', 'Inspect shareable multimodel metadata projected from schema v3.', '/gsr browse [selector]', ['catalog', 'preset']),
-      createSlashCommand('compare', 'Compare two shareable multimodel projections.', '/gsr compare <left> <right>', ['catalog', 'preset']),
+      createSlashCommand('list', 'List available presets and mark the active one.', '/gsr list', ['config', 'preset']),
+      createSlashCommand('browse', 'Inspect shareable multimodel metadata projected from schema v3.', '/gsr browse [selector]', ['preset', 'sdd']),
+      createSlashCommand('compare', 'Compare two shareable multimodel projections.', '/gsr compare <left> <right>', ['preset', 'sdd']),
       createSlashCommand('install', 'Inspect or apply a YAML-first install intent.', '/gsr install [--intent ...]', ['config']),
       createSlashCommand('bootstrap', 'Show or apply a step-by-step bootstrap path.', '/gsr bootstrap [--intent ...]', ['config']),
-      createSlashCommand('activate', 'Take control of routing without changing the active profile.', '/gsr activate', ['config', 'activation']),
-      createSlashCommand('deactivate', `Hand control back to ${resolveControllerLabel()} without changing the active profile.`, '/gsr deactivate', ['config', 'activation']),
-      createSlashCommand('render-opencode', 'Preview the OpenCode boundary report.', '/gsr render opencode', ['config', 'catalog', 'profile']),
+      createSlashCommand('activate', 'Take control of routing without changing the active preset.', '/gsr activate', ['config', 'activation']),
+      createSlashCommand('deactivate', `Hand control back to ${resolveControllerLabel()} without changing the active preset.`, '/gsr deactivate', ['config', 'activation']),
+      createSlashCommand('render-opencode', 'Preview the OpenCode boundary report.', '/gsr render opencode', ['config', 'preset', 'sdd']),
       createSlashCommand('update', 'Show pending config migrations.', '/gsr update [--apply]', ['config']),
       createSlashCommand('apply-opencode', 'Generate and apply OpenCode overlay.', '/gsr apply opencode [--apply]', ['config']),
       createSlashCommand('uninstall', 'Remove gsr overlay from host config.', '/gsr uninstall', ['config']),
-      createSlashCommand('profile-show', 'Show routes for a profile.', '/gsr profile show <name>', ['profile']),
+      createSlashCommand('preset-show', 'Show routes for a preset.', '/gsr preset show <name>', ['preset']),
     ],
-    syncTriggers: ['config', 'catalog', 'preset', 'profile'],
+    syncTriggers: ['config', 'preset', 'sdd'],
   };
 }
 
@@ -727,7 +720,8 @@ function buildInstallationSurfaceReport(command, options, context) {
     ? detectOpenCodeRuntimeContext(context)
     : context;
   const capabilities = getOpenCodeCapabilities(runtimeContext);
-  let configPath = discoverConfigPath([runtimeContext.cwd]);
+  const freshConfigPath = path.join(runtimeContext.cwd, 'router', 'router.yaml');
+  let configPath = fs.existsSync(freshConfigPath) ? freshConfigPath : null;
   let normalizedIntent;
   let freshInstallCreated = false;
 
@@ -776,7 +770,6 @@ function buildInstallationSurfaceReport(command, options, context) {
     }, runtimeContext, command);
   }
 
-  const freshConfigPath = path.join(runtimeContext.cwd, 'router', 'router.yaml');
   let installRouteProposalContract = null;
 
   if (!configPath) {

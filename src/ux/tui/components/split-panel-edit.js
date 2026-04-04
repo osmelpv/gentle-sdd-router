@@ -3,7 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import { ModelPicker } from './model-picker.js';
 import { Menu } from './menu.js';
 import { colors, cursor as cursorChar } from '../theme.js';
-import { CANONICAL_PHASES } from '../../core/phases.js';
+import { CANONICAL_PHASES } from '../../../core/phases.js';
 
 const h = React.createElement;
 const ROLES = ['primary', 'judge', 'radar', 'secondary'];

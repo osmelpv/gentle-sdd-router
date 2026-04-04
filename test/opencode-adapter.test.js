@@ -130,7 +130,7 @@ catalogs:
               fallbacks: anthropic/claude-sonnet
 `;
 
-test('adapter validates Linux and WSL runtime contexts honestly', () => {
+test('adapter validates runtime contexts for config-backed operations across platforms', () => {
   const linux = detectOpenCodeRuntimeContext({ platform: 'linux', release: '6.8.0-generic' });
   const wsl = detectOpenCodeRuntimeContext({ platform: 'linux', release: '5.15.90.1-microsoft-standard-WSL2' });
   const windows = detectOpenCodeRuntimeContext({ platform: 'win32', release: '10.0.22631' });
@@ -140,8 +140,8 @@ test('adapter validates Linux and WSL runtime contexts honestly', () => {
   assert.equal(linux.supported, true);
   assert.equal(wsl.isWSL, true);
   assert.equal(wsl.supported, true);
-  assert.equal(windows.supported, false);
-  assert.equal(getOpenCodeCapabilities(windows).platformValidated, false);
+  assert.equal(windows.supported, true);
+  assert.equal(getOpenCodeCapabilities(windows).platformValidated, true);
 });
 
 test('adapter formats and discovers config paths outside core', () => {
@@ -413,26 +413,23 @@ test('bootstrap recovers from a partial setup without rewriting YAML', () => {
   assert.equal(loadRouterConfig(configPath).metadata.installation_contract.source_of_truth, 'router/router.yaml');
 });
 
-test('adapter short-circuits unsupported platforms honestly', () => {
-  const context = { cwd: '/tmp', moduleDir: '/tmp', platform: 'win32', release: '10.0.0' };
+test('adapter keeps config-backed surfaces available on Windows', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-windows-surface-'));
+  const context = { cwd: tempDir, moduleDir: tempDir, platform: 'win32', release: '10.0.0' };
   const render = renderOpenCodeCommand(context);
   const activate = activateOpenCodeCommand(context);
   const deactivate = deactivateOpenCodeCommand(context);
   const install = installOpenCodeCommand({ intent: 'profile=default' }, context);
   const bootstrap = bootstrapOpenCodeCommand({}, context);
 
-  assert.equal(render.status, 'unsupported-platform');
-  assert.equal(activate.status, 'unsupported-platform');
-  assert.equal(deactivate.status, 'unsupported-platform');
-  assert.equal(install.status, 'unsupported-platform');
-  assert.equal(bootstrap.status, 'unsupported-platform');
-  assert.equal(render.supported, false);
-  assert.match(render.reason, /Linux\/WSL/);
+  assert.equal(render.status, 'missing-config');
+  assert.equal(activate.status, 'missing-config');
+  assert.equal(deactivate.status, 'missing-config');
+  assert.equal(install.status, 'created');
+  assert.equal(bootstrap.status, 'shell-ready');
+  assert.equal(render.supported, true);
   assert.equal(render.providerExecutionContract.boundary.capabilities.providerExecution.state, 'unsupported');
-  assert.equal(render.runtimeContract.fallback.verdict, 'no-safe-fallback');
-  assert.equal(render.handoffDelegationContract.status, 'rejected');
-  assert.equal(render.handoffDelegationContract.compatibility, 'unsupported');
-  assert.match(render.handoffDelegationContract.error.reason, /unsupported/i);
+  assert.ok(['minimal-fallback', 'no-safe-fallback'].includes(render.runtimeContract.fallback.verdict));
 });
 
 test('adapter can deactivate and no-op when already inactive', () => {

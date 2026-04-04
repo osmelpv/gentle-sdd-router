@@ -6,15 +6,15 @@ import {
   normalizeOpenCodeRuntimeIntent,
 } from '../src/adapters/opencode/runtime-contract.js';
 
-test('runtime contract detects supported and unsupported runtime capabilities', () => {
+test('runtime contract detects supported config-backed runtime capabilities across platforms', () => {
   const supported = detectOpenCodeRuntimeCapabilities({ platform: 'linux', release: '6.8.0-generic' });
-  const unsupported = detectOpenCodeRuntimeCapabilities({ platform: 'win32', release: '10.0.22631' });
+  const windows = detectOpenCodeRuntimeCapabilities({ platform: 'win32', release: '10.0.22631' });
 
   assert.equal(supported.platform.state, 'supported');
   assert.equal(supported.providerExecution.state, 'unsupported');
   assert.equal(supported.fallbackSelection.state, 'limited');
-  assert.equal(unsupported.platform.state, 'unsupported');
-  assert.equal(unsupported.fallbackSelection.state, 'unsupported');
+  assert.equal(windows.platform.state, 'supported');
+  assert.equal(windows.fallbackSelection.state, 'limited');
 });
 
 test('runtime contract normalizes aliases and duplicate intent signals', () => {
@@ -48,15 +48,15 @@ test('runtime contract reports honest fallback and limits', () => {
   assert.equal(report.capabilities.configBackedRouting.state, 'limited');
 });
 
-test('runtime contract reports no safe fallback when the platform is unsupported', () => {
+test('runtime contract reports minimal config-backed fallback on Windows', () => {
   const report = evaluateOpenCodeRuntimeContract({
     command: 'render',
     context: { platform: 'win32', release: '10.0.22631' },
     configAvailable: true,
   });
 
-  assert.equal(report.supportLevel, 'unsupported');
-  assert.equal(report.supported, false);
-  assert.equal(report.fallback.verdict, 'no-safe-fallback');
-  assert.equal(report.fallback.target, 'none');
+  assert.equal(report.supportLevel, 'limited');
+  assert.equal(report.supported, true);
+  assert.equal(report.fallback.verdict, 'minimal-fallback');
+  assert.equal(report.fallback.target, 'config');
 });

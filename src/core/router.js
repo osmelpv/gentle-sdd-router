@@ -1,4 +1,5 @@
 import { normalizeRouterSchemaV3, validateRouterSchemaV3 } from './router-schema-v3.js';
+import { findPresetOwner } from './public-preset-metadata.js';
 
 /**
  * Standard SDD phases. These are the conventional phase names used by
@@ -20,18 +21,31 @@ const CANONICAL_PHASES = [
 export function setActiveProfile(config, profileName) {
   // v4 assembled configs have version: 3 after assembly, so the v3 path below handles them.
   if (config.version === 3) {
-    const [catalogNameFromSelector, presetNameFromSelector] = profileName.includes('/')
-      ? profileName.split('/', 2)
-      : [config.active_catalog ?? Object.keys(config.catalogs ?? {})[0], profileName];
-    const catalogName = catalogNameFromSelector?.trim();
+    const requested = profileName.trim();
+    const [catalogNameFromSelector, presetNameFromSelector] = requested.includes('/')
+      ? requested.split('/', 2)
+      : [null, requested];
+
+    let catalogName = catalogNameFromSelector?.trim() || null;
     const presetName = presetNameFromSelector?.trim();
 
-    if (!catalogName || !config.catalogs?.[catalogName]) {
-      throw new Error(`Catalog "${catalogName ?? profileName}" does not exist.`);
+    if (!presetName) {
+      throw new Error(`Preset "${profileName}" does not exist.`);
     }
 
-    if (!config.catalogs[catalogName].presets?.[presetName]) {
-      throw new Error(`Preset "${presetName}" does not exist in catalog "${catalogName}".`);
+    if (catalogName) {
+      if (!config.catalogs?.[catalogName]) {
+        throw new Error(`Source "${catalogName}" does not exist.`);
+      }
+      if (!config.catalogs[catalogName].presets?.[presetName]) {
+        throw new Error(`Preset "${presetName}" does not exist in source "${catalogName}".`);
+      }
+    } else {
+      const owner = findPresetOwner(config, presetName);
+      if (!owner) {
+        throw new Error(`Preset "${presetName}" does not exist.`);
+      }
+      catalogName = owner.catalogName;
     }
 
     const newConfig = {
@@ -99,7 +113,10 @@ function applyInstallDirectives(config, directives) {
 
   for (const directive of directives) {
     if (directive.type === 'active_profile') {
-      nextConfig = setActiveProfile(nextConfig, directive.profileName);
+      const requestedProfile = config.version === 3 && directive.profileName === 'default'
+        ? (nextConfig.active_preset ?? 'multivendor')
+        : directive.profileName;
+      nextConfig = setActiveProfile(nextConfig, requestedProfile);
       continue;
     }
 
@@ -300,9 +317,9 @@ export function validateRouterConfig(config) {
 
   // v4 assembled configs have version: 3 (assembled via assembleV4Config).
   // A raw v4 core config (version: 4, no catalogs) must be assembled first.
-  if (config.version === 4) {
+  if (config.version === 4 || config.version === 5) {
     throw new Error(
-      'A raw v4 config (version: 4) cannot be validated directly. ' +
+      `A raw v${config.version} config cannot be validated directly. ` +
       'Call assembleV4Config() first to produce a v3-shaped assembled config, then validate.'
     );
   }

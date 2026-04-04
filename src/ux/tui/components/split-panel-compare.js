@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { colors, cursor as cursorChar } from '../theme.js';
-import { CANONICAL_PHASES } from '../../core/phases.js';
+import { CANONICAL_PHASES } from '../../../core/phases.js';
 
 const h = React.createElement;
 

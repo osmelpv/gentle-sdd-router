@@ -374,7 +374,7 @@ export function CreateProfileWizard({ configPath, router, setDescription, showRe
   if (state.step === 4 && state.fallbackMode === 'yes' && state.type === 'mono') {
     // Use the first phase's model as the primary target reference for exclusion
     const firstPhase = phasesList[0];
-    const primaryTarget = firstPhase && state.phases[firstPhase]?.[0]?.target ?? null;
+    const primaryTarget = firstPhase ? (state.phases[firstPhase]?.[0]?.target ?? null) : null;
     const phaseCount = phasesList.length;
 
     return h(Box, { flexDirection: 'column' },

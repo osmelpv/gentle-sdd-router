@@ -43,15 +43,21 @@ export function FreshInstallScreen({ setDescription, showResult, reloadConfig, e
 
         // Actually run install
         const mod = await import('../../../router-config.js');
-        mod.installOpenCodeCommand({ apply: true, intent: '' });
+        const installReport = mod.installOpenCodeCommand({ apply: true, intent: '' });
+
+        if (!installReport || installReport.supported === false || !['created', 'ready'].includes(installReport.status)) {
+          throw new Error(installReport?.reason || `Install did not complete successfully (status: ${installReport?.status ?? 'unknown'}).`);
+        }
 
         // Reload config after install
         try {
-          const newConfigPath = mod.discoverConfigPath();
+          const newConfigPath = mod.discoverConfigPath([process.cwd()]);
           const newConfig = mod.loadRouterConfig(newConfigPath);
           setConfig(newConfig);
           setConfigPath(newConfigPath);
-        } catch { /* will be handled by home screen */ }
+        } catch (err) {
+          throw new Error(`Install completed but router config could not be reloaded: ${err.message}`);
+        }
 
         setInstalling(false);
         router.reset('home');
