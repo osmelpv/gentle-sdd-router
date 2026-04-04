@@ -7,6 +7,7 @@ const h = React.createElement;
 
 export function PresetsScreen({ config, configPath, router, setDescription, showResult, reloadConfig, setSelectedProfile }) {
   const [lastMessage, setLastMessage] = useState(null);
+  const [selectedPresetName, setSelectedPresetName] = useState(null);
 
   const catalogs = config?.catalogs ?? {};
   const activePreset = config?.active_preset;
@@ -45,12 +46,7 @@ export function PresetsScreen({ config, configPath, router, setDescription, show
 
   const handleSelect = async (value) => {
     if (value === '__none__') return;
-
-    const preset = presets.find(p => p.label === value);
-    if (!preset) return;
-
-    setSelectedProfile(value);
-    router.push('profile-detail');
+    setSelectedPresetName(value);
   };
 
   const handleActivate = async (value) => {
@@ -77,17 +73,99 @@ export function PresetsScreen({ config, configPath, router, setDescription, show
     }
   };
 
+  const handleDelete = async (value) => {
+    if (value === '__none__') return;
+
+    const preset = presets.find(p => p.label === value);
+    if (!preset) return;
+
+    if (preset.isActive) {
+      showResult(`Cannot delete '${preset.label}' - it is the active preset. Activate another preset first.`);
+      return;
+    }
+    
+    try {
+      const mod = await import('../../../router-config.js');
+      const pathMod = await import('node:path');
+      const routerDir = pathMod.dirname(configPath);
+      
+      mod.deleteProfile(preset.label, routerDir);
+      await reloadConfig();
+      
+      showResult(`Preset '${preset.label}' deleted.`);
+      setSelectedPresetName(null);
+    } catch (err) {
+      showResult(`Error: ${err.message}`);
+    }
+  };
+
+  useInput((input, key) => {
+    if (key.escape) {
+      if (selectedPresetName) {
+        setSelectedPresetName(null);
+        return;
+      }
+      router.pop();
+    }
+  });
+
+  if (selectedPresetName) {
+    const preset = presets.find(p => p.label === selectedPresetName);
+    if (!preset) {
+      setSelectedPresetName(null);
+      return null;
+    }
+
+    const actions = [
+      { label: 'View details', value: 'view', description: 'View preset phases and configuration.' },
+      ...(!preset.isActive ? [{ label: 'Activate', value: 'activate', description: `Set '${preset.label}' as the active routing preset.` }] : []),
+      ...(!preset.isActive ? [{ label: 'Delete preset', value: 'delete', description: 'Permanently delete this preset from disk.' }] : []),
+    ];
+
+    return h(Box, { flexDirection: 'column' },
+      h(Text, { bold: true, color: colors.lavender }, `Preset: ${selectedPresetName}`),
+      h(Text, { color: preset.isActive ? colors.green : colors.subtext }, preset.isActive ? '[active]' : `[${preset.tag}]`),
+      h(Text, null, ''),
+      h(Text, { color: colors.subtext }, 'ENTER = action | ESC = back'),
+      h(Text, null, ''),
+      h(Menu, {
+        items: actions,
+        onSelect: async (value) => {
+          if (value === 'view') {
+            setSelectedProfile(selectedPresetName);
+            router.push('profile-detail');
+            setSelectedPresetName(null);
+            return;
+          }
+          if (value === 'activate') {
+            await handleActivate(selectedPresetName);
+            setSelectedPresetName(null);
+            return;
+          }
+          if (value === 'delete') {
+            await handleDelete(selectedPresetName);
+            return;
+          }
+          setSelectedPresetName(null);
+        },
+        setDescription,
+        showBack: true,
+      }),
+    );
+  }
+
   return h(Box, { flexDirection: 'column' },
     h(Text, { bold: true, color: colors.lavender }, 'Presets'),
     h(Text, { color: colors.subtext }, 'Browse and manage routing presets.'),
     h(Text, null, ''),
     lastMessage ? h(Text, { color: colors.peach }, lastMessage) : null,
-    h(Text, { color: colors.subtext }, 'ENTER = view details | A = activate preset'),
+    h(Text, { color: colors.subtext }, 'ENTER = select | A = activate | D = delete | ESC = back'),
     h(Text, null, ''),
     h(PresetMenu, {
       items: presets,
       onSelect: handleSelect,
       onActivate: handleActivate,
+      onDelete: handleDelete,
       setDescription,
       showBack: true,
     }),
@@ -96,7 +174,7 @@ export function PresetsScreen({ config, configPath, router, setDescription, show
   );
 }
 
-function PresetMenu({ items, onSelect, onActivate, setDescription, showBack }) {
+function PresetMenu({ items, onSelect, onActivate, onDelete, setDescription, showBack }) {
   const [cursor, setCursor] = useState(0);
 
   const allItems = showBack
@@ -129,6 +207,12 @@ function PresetMenu({ items, onSelect, onActivate, setDescription, showBack }) {
       const item = allItems[cursor];
       if (item && item.label !== '__back__' && item.label !== '__none__' && onActivate) {
         onActivate(item.label);
+      }
+    }
+    if (input === 'd' || input === 'D') {
+      const item = allItems[cursor];
+      if (item && item.label !== '__back__' && item.label !== '__none__' && !item.isActive && onDelete) {
+        onDelete(item.label);
       }
     }
   });
