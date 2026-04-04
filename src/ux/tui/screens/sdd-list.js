@@ -1,8 +1,8 @@
 /**
- * SDD List Screen — lists all custom SDD catalogs with navigation to detail.
+ * SDD List Screen — lists custom SDDs with navigation to detail.
  *
  * Shows:
- *   - Each SDD name and description
+ *   - Each SDD name and description (project-local only)
  *   - Empty state when no SDDs exist
  *   - Option to create a new SDD
  *   - Navigate to sdd-detail on selection
@@ -23,21 +23,47 @@ export function SddListScreen({
 }) {
   const [sdds, setSdds] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
 
   useEffect(() => {
     (async () => {
       try {
         const pathMod = await import('node:path');
+        const fsMod = await import('node:fs');
         const catalogsDir = pathMod.join(pathMod.dirname(configPath), 'catalogs');
-        const { loadCustomSdds } = await import('../../../core/sdd-catalog-io.js');
-        const result = loadCustomSdds(catalogsDir);
-        setSdds(result);
+        
+        if (!fsMod.existsSync(catalogsDir)) {
+          setSdds([]);
+          setLoading(false);
+          return;
+        }
+        
+        const entries = fsMod.readdirSync(catalogsDir);
+        const loadedSdds = [];
+        
+        for (const entry of entries) {
+          const entryPath = pathMod.join(catalogsDir, entry);
+          const stat = fsMod.statSync(entryPath);
+          if (!stat.isDirectory()) continue;
+          
+          const sddYamlPath = pathMod.join(entryPath, 'sdd.yaml');
+          if (!fsMod.existsSync(sddYamlPath)) continue;
+          
+          const raw = fsMod.readFileSync(sddYamlPath, 'utf8');
+          const { parseYaml } = await import('../../../core/router.js');
+          const parsed = parseYaml(raw);
+          loadedSdds.push({
+            name: entry,
+            description: parsed.description || '',
+            path: sddYamlPath,
+          });
+        }
+        
+        setSdds(loadedSdds);
       } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
+        console.error('Error loading SDDs:', err);
+        setSdds([]);
       }
+      setLoading(false);
     })();
   }, [configPath]);
 
@@ -53,40 +79,17 @@ export function SddListScreen({
     );
   }
 
-  if (error) {
-    return h(Box, { flexDirection: 'column' },
-      h(Text, { bold: true, color: colors.lavender }, 'Custom SDDs'),
-      h(Text, { color: colors.red }, `Error: ${error}`),
-    );
-  }
-
   const items = sdds.map(sdd => ({
     label: sdd.name,
     value: sdd.name,
-    tag: `${Object.keys(sdd.phases).length} phase(s)`,
-    description: sdd.description || `Custom SDD: ${sdd.name}`,
+    description: sdd.description || 'No description',
   }));
 
-  if (items.length === 0) {
-    items.push({
-      label: 'No custom SDDs — Create one',
-      value: '__create__',
-      description: 'Create a new custom SDD catalog.',
-    });
-  } else {
-    items.push({
-      label: 'Create new SDD',
-      value: '__create__',
-      description: 'Create a new custom SDD catalog.',
-    });
-  }
+  items.push({ label: '+ Create new SDD', value: '__create__', description: 'Start the SDD creation wizard.' });
 
   return h(Box, { flexDirection: 'column' },
     h(Text, { bold: true, color: colors.lavender }, 'Custom SDDs'),
-    h(Text, { color: colors.subtext }, sdds.length === 0
-      ? 'No custom SDDs found. Create one to get started.'
-      : `${sdds.length} custom SDD(s) defined.`
-    ),
+    h(Text, { color: colors.subtext }, `${sdds.length} SDD(s) in this project.`),
     h(Text, null, ''),
     h(Menu, {
       items,
@@ -96,7 +99,7 @@ export function SddListScreen({
           router.push('sdd-create-wizard');
           return;
         }
-        if (setSelectedSdd) setSelectedSdd(value);
+        setSelectedSdd(value);
         router.push('sdd-detail');
       },
       setDescription,

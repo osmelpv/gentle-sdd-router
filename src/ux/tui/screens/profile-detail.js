@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { TextInput } from '@inkjs/ui';
 import { Menu } from '../components/menu.js';
@@ -14,8 +14,27 @@ function formatCtx(cw) {
   return String(cw);
 }
 
-export function ProfileDetailScreen({ config, configPath, router, setDescription, showResult, reloadConfig, selectedCatalog, selectedProfile }) {
+export function ProfileDetailScreen({ config: propConfig, configPath: propConfigPath, router, setDescription, showResult, reloadConfig, selectedCatalog, selectedProfile }) {
+  const [config, setConfig] = useState(propConfig);
+  const [configPath, setConfigPath] = useState(propConfigPath);
   const [subView, setSubView] = useState('menu'); // 'menu' | 'copying'
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const mod = await import('../../../router-config.js');
+        const pathMod = await import('node:path');
+        const freshConfigPath = mod.discoverConfigPath([process.cwd()]);
+        if (freshConfigPath) {
+          const freshConfig = mod.loadRouterConfig(freshConfigPath);
+          setConfig(freshConfig);
+          setConfigPath(freshConfigPath);
+        }
+      } catch { /* use current */ }
+      setLoading(false);
+    })();
+  }, []);
 
   useInput((input, key) => {
     if (!key.escape) return;
@@ -25,6 +44,10 @@ export function ProfileDetailScreen({ config, configPath, router, setDescription
     }
     router.pop();
   });
+
+  if (loading) {
+    return h(Box, null, h(Text, { color: colors.subtext }, 'Loading preset...'));
+  }
 
   const activePresetName = selectedProfile || config?.active_preset;
   
