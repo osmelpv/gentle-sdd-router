@@ -1,0 +1,71 @@
+name: free
+sdd: agent-orchestrator
+availability: stable
+complexity: low
+debug_invoke:
+  preset: sdd-debug-mono
+  trigger: on_issues
+  input_from: verify_output
+  required_fields:
+    - issues
+    - affected_files
+    - last_change_files
+    - test_baseline
+identity:
+  inherit_agents_md: true
+  persona: gentleman
+phases:
+  orchestrator:
+    - target: mistral/mistral-large-3
+      kind: lane
+      phase: orchestrator
+      role: primary
+      fallbacks: opencode/qwen3.6-plus-free, opencode-go/glm-5, opencode-go/mimo-v2-pro
+  explore:
+    - target: mistral/mixtral-8x22b
+      kind: lane
+      phase: explore
+      role: primary
+      fallbacks: mistral/mistral-large-3, opencode/nemotron-3-super-free, opencode/qwen3.6-plus-free
+  propose:
+    - target: mistral/mistral-large-3
+      kind: lane
+      phase: propose
+      role: primary
+      fallbacks: opencode-go/glm-5, opencode/qwen3.6-plus-free, mistral/mixtral-8x22b
+  spec:
+    - target: mistral/devstral-medium
+      kind: lane
+      phase: spec
+      role: primary
+      fallbacks: opencode-go/glm-5, mistral/mistral-medium-3.1, opencode-go/mimo-v2-pro
+  design:
+    - target: opencode-go/kimi-k2.5
+      kind: lane
+      phase: design
+      role: primary
+      fallbacks: mistral/pixtral-large-latest, mistral/pixtral-12b, opencode/qwen3.6-plus-free
+  tasks:
+    - target: opencode-go/minimax-m2.5
+      kind: lane
+      phase: tasks
+      role: primary
+      fallbacks: opencode/nemotron-3-super-free, mistral/mistral-nemo, mistral/ministral-8b-latest
+  apply:
+    - target: mistral/codestral-latest
+      kind: lane
+      phase: apply
+      role: primary
+      fallbacks: mistral/devstral-2-latest, opencode/qwen3.6-plus-free, mistral/mistral-nemo
+  verify:
+    - target: mistral/codestral-latest
+      kind: lane
+      phase: verify
+      role: judge
+      fallbacks: mistral/mistral-large-3, opencode/nemotron-3-super-free, opencode/qwen3.6-plus-free
+  archive:
+    - target: opencode-go/mimo-v2-omni
+      kind: lane
+      phase: archive
+      role: primary
+      fallbacks: opencode/big-pickle, opencode/opencode-zen, mistral/mistral-nemo
