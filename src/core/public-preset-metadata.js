@@ -27,7 +27,6 @@ export function getPublicPresetMetadata(config) {
         sdd: preset?.sdd ?? sourceInfo?.sddName ?? publicSddLabelFromCatalogName(catalogName),
         scope: scopeFromFilePath(filePath),
         visibility: preset.hidden === true || catalog?.enabled === false ? 'hidden' : 'visible',
-        active: presetName === activePreset,
         phases: Object.keys(preset?.phases ?? {}).length,
         legacyCatalogName: catalogName,
         filePath,
@@ -41,7 +40,9 @@ export function getPublicPresetMetadata(config) {
 }
 
 export function getActivePublicPresetMetadata(config) {
-  return getPublicPresetMetadata(config).find((row) => row.active) ?? null;
+  const activePreset = config?.active_preset ?? config?.active_profile ?? null;
+  if (!activePreset) return null;
+  return getPublicPresetMetadata(config).find((row) => row.name === activePreset) ?? null;
 }
 
 export function findPresetOwner(config, presetName) {

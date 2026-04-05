@@ -96,14 +96,15 @@ function makeAssembledConfig(dir) {
 // ─── Help text tests (static — no cwd dependency) ────────────────────────────
 
 describe('CLI help text for export/import', () => {
-  test('general help includes export command', async () => {
+  test('general help includes export command (via preset subcommand)', async () => {
     const output = await captureStdout(() => runCli(['--help']));
-    assert.match(output, /export <preset>/);
+    // export/import are now under `preset` subcommand, not root aliases
+    assert.match(output, /preset\s+Manage routing presets/i);
   });
 
-  test('general help includes import command', async () => {
+  test('general help includes import reference (via preset subcommand)', async () => {
     const output = await captureStdout(() => runCli(['--help']));
-    assert.match(output, /import <source>/);
+    assert.match(output, /preset\s+Manage routing presets/i);
   });
 
   test('gsr help export shows export usage', async () => {

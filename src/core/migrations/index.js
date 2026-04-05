@@ -119,12 +119,80 @@ export function planMigrations(routerDir) {
     ? MIGRATIONS[MIGRATIONS.length - 1].toVersion
     : null;
 
+  const pendingMinor = pending.filter((m) => {
+    const script = MIGRATIONS.find((s) => s.id === m.id);
+    return script?.type === 'minor';
+  });
+  const pendingMajor = pending.filter((m) => {
+    const script = MIGRATIONS.find((s) => s.id === m.id);
+    return script?.type !== 'minor';
+  });
+
   return {
     currentVersion,
     targetVersion,
     pending,
+    pendingMinor,
+    pendingMajor,
     alreadyApplied: [...appliedIds],
   };
+}
+
+/**
+ * Automatically apply all pending minor migrations for the project at `routerDir`.
+ * Major migrations are not applied — they require explicit user confirmation.
+ *
+ * @param {string} routerDir  Absolute path to the router directory
+ * @returns {{ applied: string[], backups: string[], plan?: object }}
+ */
+export async function applyMinorMigrations(routerDir) {
+  const plan = planMigrations(routerDir);
+
+  if (plan.pendingMinor.length === 0) {
+    return { applied: [], backups: [], plan };
+  }
+
+  const applied = [];
+  const backups = [];
+
+  for (const pendingMigration of plan.pendingMinor) {
+    const script = MIGRATIONS.find((m) => m.id === pendingMigration.id);
+    if (!script) continue;
+
+    let backupPath = null;
+
+    try {
+      backupPath = createBackup(routerDir, script.id);
+      backups.push(backupPath);
+
+      const configPath = path.join(routerDir, ROUTER_FILENAME);
+      const raw = fs.readFileSync(configPath, 'utf8');
+      const config = parseYaml(raw);
+
+      const output = script.apply(config, { routerDir });
+      writeMigrationOutput(routerDir, output);
+
+      const writtenProfiles = loadV4Profiles(routerDir);
+      const writtenCore = parseYaml(fs.readFileSync(path.join(routerDir, ROUTER_FILENAME), 'utf8'));
+      const assembled = assembleV4Config(writtenCore, writtenProfiles);
+      validateRouterConfig(assembled);
+
+      const registry = loadMigrationsRegistry(routerDir);
+      registry.applied[script.id] = {
+        name: script.name,
+        applied_at: new Date().toISOString(),
+        backup_path: backupPath,
+      };
+      saveMigrationsRegistry(routerDir, registry);
+
+      applied.push(script.id);
+    } catch (err) {
+      if (backupPath) restoreBackup(routerDir, backupPath);
+      throw err;
+    }
+  }
+
+  return { applied, backups, plan };
 }
 
 // ─── Backup helpers ───────────────────────────────────────────────────────────

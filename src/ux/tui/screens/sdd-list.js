@@ -88,7 +88,7 @@ export function SddListScreen({
   if (selectedSddName) {
     const sdd = sdds.find(s => s.name === selectedSddName);
     return h(Box, { flexDirection: 'column' },
-      h(Text, { bold: true, color: colors.lavender }, `SDD: ${selectedSddName}`),
+      h(Text, { bold: true, color: colors.lavender }, `Custom SDD: ${selectedSddName}`),
       h(Text, { color: colors.subtext }, sdd?.description || 'No description'),
       h(Text, null, ''),
       h(Text, { color: colors.subtext }, 'ENTER = view details | D = delete | ESC = back'),
@@ -139,7 +139,7 @@ export function SddListScreen({
 
   return h(Box, { flexDirection: 'column' },
     h(Text, { bold: true, color: colors.lavender }, 'Custom SDDs'),
-    h(Text, { color: colors.subtext }, `${sdds.length} SDD(s) in this project.`),
+    h(Text, { color: colors.subtext }, `${sdds.length} Custom SDD(s) in this project.`),
     h(Text, null, ''),
     h(Text, { color: colors.subtext }, 'ENTER = select | D = quick delete | ESC = back'),
     h(Text, null, ''),

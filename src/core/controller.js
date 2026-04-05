@@ -20,7 +20,7 @@ export function detectGentleAi() {
  */
 export function resolveControllerLabel(config = null) {
   if (config?.controller) return config.controller;
-  return detectGentleAi() ? 'Alan/gentle-ai' : 'host';
+  return detectGentleAi() ? 'Gentleman' : 'host';
 }
 
 /**

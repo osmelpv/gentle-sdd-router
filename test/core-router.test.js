@@ -58,7 +58,7 @@ test('core validates and resolves profiles without I/O', () => {
   const state = resolveRouterState(fixtureConfig);
   assert.equal(state.activeProfileName, 'default');
   assert.equal(state.activationState, 'inactive');
-  assert.equal(state.effectiveController, 'Alan/gentle-ai');
+  assert.equal(state.effectiveController, 'Gentleman');
   assert.equal(state.resolvedPhases.orchestrator.active, 'anthropic/claude-sonnet');
   assert.deepEqual(state.resolvedPhases.explore.candidates, ['google/gemini-flash', 'openai/gpt']);
 });
@@ -210,7 +210,7 @@ test('resolveRouterState works with a v4 assembled (v3-shaped) config', () => {
   assert.equal(state.selectedCatalogName, 'default');
   assert.equal(state.selectedPresetName, 'default');
   assert.equal(state.activationState, 'inactive');
-  assert.equal(state.effectiveController, 'Alan/gentle-ai');
+  assert.equal(state.effectiveController, 'Gentleman');
   assert.ok(Array.isArray(state.profiles));
   assert.equal(state.profiles.length, 2);
   // v3 resolved phases contain lane objects

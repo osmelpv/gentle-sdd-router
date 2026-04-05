@@ -417,7 +417,7 @@ describe('removeOpenCodeOverlay', () => {
 
 // ─── CLI integration ──────────────────────────────────────────────────────────
 
-describe('gsr profile list (CLI)', () => {
+describe('gsr preset list (CLI)', () => {
   test('runs without error and lists profiles', async () => {
     const tmpDir = makeTempDir();
     const routerDir = makeRouterDir(tmpDir);
@@ -426,7 +426,7 @@ describe('gsr profile list (CLI)', () => {
     const originalCwd = process.cwd();
     try {
       process.chdir(tmpDir);
-      const output = await captureStdout(() => runCli(['profile', 'list']));
+      const output = await captureStdout(() => runCli(['preset', 'list']));
       assert.match(output, /balanced/);
     } finally {
       process.chdir(originalCwd);
@@ -447,7 +447,7 @@ function makeRouterDirWithContracts(tmpDir) {
   return routerDir;
 }
 
-describe('gsr profile create (CLI)', () => {
+describe('gsr preset create (CLI)', () => {
   test('creates a preset in temp dir', async () => {
     const tmpDir = makeTempDir();
     const routerDir = makeRouterDir(tmpDir);
@@ -455,7 +455,7 @@ describe('gsr profile create (CLI)', () => {
     const originalCwd = process.cwd();
     try {
       process.chdir(tmpDir);
-      const output = await captureStdout(() => runCli(['profile', 'create', 'newprofile']));
+      const output = await captureStdout(() => runCli(['preset', 'create', 'newprofile']));
       assert.match(output, /Created preset 'newprofile'/);
 
       const profilePath = path.join(routerDir, 'profiles', 'newprofile.router.yaml');
@@ -474,7 +474,7 @@ describe('gsr profile create (CLI)', () => {
     try {
       process.chdir(tmpDir);
       // Use profile name without "sync" to avoid false-positive regex match
-      const output = await captureStdout(() => runCli(['profile', 'create', 'autotest']));
+      const output = await captureStdout(() => runCli(['preset', 'create', 'autotest']));
       // Must create the preset
       assert.match(output, /Created preset 'autotest'/);
       // Must report sync output (sync ran after creation)
@@ -494,7 +494,7 @@ describe('gsr profile create (CLI)', () => {
     const originalCwd = process.cwd();
     try {
       process.chdir(tmpDir);
-      const output = await captureStdout(() => runCli(['profile', 'create', 'blocking-test']));
+      const output = await captureStdout(() => runCli(['preset', 'create', 'blocking-test']));
       // Preset is still created even when sync fails
       assert.match(output, /Created preset 'blocking-test'/);
     } finally {
@@ -504,7 +504,7 @@ describe('gsr profile create (CLI)', () => {
   });
 });
 
-describe('gsr profile delete (CLI)', () => {
+describe('gsr preset delete (CLI)', () => {
   test('removes a preset in temp dir', async () => {
     const tmpDir = makeTempDir();
     const routerDir = makeRouterDir(tmpDir);
@@ -512,7 +512,7 @@ describe('gsr profile delete (CLI)', () => {
     const originalCwd = process.cwd();
     try {
       process.chdir(tmpDir);
-      const output = await captureStdout(() => runCli(['profile', 'delete', 'balanced']));
+      const output = await captureStdout(() => runCli(['preset', 'delete', 'balanced']));
       assert.match(output, /Deleted preset 'balanced'/);
 
       const profilePath = path.join(routerDir, 'profiles', 'balanced.router.yaml');
@@ -524,17 +524,17 @@ describe('gsr profile delete (CLI)', () => {
   });
 });
 
-describe('gsr catalog list (CLI)', () => {
-  test('runs without error', async () => {
+describe('gsr catalog (removed alias)', () => {
+  test('catalog command is no longer a top-level alias — falls through to unknown command', async () => {
     const tmpDir = makeTempDir();
     makeRouterDir(tmpDir);
 
     const originalCwd = process.cwd();
     try {
       process.chdir(tmpDir);
-      const output = await captureStdout(() => runCli(['catalog', 'list']));
-      assert.match(output, /Preset sources \(legacy\):/);
-      assert.match(output, /default/);
+      const output = await captureStdout(() => runCli(['catalog', 'list']).catch(() => {}));
+      // 'catalog' is removed — usage message is shown
+      assert.match(output, /Usage: gsr/);
     } finally {
       process.chdir(originalCwd);
       cleanup(tmpDir);
@@ -758,7 +758,7 @@ describe('moveProfile', () => {
     }
   });
 
-  test('gsr catalog move CLI runs without error', async () => {
+  test('gsr preset move CLI runs without error', async () => {
     const tmpDir = makeTempDir();
     try {
       const routerDir = makeRouterDir(tmpDir);
@@ -780,7 +780,7 @@ describe('moveProfile', () => {
       process.stdout.write = (chunk) => { chunks.push(String(chunk)); return true; };
 
       try {
-        await runCli(['catalog', 'move', 'balanced', 'team']);
+        await runCli(['preset', 'move', 'balanced', 'team']);
         const output = chunks.join('');
         assert.ok(
           output.includes("Moved preset 'balanced'"),

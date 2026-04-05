@@ -8,6 +8,7 @@ import {
   createBackup,
   loadMigrationsRegistry,
   planMigrations,
+  applyMinorMigrations,
   restoreBackup,
   runMigrations,
   saveMigrationsRegistry,
@@ -814,4 +815,79 @@ describe('runMigrations: rollback on failure', () => {
       cleanup(dir);
     }
   });
+});
+
+// ── pendingMinor / pendingMajor split ─────────────────────────────────────────
+
+describe('planMigrations — pendingMinor / pendingMajor split', () => {
+  test('planMigrations returns pendingMinor and pendingMajor arrays', () => {
+    const dir = makeTempDir();
+    try {
+      writeRouterYaml(dir, V3_ROUTER_YAML);
+      const plan = planMigrations(dir);
+      assert.ok(Array.isArray(plan.pendingMinor), 'pendingMinor should be an array');
+      assert.ok(Array.isArray(plan.pendingMajor), 'pendingMajor should be an array');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('migration 001 is classified as major (pendingMajor)', () => {
+    const dir = makeTempDir();
+    try {
+      writeRouterYaml(dir, V3_ROUTER_YAML);
+      const plan = planMigrations(dir);
+      assert.ok(
+        plan.pendingMajor.some((m) => m.id === '001'),
+        `migration 001 should be in pendingMajor. Got: ${JSON.stringify(plan.pendingMajor)}`
+      );
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('pendingMinor is empty for v3 config (no minor migrations defined)', () => {
+    const dir = makeTempDir();
+    try {
+      writeRouterYaml(dir, V3_ROUTER_YAML);
+      const plan = planMigrations(dir);
+      assert.deepEqual(plan.pendingMinor, [], 'no minor migrations for v3 config');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('applyMinorMigrations returns immediately with no applied if no minor pending', async () => {
+    const dir = makeTempDir();
+    try {
+      writeRouterYaml(dir, V3_ROUTER_YAML);
+      const result = await applyMinorMigrations(dir);
+      assert.deepEqual(result.applied, [], 'no minor migrations to apply');
+    } finally {
+      cleanup(dir);
+    }
+  });
+});
+
+// ── T13.1 — removed aliases return unknown command ────────────────────────────
+
+describe('removed CLI aliases return unknown command', () => {
+  const removedAliases = ['reload', 'list', 'use', 'browse', 'compare', 'render', 'install', 'bootstrap', 'activate', 'deactivate', 'apply', 'export', 'import'];
+
+  for (const alias of removedAliases) {
+    test(`gsr ${alias} returns Unknown command error`, async () => {
+      const { runCli } = await import('../src/cli.js');
+      await assert.rejects(
+        () => runCli([alias]),
+        (err) => {
+          assert.ok(err instanceof Error, 'should throw an Error');
+          assert.ok(
+            err.message.includes('Unknown command') || err.message.includes(alias),
+            `Expected unknown command error. Got: ${err.message}`
+          );
+          return true;
+        }
+      );
+    });
+  }
 });

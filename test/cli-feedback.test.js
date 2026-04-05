@@ -172,12 +172,14 @@ describe('gsr status --verbose', () => {
     );
   });
 
-  test('--verbose output is longer than simple output', async () => {
+  test('--verbose output is equivalent to simple output (unified mode)', async () => {
     const simpleOutput = await captureOutput(() => runCli(['status']));
     const verboseOutput = await captureOutput(() => runCli(['status', '--verbose']));
-    assert.ok(
-      verboseOutput.length > simpleOutput.length,
-      `--verbose (${verboseOutput.length} chars) should be longer than simple (${simpleOutput.length} chars)`
+    // Both use getUnifiedStatus now — output is the same; --verbose is silently ignored
+    assert.equal(
+      verboseOutput,
+      simpleOutput,
+      '--verbose should produce the same output as simple (unified status)'
     );
   });
 });
@@ -207,12 +209,14 @@ describe('gsr status --debug', () => {
     );
   });
 
-  test('--debug output is longer than simple output', async () => {
+  test('--debug output is equivalent to simple output (unified mode)', async () => {
     const simpleOutput = await captureOutput(() => runCli(['status']));
     const debugOutput = await captureOutput(() => runCli(['status', '--debug']));
-    assert.ok(
-      debugOutput.length > simpleOutput.length,
-      `--debug (${debugOutput.length} chars) should be longer than simple (${simpleOutput.length} chars)`
+    // Both use getUnifiedStatus now — output is the same; --debug is silently ignored
+    assert.equal(
+      debugOutput,
+      simpleOutput,
+      '--debug should produce the same output as simple (unified status)'
     );
   });
 });

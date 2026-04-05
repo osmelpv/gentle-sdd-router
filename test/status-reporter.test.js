@@ -9,6 +9,8 @@ import {
   getSimpleStatus,
   getVerboseStatus,
   buildConnectionGraph,
+  detectEnvironment,
+  getUnifiedStatus,
 } from '../src/core/status-reporter.js';
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -652,9 +654,9 @@ describe('buildConnectionGraph — v2 metadata', () => {
 // ── Triangulation: getVerboseStatus PRESETS section ───────────────────────────
 
 describe('getVerboseStatus — PRESETS section', () => {
-  test('marks active preset with *', () => {
+  test('shows active preset name in PRESETS section', () => {
     const result = getVerboseStatus(configMultiCatalog, { manifestExists: true });
-    assert.ok(result.includes('*'), `should mark active preset with *. Got:\n${result.slice(0, 800)}`);
+    assert.ok(result.includes('multivendor'), `should show active preset name. Got:\n${result.slice(0, 800)}`);
   });
 
   test('shows phase count for each preset', () => {
@@ -670,6 +672,130 @@ describe('getVerboseStatus — PRESETS section', () => {
 });
 
 // ── Triangulation: getSimpleStatus identity label ─────────────────────────────
+
+// ── detectEnvironment tests ───────────────────────────────────────────────────
+
+describe('detectEnvironment', () => {
+  test('returns "opencode" when OPENCODE_SESSION_ID is set', () => {
+    const orig = process.env.OPENCODE_SESSION_ID;
+    process.env.OPENCODE_SESSION_ID = 'test-session';
+    try {
+      assert.equal(detectEnvironment(), 'opencode');
+    } finally {
+      if (orig === undefined) delete process.env.OPENCODE_SESSION_ID;
+      else process.env.OPENCODE_SESSION_ID = orig;
+    }
+  });
+
+  test('returns "cursor" when CURSOR_SESSION_ID is set', () => {
+    const origOc = process.env.OPENCODE_SESSION_ID;
+    const origCursor = process.env.CURSOR_SESSION_ID;
+    delete process.env.OPENCODE_SESSION_ID;
+    process.env.CURSOR_SESSION_ID = 'cursor-session';
+    try {
+      assert.equal(detectEnvironment(), 'cursor');
+    } finally {
+      if (origOc === undefined) delete process.env.OPENCODE_SESSION_ID;
+      else process.env.OPENCODE_SESSION_ID = origOc;
+      if (origCursor === undefined) delete process.env.CURSOR_SESSION_ID;
+      else process.env.CURSOR_SESSION_ID = origCursor;
+    }
+  });
+
+  test('returns "cursor" when TERM_PROGRAM is "cursor"', () => {
+    const origOc = process.env.OPENCODE_SESSION_ID;
+    const origCursor = process.env.CURSOR_SESSION_ID;
+    const origTerm = process.env.TERM_PROGRAM;
+    delete process.env.OPENCODE_SESSION_ID;
+    delete process.env.CURSOR_SESSION_ID;
+    process.env.TERM_PROGRAM = 'cursor';
+    try {
+      assert.equal(detectEnvironment(), 'cursor');
+    } finally {
+      if (origOc === undefined) delete process.env.OPENCODE_SESSION_ID;
+      else process.env.OPENCODE_SESSION_ID = origOc;
+      if (origCursor === undefined) delete process.env.CURSOR_SESSION_ID;
+      else process.env.CURSOR_SESSION_ID = origCursor;
+      if (origTerm === undefined) delete process.env.TERM_PROGRAM;
+      else process.env.TERM_PROGRAM = origTerm;
+    }
+  });
+
+  test('returns "terminal" when no env vars match', () => {
+    const origOc = process.env.OPENCODE_SESSION_ID;
+    const origCursor = process.env.CURSOR_SESSION_ID;
+    const origTerm = process.env.TERM_PROGRAM;
+    delete process.env.OPENCODE_SESSION_ID;
+    delete process.env.CURSOR_SESSION_ID;
+    delete process.env.TERM_PROGRAM;
+    try {
+      assert.equal(detectEnvironment(), 'terminal');
+    } finally {
+      if (origOc === undefined) delete process.env.OPENCODE_SESSION_ID;
+      else process.env.OPENCODE_SESSION_ID = origOc;
+      if (origCursor === undefined) delete process.env.CURSOR_SESSION_ID;
+      else process.env.CURSOR_SESSION_ID = origCursor;
+      if (origTerm === undefined) delete process.env.TERM_PROGRAM;
+      else process.env.TERM_PROGRAM = origTerm;
+    }
+  });
+});
+
+// ── getUnifiedStatus tests ────────────────────────────────────────────────────
+
+describe('getUnifiedStatus', () => {
+  test('returns not-installed message when config is null', () => {
+    const result = getUnifiedStatus(null, {});
+    assert.ok(result.includes('Not installed'));
+  });
+
+  test('includes CONFIGURATION section', () => {
+    const result = getUnifiedStatus(minConfig, { manifestExists: true });
+    assert.ok(result.includes('CONFIGURATION'), `Missing CONFIGURATION. Got:\n${result.slice(0, 500)}`);
+  });
+
+  test('includes PRESET section', () => {
+    const result = getUnifiedStatus(minConfig, { manifestExists: true });
+    assert.ok(result.includes('PRESET'), `Missing PRESET. Got:\n${result.slice(0, 500)}`);
+  });
+
+  test('includes ROUTES section', () => {
+    const result = getUnifiedStatus(minConfig, { manifestExists: true });
+    assert.ok(result.includes('ROUTES'), `Missing ROUTES. Got:\n${result.slice(0, 500)}`);
+  });
+
+  test('includes active preset name', () => {
+    const result = getUnifiedStatus(minConfig, { manifestExists: true });
+    assert.ok(result.includes('balanced'), `Missing active preset. Got:\n${result.slice(0, 500)}`);
+  });
+
+  test('includes total presets count', () => {
+    const result = getUnifiedStatus(minConfig, { manifestExists: true });
+    assert.ok(result.includes('Total presets'), `Missing preset count. Got:\n${result.slice(0, 500)}`);
+  });
+
+  test('includes OS info', () => {
+    const result = getUnifiedStatus(minConfig, { manifestExists: true });
+    assert.ok(result.includes('OS'), `Missing OS info. Got:\n${result.slice(0, 500)}`);
+  });
+
+  test('includes Environment field', () => {
+    const result = getUnifiedStatus(minConfig, { manifestExists: true });
+    assert.ok(result.includes('Environment'), `Missing Environment field. Got:\n${result.slice(0, 500)}`);
+  });
+});
+
+// ── getPublicPresetMetadata active field removed tests ────────────────────────
+
+describe('getPublicPresetMetadata — active field removed', () => {
+  test('does not return active field in preset rows', async () => {
+    const { getPublicPresetMetadata } = await import('../src/core/public-preset-metadata.js');
+    const rows = getPublicPresetMetadata(minConfig);
+    for (const row of rows) {
+      assert.ok(!('active' in row), `Row should not have active field: ${JSON.stringify(row)}`);
+    }
+  });
+});
 
 describe('getSimpleStatus — identity label display', () => {
   test('shows explicit persona name when set', () => {

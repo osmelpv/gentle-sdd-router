@@ -268,21 +268,12 @@ test('help output lists the available commands', async () => {
   const output = chunks.join('');
   assert.match(output, /Usage: gsr <command> \[args\]/);
   assert.match(output, /Router boundary: external, non-executing\./i);
-  assert.match(output, /Host sync: \/gsr session metadata is published for host-local slash-command registration; the router stays external and non-executing\./i);
-  assert.match(output, /Multimodel browse\/compare expose shareable schema v3 metadata only\./i);
-  assert.match(output, /Compatibility: router\.yaml versions 1, 3, and 4 are supported; v3 powers multimodel browse\/compare and v4 is the current multi-file format\./i);
-  assert.match(output, /Quickstart: run gsr status, then gsr bootstrap if router\/router\.yaml is missing\./i);
-  assert.match(output, /use <preset>\s+Select the active preset in router\/router\.yaml without changing who is in control\./i);
+  // Verify remaining backward-compat aliases are listed
+  assert.match(output, /update\s+Show\/apply config migrations\./i);
+  assert.match(output, /uninstall\s+Remove gsr from this project\./i);
+  assert.match(output, /sync\s+Push global contracts to Engram\./i);
+  // Verify canonical commands are still present
   assert.match(output, /status\s+Show current router status\./i);
-  assert.match(output, /list\s+List available presets and mark the active one\./i);
-  assert.match(output, /browse \[selector\]\s+Inspect shareable multimodel metadata projected from schema v3 without recommending or executing anything\./i);
-  assert.match(output, /compare <left> <right>\s+Compare two shareable multimodel projections without recommending or executing anything\./i);
-  assert.match(output, /activate\s+Take control of routing without changing the active profile\./i);
-  assert.match(output, /deactivate\s+Hand control back to (Alan\/gentle-ai|host) without changing the active profile\./i);
-  assert.match(output, /install\s+Inspect or apply a YAML-first install intent to router\/router\.yaml\./i);
-  assert.match(output, /bootstrap\s+Show or apply a step-by-step bootstrap path for adoption\./i);
-  assert.match(output, /render opencode/);
-  assert.match(output, /OpenCode provider-execution, host-session sync, handoff, schema metadata, and multimodel orchestration manager boundaries without implying execution\./i);
 });
 
 test('help command can explain specific commands', async () => {
@@ -322,7 +313,7 @@ test('bootstrap command keeps a step-by-step shell path available', async () => 
   };
 
   try {
-    await runCli(['bootstrap']);
+    await runCli(['setup', 'bootstrap']);
   } finally {
     process.stdout.write = originalWrite;
     process.chdir(originalCwd);
@@ -350,7 +341,7 @@ test('bootstrap command stays shell-ready on a fresh repo', async () => {
   };
 
   try {
-    await runCli(['bootstrap']);
+    await runCli(['setup', 'bootstrap']);
   } finally {
     process.stdout.write = originalWrite;
     process.chdir(originalCwd);
@@ -366,7 +357,7 @@ test('install command materializes a starter config on a fresh repo', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-install-fresh-cli-'));
 
   const binPath = fileURLToPath(new URL('../bin/gsr.js', import.meta.url));
-  const result = spawnSync(process.execPath, [binPath, 'install'], {
+  const result = spawnSync(process.execPath, [binPath, 'setup', 'install'], {
     cwd: tempDir,
     encoding: 'utf8',
   });
@@ -382,7 +373,7 @@ test('install command honors activation intent on a fresh repo', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-install-fresh-active-cli-'));
 
   const binPath = fileURLToPath(new URL('../bin/gsr.js', import.meta.url));
-  const result = spawnSync(process.execPath, [binPath, 'install', '--intent', 'activation=active'], {
+  const result = spawnSync(process.execPath, [binPath, 'setup', 'install', '--intent', 'activation=active'], {
     cwd: tempDir,
     encoding: 'utf8',
   });
@@ -403,7 +394,7 @@ test('install command can apply YAML intents through the entrypoint', () => {
   fs.writeFileSync(path.join(tempDir, 'router', 'router.yaml'), fixtureYaml, 'utf8');
 
   const binPath = fileURLToPath(new URL('../bin/gsr.js', import.meta.url));
-  const result = spawnSync(process.execPath, [binPath, 'install', '--intent', 'activation=active'], {
+  const result = spawnSync(process.execPath, [binPath, 'setup', 'install', '--intent', 'activation=active'], {
     cwd: tempDir,
     encoding: 'utf8',
   });
@@ -432,7 +423,7 @@ test('install command rejects invalid intents honestly through the entrypoint', 
   };
 
   try {
-    await runCli(['install', '--intent', 'unsupported-fragment']);
+    await runCli(['setup', 'install', '--intent', 'unsupported-fragment']);
   } finally {
     process.stdout.write = originalWrite;
     process.chdir(originalCwd);
@@ -461,7 +452,7 @@ test('activate and deactivate toggle activation without changing the active prof
   };
 
   try {
-    await runCli(['activate']);
+    await runCli(['route', 'activate']);
     let output = chunks.join('');
     assert.match(output, /Command: activate opencode/);
     assert.match(output, /Status: updated/);
@@ -480,7 +471,7 @@ test('activate and deactivate toggle activation without changing the active prof
     assert.match(output, /Activation\s+active/);
 
     chunks.length = 0;
-    await runCli(['deactivate']);
+    await runCli(['route', 'deactivate']);
     output = chunks.join('');
     assert.match(output, /Command: deactivate opencode/);
     assert.match(output, /Status: updated/);
@@ -514,7 +505,7 @@ test('render opencode reports honest adapter output', async () => {
   };
 
   try {
-    await runCli(['render', 'opencode']);
+    await runCli(['inspect', 'render', 'opencode']);
   } finally {
     process.stdout.write = originalWrite;
     process.chdir(originalCwd);

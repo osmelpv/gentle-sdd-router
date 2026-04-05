@@ -290,7 +290,7 @@ test('fresh install proposal reflects the default activation (inactive)', () => 
   const report = installOpenCodeCommand({}, linuxContext(tempDir));
 
   assert.equal(report.installRouteProposalContract.proposal.activationState, 'inactive');
-  assert.match(report.installRouteProposalContract.proposal.effectiveController, /^(Alan\/gentle-ai|host)$/);
+  assert.match(report.installRouteProposalContract.proposal.effectiveController, /^(Gentleman|host)$/);
   assert.equal(report.installRouteProposalContract.proposal.safe, true);
 });
 
@@ -386,7 +386,7 @@ test('starter config activation state resolves consistently between state and ac
 
   assert.equal(state.activationState, 'inactive');
   assert.equal(activation.state, 'inactive');
-  assert.match(activation.effectiveController, /^(Alan\/gentle-ai|host)$/);
+  assert.match(activation.effectiveController, /^(Gentleman|host)$/);
 });
 
 test('describeInstallBootstrap returns noop when intent already matches the config', () => {

@@ -302,7 +302,7 @@ describe('pricing display in gsr status output', () => {
     assert.equal(typeof fromBarrel, 'function');
   });
 
-  test('gsr list with v4 actual config runs without error and shows presets', async () => {
+  test('gsr preset list with v4 actual config runs without error and shows presets', async () => {
     const chunks = [];
     const originalWrite = process.stdout.write.bind(process.stdout);
     process.stdout.write = function capture(chunk) {
@@ -311,7 +311,7 @@ describe('pricing display in gsr status output', () => {
     };
 
     try {
-      await runCli(['list']);
+      await runCli(['preset', 'list']);
     } finally {
       process.stdout.write = originalWrite;
     }

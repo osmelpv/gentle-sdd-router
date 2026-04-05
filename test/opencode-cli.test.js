@@ -178,7 +178,7 @@ test('CLI render opencode includes the agent-teams-lite consumer contract', asyn
   };
 
   try {
-    await runCli(['render', 'opencode']);
+    await runCli(['inspect', 'render', 'opencode']);
   } finally {
     process.stdout.write = originalWrite;
     process.chdir(originalCwd);
@@ -210,7 +210,7 @@ test('CLI render opencode reports v3 schema metadata without execution wording',
   };
 
   try {
-    await runCli(['render', 'opencode']);
+    await runCli(['inspect', 'render', 'opencode']);
   } finally {
     process.stdout.write = originalWrite;
     process.chdir(originalCwd);
@@ -244,7 +244,7 @@ test('CLI browse exposes shareable multimodel metadata without recommendation wo
   };
 
   try {
-    await runCli(['browse']);
+    await runCli(['inspect', 'browse']);
   } finally {
     process.stdout.write = originalWrite;
     process.chdir(originalCwd);
@@ -279,7 +279,7 @@ test('CLI compare reports projected metadata deltas only', async () => {
   };
 
   try {
-    await runCli(['compare', 'default/balanced', 'default/focused']);
+    await runCli(['inspect', 'compare', 'default/balanced', 'default/focused']);
   } finally {
     process.stdout.write = originalWrite;
     process.chdir(originalCwd);
@@ -355,7 +355,7 @@ test('CLI apply opencode previews agents without writing any files', async () =>
   process.env.GSR_TEST_NO_GLOBAL = '1';
 
   try {
-    await runCli(['apply', 'opencode']);
+    await runCli(['setup', 'apply', 'opencode']);
   } finally {
     process.stdout.write = originalWrite;
     process.chdir(originalCwd);
@@ -509,22 +509,22 @@ async function captureRunCli(argv, tempDir) {
   return chunks.join('');
 }
 
-test('gsr reload runs without error and produces output', async () => {
+test('gsr route show runs without error and produces output', async () => {
   const tempDir = makeMultivendorV4TempDir();
 
   try {
-    const output = await captureRunCli(['reload'], tempDir);
+    const output = await captureRunCli(['route', 'show'], tempDir);
     assert.match(output, /Resolved routes:/);
   } finally {
     fs.rmSync(tempDir, { recursive: true });
   }
 });
 
-test('gsr list runs without error and shows presets', async () => {
+test('gsr preset list runs without error and shows presets', async () => {
   const tempDir = makeMultivendorV4TempDir();
 
   try {
-    const output = await captureRunCli(['list'], tempDir);
+    const output = await captureRunCli(['preset', 'list'], tempDir);
     assert.match(output, /Presets:/);
     assert.match(output, /multivendor/);
   } finally {
@@ -546,7 +546,7 @@ test('gsr update without --apply shows pending migrations or up-to-date message'
   }
 });
 
-test('gsr apply with no target throws informative error', async () => {
+test('gsr setup apply with no target throws informative error', async () => {
   const tempDir = makeMultivendorV4TempDir();
   const originalCwd = process.cwd();
 
@@ -556,7 +556,7 @@ test('gsr apply with no target throws informative error', async () => {
 
   try {
     await assert.rejects(
-      () => runCli(['apply']),
+      () => runCli(['setup', 'apply']),
       (err) => {
         assert.ok(err instanceof Error);
         assert.ok(err.message.includes('requires a target'), `Expected 'requires a target' in: ${err.message}`);
@@ -570,7 +570,7 @@ test('gsr apply with no target throws informative error', async () => {
   }
 });
 
-test('gsr apply with unknown target throws informative error', async () => {
+test('gsr setup apply with unknown target throws informative error', async () => {
   const tempDir = makeMultivendorV4TempDir();
   const originalCwd = process.cwd();
 
@@ -580,7 +580,7 @@ test('gsr apply with unknown target throws informative error', async () => {
 
   try {
     await assert.rejects(
-      () => runCli(['apply', 'vscode']),
+      () => runCli(['setup', 'apply', 'vscode']),
       (err) => {
         assert.ok(err instanceof Error);
         assert.ok(err.message.includes('Unknown apply target'), `Expected 'Unknown apply target' in: ${err.message}`);
@@ -650,7 +650,7 @@ test('gsr route use without install outputs not-installed message', async () => 
   }
 });
 
-test('gsr install without config does not trigger pre-install guard', async () => {
+test('gsr setup install without config does not trigger pre-install guard', async () => {
   const tempDir = makeTempDirWithoutInstall();
   const originalCwd = process.cwd();
   const chunks = [];
@@ -660,7 +660,7 @@ test('gsr install without config does not trigger pre-install guard', async () =
   process.stdout.write = (chunk) => { chunks.push(String(chunk)); return true; };
 
   try {
-    await runCli(['install']);
+    await runCli(['setup', 'install']);
     const output = chunks.join('');
     // Should NOT output the guard message; install is whitelisted
     assert.ok(

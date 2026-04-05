@@ -93,7 +93,7 @@ export function SddDetailScreen({
 
   if (error) {
     return h(Box, { flexDirection: 'column' },
-      h(Text, { bold: true, color: colors.lavender }, 'SDD Detail'),
+      h(Text, { bold: true, color: colors.lavender }, 'Custom SDD Detail'),
       h(Text, { color: colors.red }, `Error: ${error}`),
     );
   }

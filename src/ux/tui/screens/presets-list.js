@@ -69,6 +69,7 @@ export function PresetsScreen({ config, configPath, router, setDescription, show
 
   const handleSelect = async (value) => {
     if (value === '__none__') return;
+    if (value === '__back__') { router.pop(); return; }
     appendTuiDebug('presets_select', { value });
     setSelectedPresetName(value);
   };
@@ -275,6 +276,8 @@ function PresetMenu({ items, onSelect, onToggleVisibility, onDelete, setDescript
     }
   });
 
+  const isNarrow = (process.stdout.columns ?? 80) < 80;
+
   return h(Box, { flexDirection: 'column' },
     allItems.map((item, idx) => {
       const isSelected = idx === cursor;
@@ -282,18 +285,47 @@ function PresetMenu({ items, onSelect, onToggleVisibility, onDelete, setDescript
       const isBack = item.label === '__back__';
       const isActive = item.isActive;
       const isNone = item.label === '__none__';
-      
+
       let color = colors.text;
       if (isSelected) color = colors.lavender;
       else if (isBack) color = colors.overlay;
       else if (isActive) color = colors.green;
       else if (item.isVisible) color = colors.green;
-      
-      const suffix = item.tag ? ` [${item.tag}]` : '';
-      const displayText = isBack ? item.displayLabel : (item.displayLabel || item.label);
 
-      return h(Text, { key: item.label, color, bold: isSelected && !isBack },
-        prefix, displayText, isNone ? '' : suffix,
+      if (isBack || isNone) {
+        const displayText = isBack ? item.displayLabel : (item.displayLabel || item.label);
+        return h(Text, { key: item.label, color, bold: isSelected && !isBack },
+          prefix, displayText,
+        );
+      }
+
+      if (isNarrow) {
+        // Compact form: name — N phases
+        const phaseCount = (() => {
+          // We may not have phases on the item directly; use displayLabel as fallback
+          const match = (item.displayLabel || '').match(/(\d+) phase/);
+          return match ? `${match[1]} phases` : '';
+        })();
+        const compactText = phaseCount ? `${item.label} — ${phaseCount}` : item.label;
+        return h(Text, { key: item.label, color, bold: isSelected },
+          prefix, compactText,
+        );
+      }
+
+      // Wide form: table with columns
+      const name = item.label.padEnd(30).slice(0, 30);
+      const phaseCount = Object.keys(item.phases ?? {}).length;
+      // Derive type from item properties (global = 'built-in', project = 'custom')
+      const type = (item.scope ?? 'project').padEnd(12).slice(0, 12);
+      const phases = String(phaseCount).padEnd(8).slice(0, 8);
+      const visibility = (item.tag ?? 'visible').padEnd(10).slice(0, 10);
+
+      return h(Box, { key: item.label, flexDirection: 'row' },
+        h(Text, { color, bold: isSelected }, prefix),
+        h(Text, { color, bold: isSelected }, name),
+        h(Text, { color: isSelected ? color : colors.subtext }, type),
+        h(Text, { color: isSelected ? color : colors.subtext }, phases),
+        h(Text, { color: isSelected ? color : colors.subtext }, visibility),
       );
     }),
   );

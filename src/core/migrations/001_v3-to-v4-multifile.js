@@ -4,6 +4,7 @@ export const migration = {
   id: '001',
   name: 'v3-to-v4-multifile',
   description: 'Convert v3/v1 monolith router.yaml into v4 multi-file profile structure',
+  type: 'major',
   fromVersion: [1, 3],
   toVersion: 4,
   ownedFields: ['version', 'catalogs', 'active_catalog', 'active_preset', 'active_profile', 'profiles'],

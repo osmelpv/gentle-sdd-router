@@ -40,13 +40,13 @@ test('resolveControllerLabel config override takes priority over detection', () 
   assert.equal(label, 'my-override');
 });
 
-test('resolveControllerLabel with null config returns Alan/gentle-ai or host depending on detection', () => {
+test('resolveControllerLabel with null config returns Gentleman or host depending on detection', () => {
   resetControllerCache();
   const detected = detectGentleAi();
   resetControllerCache();
   const label = resolveControllerLabel(null);
   if (detected) {
-    assert.equal(label, 'Alan/gentle-ai');
+    assert.equal(label, 'Gentleman');
   } else {
     assert.equal(label, 'host');
   }

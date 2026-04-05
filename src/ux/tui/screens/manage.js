@@ -34,7 +34,6 @@ export function ManageScreen({ config, configPath, router, setDescription, showR
     { label: 'Switch active preset', value: 'switch', description: 'Change which preset controls model routing.' },
     { label: 'Activate routing', value: 'activate', description: 'gsr takes control of routing decisions.' },
     { label: 'Deactivate routing', value: 'deactivate', description: 'Hand routing control back to the host.' },
-    { label: 'Browse metadata', value: 'browse', description: 'Inspect multimodel metadata for the active preset.' },
     { label: 'Compare presets', value: 'compare', description: 'Compare two presets side by side.' },
     { label: 'Check migrations', value: 'update', description: 'Check for pending config migrations.' },
   ];

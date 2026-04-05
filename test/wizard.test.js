@@ -169,7 +169,7 @@ test('wizardCurrentConfig delegates preset switching and marks the active preset
   assert.equal(prompts.calls.select.length, 2);
   assert.deepEqual(
     prompts.calls.select[0].options.map((option) => option.value),
-    ['use', 'status', 'reload', 'list', 'browse', 'compare', 'profiles', 'export', 'import', 'update', 'exit'],
+    ['use', 'status', 'reload', 'list', 'compare', 'profiles', 'export', 'import', 'update', 'exit'],
   );
   assert.deepEqual(
     prompts.calls.select[1].options.map((option) => option.label),
@@ -445,13 +445,13 @@ test('wizardCurrentConfig import cancel returns null', async () => {
 
 // ── New feature tests ─────────────────────────────────────────────────────────
 
-test('wizardCurrentConfig offers browse option', async () => {
+test('wizardCurrentConfig does not offer removed browse option', async () => {
   const prompts = createPromptStub({ selectResult: 'status' });
 
   await wizardCurrentConfig(createCurrentContext(), prompts);
 
   const values = prompts.calls.select[0].options.map((o) => o.value);
-  assert.ok(values.includes('browse'), 'browse option must be present');
+  assert.ok(!values.includes('browse'), 'browse option must be removed from wizard (T12.2)');
 });
 
 test('wizardCurrentConfig offers compare option', async () => {

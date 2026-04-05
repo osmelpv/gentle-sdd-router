@@ -30,17 +30,41 @@ export function getStatusIndicator(level) {
   return STATUS_INDICATORS[level] ?? '● Unknown';
 }
 
-export const HOME_MENU_ITEMS = [
-  { label: 'Status', value: 'status', description: 'View current router status: active preset, sync state, and whether the host is ready.' },
-  { label: 'Presets', value: 'presets', description: 'Browse and manage routing presets. Activate/deactivate, view details.' },
-  { label: 'SDDs', value: 'sdd-list', description: 'Create and manage custom SDD workflows (phases, role contracts).' },
-  { label: 'Manage', value: 'manage', description: 'Switch presets, activate/deactivate routing, browse metadata, check migrations.' },
-  { label: 'Settings', value: 'settings', description: 'Apply OpenCode overlay or uninstall gsr from this project.' },
-  { label: 'Exit', value: 'exit', description: 'Close the interface.' },
-];
+export function getHomeMenuItems(config) {
+  const presets = [];
+  for (const catalog of Object.values(config?.catalogs ?? {})) {
+    for (const _ of Object.keys(catalog?.presets ?? {})) {
+      presets.push(_);
+    }
+  }
+  const presetCount = presets.length;
 
-export function HomeScreen({ router, setDescription, exit }) {
-  const items = HOME_MENU_ITEMS;
+  const sddCount = (() => {
+    // SDD count is stored under catalogs as entries that have a sdd property
+    let count = 0;
+    for (const [, catalog] of Object.entries(config?.catalogs ?? {})) {
+      for (const [, preset] of Object.entries(catalog?.presets ?? {})) {
+        if (preset?.sdd && preset.sdd !== 'agent-orchestrator') count++;
+      }
+    }
+    return count;
+  })();
+
+  return [
+    { label: 'Status', value: 'status', description: 'View current router status: active preset, sync state, and whether the host is ready.' },
+    { label: `Presets (${presetCount})`, value: 'presets', description: 'Browse and manage routing presets. Activate/deactivate, view details.' },
+    { label: `Custom SDDs (${sddCount})`, value: 'sdd-list', description: 'Create and manage custom SDD workflows (phases, role contracts).' },
+    { label: 'Manage', value: 'manage', description: 'Switch presets, activate/deactivate routing, browse metadata, check migrations.' },
+    { label: 'Settings', value: 'settings', description: 'Apply OpenCode overlay or uninstall gsr from this project.' },
+    { label: 'Exit', value: 'exit', description: 'Close the interface.' },
+  ];
+}
+
+/** Static fallback for tests and cases where config is not available. */
+export const HOME_MENU_ITEMS = getHomeMenuItems(null);
+
+export function HomeScreen({ router, setDescription, exit, config }) {
+  const items = getHomeMenuItems(config);
 
   const handleSelect = (value) => {
     if (value === 'exit') { exit(); return; }

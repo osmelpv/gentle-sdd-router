@@ -31,8 +31,7 @@ test('README and CLI help share adoption wording', async () => {
     'Quickstart: run gsr status, then gsr bootstrap if router/router.yaml is missing.',
     'Select the active preset in router/router.yaml without changing who is in control.',
     'Show current router status. Use --verbose or --debug for full details.',
-    'Inspect shareable multimodel metadata projected from schema v3 without recommending or executing anything.',
-    'Compare two shareable multimodel projections without recommending or executing anything.',
+    // Note: alias descriptions are no longer in the CLI help; verify canonical commands instead
     'Inspect or apply a YAML-first install intent to router/router.yaml.',
     'Show or apply a step-by-step bootstrap path for adoption.',
     'Preview the OpenCode provider-execution, host-session sync, handoff, schema metadata, and multimodel orchestration manager boundaries without implying execution.',

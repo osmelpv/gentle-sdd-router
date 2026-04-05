@@ -250,7 +250,7 @@ export function describeInstallBootstrap(config, intent) {
   };
 }
 
-export function resolveRouterState(config, controllerLabel = 'Alan/gentle-ai') {
+export function resolveRouterState(config, controllerLabel = 'Gentleman') {
   // v4 assembled configs have version: 3 after assembly, so resolveRouterStateV3 handles them.
   if (config.version === 3) {
     return resolveRouterStateV3(config, controllerLabel);
@@ -302,7 +302,7 @@ export function resolveRouterState(config, controllerLabel = 'Alan/gentle-ai') {
   return state;
 }
 
-function resolveRouterStateV3(config, controllerLabel = 'Alan/gentle-ai') {
+function resolveRouterStateV3(config, controllerLabel = 'Gentleman') {
   const schema = normalizeRouterSchemaV3(config);
 
   const state = {
@@ -666,7 +666,7 @@ export function parseYaml(text) {
   return document;
 }
 
-export function resolveActivationState(config, controllerLabel = 'Alan/gentle-ai') {
+export function resolveActivationState(config, controllerLabel = 'Gentleman') {
   const activationState = readConfiguredActivationState(config);
 
   return {

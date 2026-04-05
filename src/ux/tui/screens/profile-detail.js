@@ -19,7 +19,7 @@ function formatCtx(cw) {
 export function ProfileDetailScreen({ config: propConfig, configPath: propConfigPath, router, setDescription, showResult, reloadConfig, selectedCatalog, selectedProfile, setConfig }) {
   const [localConfig, setLocalConfig] = useState(propConfig);
   const [localConfigPath, setLocalConfigPath] = useState(propConfigPath);
-  const [subView, setSubView] = useState('menu'); // 'menu' | 'copying'
+  const [subView, setSubView] = useState('menu'); // 'menu' | 'copying' | 'renaming'
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -106,6 +106,7 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
     { label: 'Edit Identity', value: 'edit-identity', description: 'Configure agent context, prompt, and AGENTS.md inheritance for this preset.' },
     { label: isVisible ? 'Hide from OpenCode TAB' : 'Show in OpenCode TAB', value: 'toggle-visibility', description: isVisible ? 'Hide this preset from TAB cycling in OpenCode.' : 'Make this preset visible in TAB cycling.' },
     { label: 'Export', value: 'export', description: 'Export this preset as YAML to stdout.' },
+    { label: 'Rename', value: 'rename', description: 'Rename this preset.' },
     { label: 'Copy', value: 'copy', description: 'Clone this preset with a new name.' },
     { label: 'Delete', value: 'delete', description: 'Delete this preset from disk.' },
   ];
@@ -127,6 +128,32 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
             mod.copyProfile(activePresetName, newName.trim(), routerDir);
             await reloadConfig();
             showResult(`Preset '${activePresetName}' copied to '${newName.trim()}'.`);
+          } catch (err) {
+            showResult(`Error: ${err.message}`);
+          }
+          setSubView('menu');
+        },
+      }),
+    );
+  }
+
+  // Sub-view: TextInput for renaming preset
+  if (subView === 'renaming') {
+    return h(Box, { flexDirection: 'column' },
+      h(Text, { bold: true, color: colors.lavender }, `Rename Preset: ${activePresetName}`),
+      h(Text, { color: colors.subtext }, 'Enter the new name (press Enter to confirm, empty to cancel):'),
+      h(Text, null, ''),
+      h(TextInput, {
+        placeholder: activePresetName,
+        onSubmit: async (newName) => {
+          if (!newName.trim()) { setSubView('menu'); return; }
+          try {
+            const mod = await import('../../../router-config.js');
+            const path = await import('node:path');
+            const routerDir = path.dirname(localConfigPath);
+            mod.renameProfile(activePresetName, newName.trim(), routerDir);
+            await reloadConfig();
+            showResult(`Preset '${activePresetName}' renamed to '${newName.trim()}'.`);
           } catch (err) {
             showResult(`Error: ${err.message}`);
           }
@@ -213,6 +240,11 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
           } catch (err) {
             showResult(`Error: ${err.message}`);
           }
+          return;
+        }
+
+        if (value === 'rename') {
+          setSubView('renaming');
           return;
         }
 

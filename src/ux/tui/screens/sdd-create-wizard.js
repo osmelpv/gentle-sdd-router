@@ -92,7 +92,7 @@ export function SddCreateWizard({
   // Step 1: Name
   if (state.step === 1) {
     return h(Box, { flexDirection: 'column' },
-      h(Text, { bold: true, color: colors.lavender }, 'Create SDD — Step 1/5: Name'),
+      h(Text, { bold: true, color: colors.lavender }, 'Create Custom SDD — Step 1/5: Name'),
       h(Text, null, ''),
       state.error ? h(Text, { color: colors.red }, state.error) : null,
       h(TextInput, {
@@ -128,7 +128,7 @@ export function SddCreateWizard({
   // Step 2: Description
   if (state.step === 2) {
     return h(Box, { flexDirection: 'column' },
-      h(Text, { bold: true, color: colors.lavender }, `Create SDD "${state.name}" — Step 2/5: Description`),
+      h(Text, { bold: true, color: colors.lavender }, `Create Custom SDD "${state.name}" — Step 2/5: Description`),
       h(Text, { color: colors.subtext }, 'Press Enter to skip.'),
       h(Text, null, ''),
       h(TextInput, {
@@ -143,7 +143,7 @@ export function SddCreateWizard({
   // Step 3: First phase name
   if (state.step === 3) {
     return h(Box, { flexDirection: 'column' },
-      h(Text, { bold: true, color: colors.lavender }, `Create SDD "${state.name}" — Step 3/5: First Phase Name`),
+      h(Text, { bold: true, color: colors.lavender }, `Create Custom SDD "${state.name}" — Step 3/5: First Phase Name`),
       h(Text, null, ''),
       state.error ? h(Text, { color: colors.red }, state.error) : null,
       h(TextInput, {
@@ -189,7 +189,7 @@ export function SddCreateWizard({
     ];
 
     return h(Box, { flexDirection: 'column' },
-      h(Text, { bold: true, color: colors.lavender }, 'Create SDD — Step 5/5: Review'),
+      h(Text, { bold: true, color: colors.lavender }, 'Create Custom SDD — Step 5/5: Review'),
       h(Text, null, ''),
       h(Text, null, reviewLines.join('\n')),
       h(Text, null, ''),

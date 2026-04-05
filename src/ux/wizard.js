@@ -118,7 +118,6 @@ export async function wizardCurrentConfig(context, prompts = p) {
       { value: 'status', label: 'Status', hint: 'Show detailed router state' },
       { value: 'reload', label: 'View routes', hint: 'Show resolved routes for current preset' },
       { value: 'list', label: 'List presets', hint: 'Show all available presets' },
-      { value: 'browse', label: 'Browse metadata', hint: 'Inspect multimodel metadata for a preset' },
       { value: 'compare', label: 'Compare presets', hint: 'Compare two presets side by side' },
       { value: 'profiles', label: 'Manage profiles', hint: 'Create, delete, rename, or copy profiles' },
       { value: 'export', label: 'Export preset', hint: 'Export a preset for sharing' },

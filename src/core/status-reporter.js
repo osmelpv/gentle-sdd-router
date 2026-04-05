@@ -480,16 +480,19 @@ export function getVerboseStatus(config, options = {}) {
 
   // ── PRESETS section ────────────────────────────────────────────────────────
   const allPresets = publicPresets.map((p) => ({ ...p, meta: p.preset ?? p.meta ?? null }));
+  const activePresetName = config?.active_preset ?? config?.active_profile ?? null;
 
   if (allPresets.length > 0) {
     lines.push('PRESETS');
+    if (activePresetName) {
+      lines.push(`  ${padLabel('Active preset', LABEL_WIDTH)}${activePresetName}`);
+    }
     for (const p of allPresets) {
-      const marker = p.active ? '*' : ' ';
       const pPhaseCount = p.phases ?? Object.keys(p.meta?.phases ?? {}).length;
       const debugLabel = p.preset?.debug_invoke?.preset || p.meta?.debug_invoke?.preset
         ? `debug: ${(p.preset?.debug_invoke?.preset ?? p.meta?.debug_invoke?.preset)}`
         : 'debug: none';
-      lines.push(`  ${marker} ${p.name.padEnd(16)}${String(pPhaseCount).padEnd(2)} phases   ${p.sdd.padEnd(18)} ${p.scope}/${p.visibility}   ${debugLabel}`);
+      lines.push(`    ${p.name.padEnd(16)}${String(pPhaseCount).padEnd(2)} phases   ${p.sdd.padEnd(18)} ${p.scope}/${p.visibility}   ${debugLabel}`);
     }
     lines.push('');
   }
@@ -514,4 +517,195 @@ export function getVerboseStatus(config, options = {}) {
 
   return lines.join('\n');
 }
+import os from 'node:os';
 import { getPublicPresetMetadata, getActivePublicPresetMetadata } from './public-preset-metadata.js';
+
+// ── detectEnvironment ─────────────────────────────────────────────────────────
+
+/**
+ * Detect the current execution environment from env vars.
+ * @returns {'opencode' | 'cursor' | 'terminal'}
+ */
+export function detectEnvironment() {
+  if (process.env.OPENCODE_SESSION_ID) return 'opencode';
+  if (process.env.CURSOR_SESSION_ID || process.env.TERM_PROGRAM === 'cursor') return 'cursor';
+  return 'terminal';
+}
+
+// ── getUnifiedStatus ──────────────────────────────────────────────────────────
+
+/**
+ * Build the unified status output string.
+ *
+ * Replaces getSimpleStatus() + getVerboseStatus() with a single function.
+ * Includes: preset count, custom SDD count, active preset name, OS info,
+ * environment detection, full routes, pricing, and SDD connections graph.
+ *
+ * @param {object|null} config - Loaded router config (or null if not installed)
+ * @param {object} options
+ * @param {boolean} [options.manifestExists] - Whether the sync manifest exists
+ * @param {string} [options.configPath] - Config file path for display
+ * @param {string} [options.routerDir] - Router directory path
+ * @param {Array} [options.customSdds] - Custom SDD definitions
+ * @returns {string} Formatted status output
+ */
+export function getUnifiedStatus(config, options = {}) {
+  const { manifestExists = false, configPath, customSdds = [] } = options;
+
+  // ── Not installed ──────────────────────────────────────────────────────────
+  if (!config) {
+    return [
+      '❌ Not installed',
+      '',
+      '  → Run `gsr setup install` to initialize',
+    ].join('\n');
+  }
+
+  const LABEL_WIDTH = 14;
+
+  // ── Derive state ───────────────────────────────────────────────────────────
+  const isV4 = Object.getOwnPropertyDescriptor(config, '_v4Source') !== undefined;
+  const schemaVersion = isV4 ? 4 : (config.version ?? 3);
+  const preset = getActivePreset(config);
+  const publicPreset = getActivePublicPresetMetadata(config);
+  const presetName = publicPreset?.name ?? config.active_preset ?? '—';
+  const sddLabel = publicPreset?.sdd ?? 'agent-orchestrator';
+  const phaseNames = getPresetPhaseNames(preset);
+  const phaseCount = phaseNames.length;
+  const isActive = config.activation_state === 'active';
+  const debugInvoke = preset?.debug_invoke ?? null;
+  const identityLabel = resolveIdentityLabel(preset, config);
+  const environment = detectEnvironment();
+
+  // Count presets
+  let totalPresets = 0;
+  for (const catalog of Object.values(config?.catalogs ?? {})) {
+    totalPresets += Object.keys(catalog?.presets ?? {}).length;
+  }
+
+  // Count custom SDDs (from customSdds option if provided, else 0)
+  const customSddCount = customSdds.length;
+
+  // ── Header line ────────────────────────────────────────────────────────────
+  let header;
+  if (!isActive) {
+    header = '⚠️  Inactive';
+  } else if (!manifestExists) {
+    header = '⚠️  Needs sync — config changed';
+  } else {
+    header = '✅ Ready — Synchronized';
+  }
+
+  const lines = [header, ''];
+
+  // ── CONFIGURATION section ──────────────────────────────────────────────────
+  lines.push('CONFIGURATION');
+  lines.push(`  ${padLabel('Schema', LABEL_WIDTH)}v${schemaVersion} (${isV4 ? 'multi-file' : 'single-file'})`);
+  if (configPath) {
+    lines.push(`  ${padLabel('Config', LABEL_WIDTH)}${configPath}`);
+  }
+  lines.push(`  ${padLabel('Controller', LABEL_WIDTH)}gsr (toggle: gsr deactivate)`);
+  lines.push(`  ${padLabel('Activation', LABEL_WIDTH)}${config.activation_state ?? 'unknown'}`);
+  lines.push(`  ${padLabel('Environment', LABEL_WIDTH)}${environment}`);
+  lines.push(`  ${padLabel('OS', LABEL_WIDTH)}${os.platform()} ${os.release()}`);
+
+  const manifestState = manifestExists ? `v3 (.sync-manifest.json)` : 'not synced';
+  lines.push(`  ${padLabel('Manifest', LABEL_WIDTH)}${manifestState}`);
+  lines.push('');
+
+  // ── PRESET section ─────────────────────────────────────────────────────────
+  lines.push('PRESET');
+  lines.push(`  ${padLabel('Active', LABEL_WIDTH)}${presetName} (${phaseCount} phases, SDD: ${sddLabel})`);
+  lines.push(`  ${padLabel('Total presets', LABEL_WIDTH)}${totalPresets}`);
+  lines.push(`  ${padLabel('Custom SDDs', LABEL_WIDTH)}${customSddCount}`);
+  if (publicPreset?.scope) lines.push(`  ${padLabel('Scope', LABEL_WIDTH)}${publicPreset.scope}`);
+  if (publicPreset?.visibility) lines.push(`  ${padLabel('Visible', LABEL_WIDTH)}${publicPreset.visibility}`);
+
+  if (identityLabel) {
+    lines.push(`  ${padLabel('Identity', LABEL_WIDTH)}${identityLabel} (AGENTS.md inherited)`);
+  } else if (preset?.identity?.inherit_agents_md !== false) {
+    lines.push(`  ${padLabel('Identity', LABEL_WIDTH)}AGENTS.md inherited`);
+  }
+
+  if (debugInvoke?.preset) {
+    const trigger = debugInvoke.trigger ? ` (trigger: ${debugInvoke.trigger})` : '';
+    lines.push(`  ${padLabel('Debug', LABEL_WIDTH)}${debugInvoke.preset}${trigger}`);
+    if (Array.isArray(debugInvoke.required_fields) && debugInvoke.required_fields.length > 0) {
+      lines.push(`  ${padLabel('', LABEL_WIDTH)}required: ${debugInvoke.required_fields.join(', ')}`);
+    }
+  }
+  lines.push('');
+
+  // ── ROUTES section ─────────────────────────────────────────────────────────
+  lines.push('ROUTES');
+  if (preset?.phases && Object.keys(preset.phases).length > 0) {
+    const routeLabelWidth = Math.max(...Object.keys(preset.phases).map(n => n.length)) + 2;
+    for (const [phaseName, lanes] of Object.entries(preset.phases)) {
+      const target = formatLaneTarget(lanes);
+      const pricing = formatLanePricing(lanes);
+      const ctx = formatLaneCtx(lanes);
+      const pricingStr = pricing ? `   ${pricing}` : '';
+      const ctxStr = ctx ? `   ${ctx} ctx` : '';
+      lines.push(`  ${phaseName.padEnd(routeLabelWidth)}${target}${pricingStr}${ctxStr}`);
+    }
+  } else {
+    lines.push('  (no phases defined)');
+  }
+  lines.push('');
+
+  // ── SDDS section ───────────────────────────────────────────────────────────
+  const publicPresets = getPublicPresetMetadata(config);
+  const sddMap = new Map();
+  for (const row of publicPresets) {
+    if (!sddMap.has(row.sdd)) sddMap.set(row.sdd, { visible: 0, hidden: 0, presets: 0 });
+    const entry = sddMap.get(row.sdd);
+    entry.presets += 1;
+    entry[row.visibility === 'hidden' ? 'hidden' : 'visible'] += 1;
+  }
+  if (sddMap.size > 0) {
+    lines.push('SDDS');
+    for (const [sddName, meta] of sddMap.entries()) {
+      lines.push(`  ● ${sddName.padEnd(18)} ${String(meta.presets).padEnd(3)} presets   ${meta.visible} visible, ${meta.hidden} hidden`);
+    }
+    lines.push('');
+  }
+
+  // ── PRESETS section ────────────────────────────────────────────────────────
+  const allPresets = publicPresets.map((p) => ({ ...p, meta: p.preset ?? p.meta ?? null }));
+  const activePresetName2 = config?.active_preset ?? config?.active_profile ?? null;
+
+  if (allPresets.length > 0) {
+    lines.push('PRESETS');
+    if (activePresetName2) {
+      lines.push(`  ${padLabel('Active preset', LABEL_WIDTH)}${activePresetName2}`);
+    }
+    for (const p of allPresets) {
+      const pPhaseCount = p.phases ?? Object.keys(p.meta?.phases ?? {}).length;
+      const debugLabel = p.preset?.debug_invoke?.preset || p.meta?.debug_invoke?.preset
+        ? `debug: ${(p.preset?.debug_invoke?.preset ?? p.meta?.debug_invoke?.preset)}`
+        : 'debug: none';
+      lines.push(`    ${p.name.padEnd(16)}${String(pPhaseCount).padEnd(2)} phases   ${p.sdd.padEnd(18)} ${p.scope}/${p.visibility}   ${debugLabel}`);
+    }
+    lines.push('');
+  }
+
+  // ── SDD CONNECTIONS section ────────────────────────────────────────────────
+  const hasDebug = debugInvoke?.preset != null;
+  const hasCustomSddInvokes = customSdds.some(
+    (sdd) => sdd.phases && Object.values(sdd.phases).some(p => p?.invoke?.target)
+  );
+
+  if (hasDebug || hasCustomSddInvokes) {
+    lines.push('SDD CONNECTIONS');
+    const graphLines = buildConnectionGraph(phaseNames, debugInvoke, customSdds);
+    lines.push(...graphLines);
+    lines.push('');
+  }
+
+  // ── Footer hints ───────────────────────────────────────────────────────────
+  lines.push('  gsr route use <name>     switch preset');
+  lines.push('  gsr sync                 re-sync everything');
+  lines.push('  gsr sdd validate <name>  validate custom SDD');
+
+  return lines.join('\n');
+}

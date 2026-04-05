@@ -69,7 +69,7 @@ import {
 import { getPublicPresetMetadata, getActivePublicPresetMetadata } from './core/public-preset-metadata.js';
 import { resolveControllerLabel, resolvePersona } from './core/controller.js';
 import { resolveIdentity, resetIdentityCache } from './core/agent-identity.js';
-import { getSimpleStatus, getVerboseStatus } from './core/status-reporter.js';
+import { getSimpleStatus, getVerboseStatus, getUnifiedStatus } from './core/status-reporter.js';
 import {
   readFallbackChain,
   readLanePrimary,
@@ -222,11 +222,6 @@ export async function runCli(argv) {
       return runIdentityCommand(rest);
     case 'preset':
       return runPreset(rest);
-    case 'preset':
-    case 'profile':
-      return runProfile(rest);
-    case 'catalog':
-      return await runCatalog(rest);
     case 'sdd':
       return runSddCommand(rest);
     case 'fallback':
@@ -244,35 +239,9 @@ export async function runCli(argv) {
     case 'status':
       return runStatus(rest);
 
-    // === Backward-compat aliases (old flat commands still work) ===
-    case 'use':
-      return runUse(rest);
-    case 'reload':
-      return runReload();
-    case 'list':
-      return runList();
-    case 'browse':
-      return runBrowse(rest);
-    case 'compare':
-      return runCompare(rest);
-    case 'render':
-      return runRender(rest);
-    case 'install':
-      return runInstall(rest);
-    case 'bootstrap':
-      return runBootstrap(rest);
-    case 'activate':
-      return runToggleActivation('active', rest);
-    case 'deactivate':
-      return runToggleActivation('inactive', rest);
+    // === Backward-compat aliases (kept: sync, uninstall, update) ===
     case 'update':
       return runUpdate(rest);
-    case 'apply':
-      return runApply(rest);
-    case 'export':
-      return runExport(rest);
-    case 'import':
-      return await runImport(rest);
     case 'uninstall':
       return runUninstall(rest);
     case 'sync':
@@ -349,17 +318,12 @@ function runReload() {
 }
 
 function runStatus(args = []) {
-  const verbose = args.includes('--verbose') || args.includes('--debug');
-
+  // --verbose is silently ignored (unified status always includes full detail)
   maybeWarnOutdatedConfig();
   const configPath = tryGetConfigPath();
 
   if (!configPath) {
-    if (verbose) {
-      process.stdout.write(getVerboseStatus(null, {}) + '\n');
-    } else {
-      process.stdout.write(getSimpleStatus(null, {}) + '\n');
-    }
+    process.stdout.write(getUnifiedStatus(null, {}) + '\n');
     return;
   }
 
@@ -370,7 +334,7 @@ function runStatus(args = []) {
     const manifestPath = path.join(routerDir, 'contracts', '.sync-manifest.json');
     const manifestExists = fs.existsSync(manifestPath);
 
-    // Load custom SDDs for verbose SDD CONNECTIONS graph
+    // Load custom SDDs for SDD CONNECTIONS graph
     let customSdds = [];
     try {
       customSdds = loadCustomSdds(catalogsDir);
@@ -385,11 +349,7 @@ function runStatus(args = []) {
       customSdds,
     };
 
-    if (verbose) {
-      process.stdout.write(getVerboseStatus(config, statusOptions) + '\n');
-    } else {
-      process.stdout.write(getSimpleStatus(config, statusOptions) + '\n');
-    }
+    process.stdout.write(getUnifiedStatus(config, statusOptions) + '\n');
   } catch (error) {
     process.stdout.write(`❌ Configuration error: ${error.message}\n`);
   }
@@ -401,12 +361,15 @@ function runList() {
   const config = loadRouterConfig(configPath);
   const presets = getPublicPresetMetadata(config);
 
+  const activePresetName = config?.active_preset ?? config?.active_profile ?? null;
+  if (activePresetName) {
+    process.stdout.write(`Active preset: ${activePresetName}\n`);
+  }
   process.stdout.write('Presets:\n');
   for (const preset of presets) {
-    const marker = preset.active ? '*' : ' ';
     const tags = buildProfileTags(config, preset.name);
     const tagSuffix = tags.length > 0 ? ` ${tags.map((t) => `[${t}]`).join(' ')}` : '';
-    process.stdout.write(`${marker} ${preset.name} (${preset.phases} phases) — ${preset.sdd} (${preset.scope}, ${preset.visibility})${tagSuffix}\n`);
+    process.stdout.write(`  ${preset.name} (${preset.phases} phases) — ${preset.sdd} (${preset.scope}, ${preset.visibility})${tagSuffix}\n`);
   }
 }
 
@@ -1118,13 +1081,15 @@ async function runProfile(args) {
       return runExport(rest);
     case 'import':
       return await runImport(rest);
+    case 'move':
+      return runCatalogMove(rest);
     default:
       if (subcommand === 'help' || subcommand === '--help' || !subcommand) {
-        process.stdout.write(renderCommandHelp('profile') ?? '');
+        process.stdout.write(renderCommandHelp('preset') ?? '');
         return;
       }
       printUsage();
-      throw new Error(subcommand ? `Unknown profile command: ${subcommand}` : 'gsr profile requires a subcommand.');
+      throw new Error(subcommand ? `Unknown preset command: ${subcommand}` : 'gsr preset requires a subcommand.');
   }
 }
 
@@ -1610,20 +1575,10 @@ function renderGeneralHelp() {
     '    update                  Show/apply config migrations (--apply).',
     '    apply <target>          Generate TUI overlay (--apply to write).',
     '',
-    'Backward-compat aliases (old commands still work at root):',
-    '    use <preset>        Select the active preset in router/router.yaml without changing who is in control.',
-    '    list                List available presets and mark the active one.',
-    '    browse [selector]   Inspect shareable multimodel metadata projected from schema v3 without recommending or executing anything.',
-    '    compare <left> <right>  Compare two shareable multimodel projections without recommending or executing anything.',
-    '    render opencode     Preview the OpenCode provider-execution, host-session sync, handoff, schema metadata, and multimodel orchestration manager boundaries without implying execution.',
-    '    export <preset>     Export a preset for sharing.',
-    '    import <source>     Import a preset from file, URL, or string.',
-    '    install             Inspect or apply a YAML-first install intent to router/router.yaml.',
-    '    bootstrap           Show or apply a step-by-step bootstrap path for adoption.',
-    '    activate            Take control of routing without changing the active profile.',
-    `    deactivate          Hand control back to ${controllerLabel} without changing the active profile.`,
+    'Backward-compat aliases (kept at root for compatibility):',
     '    update              Show/apply config migrations.',
-    '    apply <target>      Generate and apply TUI overlay.',
+    '    uninstall           Remove gsr from this project.',
+    '    sync                Push global contracts to Engram.',
   ].join('\n') + '\n';
 }
 

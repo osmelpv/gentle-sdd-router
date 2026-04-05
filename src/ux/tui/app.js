@@ -20,16 +20,18 @@ import { SddPhaseEditor } from './screens/sdd-phase-editor.js';
 import { SddRoleEditor } from './screens/sdd-role-editor.js';
 import { AgentIdentityEditor } from './screens/agent-identity-editor.js';
 import { appendTuiDebug, resetTuiDebugLog } from '../../debug/tui-debug-log.js';
+import { colors } from './theme.js';
 
 const h = React.createElement;
 
-function App({ initialConfig, initialConfigPath }) {
+function App({ initialConfig, initialConfigPath, pendingMajorMigrations = [] }) {
   const { exit } = useApp();
   const router = useRouter(initialConfigPath ? 'home' : 'fresh-install');
   const [description, setDescription] = useState('');
   const [result, setResult] = useState(null);
   const [config, setConfig] = useState(initialConfig);
   const [configPath, setConfigPath] = useState(initialConfigPath);
+  const [showMigrationPrompt, setShowMigrationPrompt] = useState(pendingMajorMigrations.length > 0);
   const [selectedCatalog, setSelectedCatalog] = useState(null);
   const [selectedProfile, setSelectedProfile] = useState(null);
   const [selectedSdd, setSelectedSdd] = useState(null);
@@ -47,6 +49,12 @@ function App({ initialConfig, initialConfigPath }) {
 
   // Global quit (only when not in text input screens)
   useInput((input, key) => {
+    // Migration prompt: ENTER continues, q/ESC exits
+    if (showMigrationPrompt) {
+      if (key.return) { setShowMigrationPrompt(false); return; }
+      if (input === 'q' || key.escape) { exit(); return; }
+      return;
+    }
     const textScreens = ['create-profile', 'edit-profile', 'sdd-create-wizard', 'sdd-list', 'sdd-detail', 'sdd-phase-editor', 'sdd-role-editor', 'agent-identity-editor'];
     if (input === 'q' && !textScreens.includes(router.current) && router.current !== 'result') {
       exit();
@@ -119,6 +127,25 @@ function App({ initialConfig, initialConfigPath }) {
     'result': h(ResultScreen, { text: result, onBack: () => router.pop() }),
   };
 
+  if (showMigrationPrompt) {
+    return h(Box, { flexDirection: 'column', width: '100%' },
+      h(Header, { breadcrumb: router.breadcrumb, config }),
+      h(Box, { flexDirection: 'column', paddingX: 2, paddingY: 1, flexGrow: 1 },
+        h(Text, { bold: true, color: colors.peach }, '⚠️  Pending major migrations'),
+        h(Text, null, ''),
+        ...pendingMajorMigrations.map((m, idx) =>
+          h(Text, { key: idx, color: colors.peach }, `  [${m.id}] ${m.name}: ${m.description ?? ''}`)
+        ),
+        h(Text, null, ''),
+        h(Text, { color: colors.subtext }, 'These migrations require manual confirmation.'),
+        h(Text, { color: colors.subtext }, 'Run `gsr setup update --apply` or use Manage → Check migrations.'),
+        h(Text, null, ''),
+        h(Text, { color: colors.overlay }, 'Press ENTER to continue without applying, or ESC/q to exit.'),
+      ),
+      h(Footer, { description, canGoBack: false }),
+    );
+  }
+
   return h(Box, { flexDirection: 'column', width: '100%' },
     h(Header, { breadcrumb: router.breadcrumb, config }),
     h(Box, { flexDirection: 'column', paddingX: 2, paddingY: 1, flexGrow: 1 },
@@ -133,8 +160,27 @@ export async function startTui(configPath, config) {
     configPath,
     activePreset: config?.active_preset ?? null,
   });
-  const { waitUntilExit } = render(h(App, { initialConfig: config, initialConfigPath: configPath }), {
-    exitOnCtrlC: true,
-  });
+
+  // Apply minor migrations silently before rendering
+  let pendingMajorMigrations = [];
+  if (configPath) {
+    try {
+      const pathMod = await import('node:path');
+      const { applyMinorMigrations, planMigrations } = await import('../../core/migrations/index.js');
+      const routerDir = pathMod.dirname(configPath);
+      await applyMinorMigrations(routerDir);
+      // Check for remaining major migrations
+      const plan = planMigrations(routerDir);
+      pendingMajorMigrations = plan.pendingMajor ?? [];
+    } catch {
+      // Tolerate migration errors — proceed with current config
+    }
+  }
+
+  process.stdout.write('\x1b[2J\x1b[H');
+  const { waitUntilExit } = render(
+    h(App, { initialConfig: config, initialConfigPath: configPath, pendingMajorMigrations }),
+    { exitOnCtrlC: true },
+  );
   await waitUntilExit();
 }
