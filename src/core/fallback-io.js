@@ -83,6 +83,16 @@ function writeProfileFile(filePath, content) {
  * @param {number} [laneIndex=0] - 0-based lane index
  * @returns {Array<string>} - ordered array of model IDs
  */
+export function readLanePrimary(configPath, presetName, phaseName, laneIndex = 0) {
+  const routerDir = path.dirname(configPath);
+  const result = findProfileFile(routerDir, presetName);
+  if (!result) return '';
+  const lanes = result.content.phases?.[phaseName];
+  if (!Array.isArray(lanes)) return '';
+  const lane = lanes[laneIndex];
+  return lane?.target ?? '';
+}
+
 export function readFallbackChain(configPath, presetName, phaseName, laneIndex = 0) {
   const routerDir = path.dirname(configPath);
   const result = findProfileFile(routerDir, presetName);

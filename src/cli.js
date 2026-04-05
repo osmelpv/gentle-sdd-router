@@ -72,6 +72,7 @@ import { resolveIdentity, resetIdentityCache } from './core/agent-identity.js';
 import { getSimpleStatus, getVerboseStatus } from './core/status-reporter.js';
 import {
   readFallbackChain,
+  readLanePrimary,
   writeFallbackChain,
   promoteFallback,
   formatFallbackList,
@@ -3644,13 +3645,16 @@ export async function runFallbackList(args) {
   process.stdout.write(`Fallback chains for preset '${presetName}':\n\n`);
 
   for (const phase of phases) {
-    let chain;
+    let chain = [];
+    let primary = '';
     try {
       chain = readFallbackChain(configPath, presetName, phase, 0);
+      primary = readLanePrimary(configPath, presetName, phase, 0);
     } catch {
       chain = [];
     }
     process.stdout.write(`${phase} (lane 0):\n`);
+    if (primary) process.stdout.write(`  Primary: ${primary}\n`);
     process.stdout.write(formatFallbackList(chain) + '\n');
     process.stdout.write('\n');
   }

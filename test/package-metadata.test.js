@@ -23,6 +23,7 @@ test('package metadata stays adoption-focused and non-executing', () => {
     'docs/release-checklist.md',
     'src/',
     'router/',
+    'tui.tsx',
   ]);
   assert.deepEqual(packageJson.engines, { node: '>=20' });
   assert.deepEqual(packageJson.repository, { type: 'git', url: 'git+https://github.com/osmelpv/gentle-sdd-router.git' });

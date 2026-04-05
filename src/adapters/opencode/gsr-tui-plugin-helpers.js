@@ -30,54 +30,37 @@ const _require = (typeof require !== 'undefined') ? require : createRequire(impo
  * @returns {{ phases: Array<{ name: string, primary: string, fallbacks: string[] }> }}
  */
 export function parseGsrFallbackList(output) {
+  // Actual gsr fallback list format:
+  //   orchestrator (lane 0):
+  //     Primary: anthropic/claude-sonnet-4-6
+  //     1. mistral/mistral-large-3
+  //     2. opencode/qwen3.6-plus-free
   const phases = [];
   let currentPhase = null;
-  let inFallbacks = false;
 
   for (const raw of output.split('\n')) {
     const line = raw.trimEnd();
 
-    // "Phase: <name>" or "phase: <name>"
-    const phaseMatch = line.match(/^\s*[Pp]hase\s*:\s*(.+)$/);
+    // Phase header: "orchestrator (lane 0):" — no leading spaces
+    const phaseMatch = line.match(/^(\S[^:]+)\s*\(lane\s*\d+\)\s*:$/);
     if (phaseMatch) {
-      if (currentPhase && currentPhase.fallbacks.length > 0) {
-        phases.push(currentPhase);
-      }
+      if (currentPhase && currentPhase.fallbacks.length > 0) phases.push(currentPhase);
       currentPhase = { name: phaseMatch[1].trim(), primary: '', fallbacks: [] };
-      inFallbacks = false;
       continue;
     }
 
     if (!currentPhase) continue;
 
-    // "primary: <model>" or "1. primary: <model>"
-    const primaryMatch = line.match(/primary\s*:\s*(.+)$/i);
-    if (primaryMatch) {
-      currentPhase.primary = primaryMatch[1].trim();
-      inFallbacks = false;
-      continue;
-    }
+    // Primary: "  Primary: <model>"
+    const primaryMatch = line.match(/^\s+Primary\s*:\s*(.+)$/i);
+    if (primaryMatch) { currentPhase.primary = primaryMatch[1].trim(); continue; }
 
-    // "Fallbacks:" section header
-    if (/fallbacks\s*:/i.test(line)) {
-      inFallbacks = true;
-      continue;
-    }
-
-    // Numbered fallback: "  1. <model>" or "    1. <model>"
-    if (inFallbacks) {
-      const fallbackMatch = line.match(/^\s+(\d+)\.\s+(.+)$/);
-      if (fallbackMatch) {
-        currentPhase.fallbacks.push(fallbackMatch[2].trim());
-      }
-    }
+    // Numbered fallback: "  1. <model>"
+    const fallbackMatch = line.match(/^\s+(\d+)\.\s+(.+)$/);
+    if (fallbackMatch) currentPhase.fallbacks.push(fallbackMatch[2].trim());
   }
 
-  // Flush last phase
-  if (currentPhase && currentPhase.fallbacks.length > 0) {
-    phases.push(currentPhase);
-  }
-
+  if (currentPhase && currentPhase.fallbacks.length > 0) phases.push(currentPhase);
   return { phases };
 }
 

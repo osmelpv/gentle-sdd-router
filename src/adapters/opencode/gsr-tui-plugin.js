@@ -52,7 +52,8 @@ const tui = async (api, options) => {
     const { execSync } = require('child_process');
     try {
       const raw = execSync('gsr status 2>/dev/null', { encoding: 'utf8' });
-      const match = raw.match(/active[:\s]+(\S+)/i);
+      // Format: "Preset      local-hybrid (9 phases)"
+      const match = raw.match(/Preset\s+(\S+)/i);
       return match?.[1] || 'default';
     } catch {
       return 'default';
