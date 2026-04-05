@@ -6,27 +6,48 @@ const id = "gentle-sdd-router";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function run(cmd: string): string {
-  const { execSync } = require("child_process");
-  return execSync(cmd, { encoding: "utf8" });
+/**
+ * Run a CLI command safely using spawnSync (avoids shell interpretation issues
+ * and is safer than execSync in Bun's async contexts).
+ * Returns stdout as string, or fallback on error.
+ */
+function runSafe(cmd: string, fallback = ""): string {
+  try {
+    const { spawnSync } = require("child_process");
+    const [bin, ...args] = cmd.replace(/ 2>\/dev\/null$/, "").trim().split(/\s+/);
+    const result = spawnSync(bin, args, { encoding: "utf8", timeout: 8000 });
+    if (result.error || result.status !== 0) return fallback;
+    return (result.stdout || "").trim();
+  } catch { return fallback; }
 }
 
-function runSafe(cmd: string, fallback = ""): string {
-  try { return run(cmd); } catch { return fallback; }
+// ── In-memory cache — avoids re-running CLI on every menu open ───────────────
+let _activePresetCache: string | null = null;
+let _presetListCache: string[] | null = null;
+
+function invalidateCache() {
+  _activePresetCache = null;
+  _presetListCache = null;
 }
 
 function getActivePreset(): string {
-  // "Preset      local-hybrid (9 phases)"
-  return runSafe("gsr status 2>/dev/null").match(/Preset\s+(\S+)/i)?.[1] || "default";
+  if (_activePresetCache !== null) return _activePresetCache;
+  const out = runSafe("gsr status");
+  _activePresetCache = out.match(/Active\s+(\S+)/i)?.[1] || "default";
+  return _activePresetCache;
 }
 
 function getPresetList(): string[] {
+  if (_presetListCache !== null) return _presetListCache;
   try {
-    return run("gsr preset list 2>/dev/null")
+    const { spawnSync } = require("child_process");
+    const result = spawnSync("gsr", ["preset", "list"], { encoding: "utf8", timeout: 8000 });
+    _presetListCache = (result.stdout || "")
       .split("\n")
-      .map(l => l.trim())
-      .filter(l => l && !l.startsWith("Name") && !l.startsWith("─") && !l.startsWith("Preset"));
-  } catch { return []; }
+      .map((l: string) => l.trim())
+      .filter((l: string) => l && !l.startsWith("Name") && !l.startsWith("─") && !l.startsWith("Preset") && !l.startsWith("Active"));
+  } catch { _presetListCache = []; }
+  return _presetListCache!;
 }
 
 function parseGsrFallbackList(output: string) {
@@ -90,12 +111,12 @@ function parseSddList(output: string) {
 }
 
 function getPresetListParsed() {
-  // Returns [{name, active, hidden}]
-  const raw = runSafe('gsr preset list 2>/dev/null')
+  // Returns [{name, active, hidden}] — uses cache to avoid redundant CLI calls
+  const raw = runSafe('gsr preset list')
   const active = getActivePreset()
   return raw.split('\n')
     .map(l => l.trim())
-    .filter(l => l && !l.startsWith('Name') && !l.startsWith('─') && !l.startsWith('Preset') && !l.startsWith('gsr'))
+    .filter(l => l && !l.startsWith('Name') && !l.startsWith('─') && !l.startsWith('Preset') && !l.startsWith('gsr') && !l.startsWith('Active'))
     .map(l => {
       const name = l.split(/\s+/)[0]
       return { name, active: name === active, hidden: l.includes('hidden') }
@@ -113,8 +134,9 @@ const tui: TuiPlugin = async (api, options) => {
   const executePromote = (phase, index) => {
     const preset = getActivePreset();
     try {
-      run(`gsr fallback promote ${preset} ${phase.name} ${index} 2>&1`);
-      run("gsr sync 2>&1");
+      runSafe(`gsr fallback promote ${preset} ${phase.name} ${index}`);
+      runSafe("gsr sync");
+      invalidateCache();
       api.ui.toast({ title: "Promoted", message: `${phase.fallbacks[index - 1]} → primary for ${phase.name}`, variant: "success" });
     } catch {
       api.ui.toast({ title: "Error", message: "Could not promote fallback.", variant: "error" });
@@ -145,7 +167,7 @@ const tui: TuiPlugin = async (api, options) => {
 
   const showFallbackFlow = () => {
     const preset = getActivePreset();
-    const raw = runSafe(`gsr fallback list ${preset} 2>/dev/null`);
+    const raw = runSafe(`gsr fallback list ${preset}`);
     const phases = parseGsrFallbackList(raw).phases.filter(p => p.fallbacks.length > 0);
 
     if (phases.length === 0) {
@@ -193,7 +215,7 @@ const tui: TuiPlugin = async (api, options) => {
           if (opt.value === "use") { showPresetPicker(); return; }
           api.ui.dialog.clear();
           const cmd = { show: "gsr route show", activate: "gsr route activate", deactivate: "gsr route deactivate" }[opt.value];
-          const out = runSafe(`${cmd} 2>&1`, "Done.");
+          const out = runSafe(`${cmd}`, "Done.");
           api.ui.toast({ title: `gsr route ${opt.value}`, message: out.slice(0, 120), variant: "info" });
         }}
         onCancel={() => showMainMenu()}
@@ -218,7 +240,8 @@ const tui: TuiPlugin = async (api, options) => {
         onSelect={(opt) => {
           if (opt.value === "__back__") { showRouteMenu(); return; }
           api.ui.dialog.clear();
-          const out = runSafe(`gsr route use ${opt.value} 2>&1`, "Done.");
+          const out = runSafe(`gsr route use ${opt.value}`, "Done.");
+          invalidateCache();
           api.ui.toast({ title: "Preset switched", message: `Now using: ${opt.value}`, variant: "success" });
         }}
         onCancel={() => showRouteMenu()}
@@ -240,7 +263,7 @@ const tui: TuiPlugin = async (api, options) => {
         onSelect={(opt) => {
           if (opt.value === "__back__") { showMainMenu(); return; }
           api.ui.dialog.clear();
-          const out = runSafe(`gsr ${opt.value} 2>&1`, "Done.");
+          const out = runSafe(`gsr ${opt.value}`, "Done.");
           api.ui.toast({ title: `gsr ${opt.value}`, message: out.slice(0, 200), variant: "info" });
         }}
         onCancel={() => showMainMenu()}
@@ -262,7 +285,7 @@ const tui: TuiPlugin = async (api, options) => {
         onSelect={(opt) => {
           if (opt.value === "__back__") { showMainMenu(); return; }
           api.ui.dialog.clear();
-          const out = runSafe(`gsr setup ${opt.value} 2>&1`, "Done.");
+          const out = runSafe(`gsr setup ${opt.value}`, "Done.");
           api.ui.toast({ title: `gsr setup ${opt.value}`, message: out.slice(0, 200), variant: "info" });
         }}
         onCancel={() => showMainMenu()}
@@ -295,7 +318,7 @@ const tui: TuiPlugin = async (api, options) => {
                 ]}
                 onSelect={(pOpt) => {
                   if (pOpt.value === '__back__') { showInspectMenu(); return }
-                  const out = runSafe(`gsr inspect browse ${pOpt.value} 2>&1`, 'No metadata available.')
+                  const out = runSafe(`gsr inspect browse ${pOpt.value}`, 'No metadata available.')
                   api.ui.dialog.replace(() => (
                     <api.ui.DialogAlert
                       title={`Metadata: ${pOpt.value}`}
@@ -329,7 +352,7 @@ const tui: TuiPlugin = async (api, options) => {
                       ]}
                       onSelect={(p2Opt) => {
                         if (p2Opt.value === '__back__') { showInspectMenu(); return }
-                        const out = runSafe(`gsr inspect compare ${p1Opt.value} ${p2Opt.value} 2>&1`, 'Comparison unavailable.')
+                        const out = runSafe(`gsr inspect compare ${p1Opt.value} ${p2Opt.value}`, 'Comparison unavailable.')
                         api.ui.dialog.replace(() => (
                           <api.ui.DialogAlert
                             title={`${p1Opt.value} vs ${p2Opt.value}`}
@@ -355,7 +378,7 @@ const tui: TuiPlugin = async (api, options) => {
   // ── SDD flow (T7) ────────────────────────────────────────────────────────
 
   const showSddMenu = () => {
-    const raw = runSafe('gsr sdd list 2>/dev/null', '')
+    const raw = runSafe('gsr sdd list', '')
     const sdds = parseSddList(raw)
 
     api.ui.dialog.replace(() => (
@@ -392,7 +415,7 @@ const tui: TuiPlugin = async (api, options) => {
         onSelect={(opt) => {
           if (opt.value === '__back__') { showSddMenu(); return }
           if (opt.value === 'show') {
-            const out = runSafe(`gsr sdd show ${sdd.name} 2>&1`, 'No details available.')
+            const out = runSafe(`gsr sdd show ${sdd.name}`, 'No details available.')
             api.ui.dialog.replace(() => (
               <api.ui.DialogAlert
                 title={`SDD: ${sdd.name}`}
@@ -408,7 +431,7 @@ const tui: TuiPlugin = async (api, options) => {
                 title={`Delete SDD: ${sdd.name}?`}
                 message="This will permanently delete this SDD workflow. This cannot be undone."
                 onConfirm={() => {
-                  runSafe(`gsr sdd delete ${sdd.name} --yes 2>&1`)
+                  runSafe(`gsr sdd delete ${sdd.name} --yes`)
                   api.ui.toast({ title: 'SDD deleted', message: sdd.name, variant: 'success' })
                   showSddMenu()
                 }}
@@ -437,7 +460,7 @@ const tui: TuiPlugin = async (api, options) => {
               placeholder="Brief description (optional)"
               onConfirm={(desc) => {
                 const descArg = desc?.trim() ? ` --description "${desc.trim()}"` : ''
-                const out = runSafe(`gsr sdd create ${sddName}${descArg} 2>&1`, 'Create failed.')
+                const out = runSafe(`gsr sdd create ${sddName}${descArg}`, 'Create failed.')
                 if (out.toLowerCase().includes('error')) {
                   api.ui.toast({ title: 'SDD create failed', message: out.slice(0, 150), variant: 'error' })
                 } else {
@@ -576,7 +599,7 @@ const tui: TuiPlugin = async (api, options) => {
               title="⚠️ Final confirmation"
               message="Are you absolutely sure? Type of action: removes overlay + router/ with backup."
               onConfirm={() => {
-                const out = runSafe('gsr setup uninstall --yes 2>&1', 'Uninstall failed.')
+                const out = runSafe('gsr setup uninstall --yes', 'Uninstall failed.')
                 api.ui.toast({ title: 'Uninstalled', message: out.slice(0, 200), variant: 'info' })
                 api.ui.dialog.clear()
               }}
@@ -643,7 +666,7 @@ const tui: TuiPlugin = async (api, options) => {
           if (opt.value === 'identity') { showEditIdentityWizard(preset.name); return }
           if (opt.value === 'copy') { showCopyPreset(preset.name); return }
           if (opt.value === 'export') {
-            const out = runSafe(`gsr preset export ${preset.name} 2>&1`, 'Export failed.')
+            const out = runSafe(`gsr preset export ${preset.name}`, 'Export failed.')
             api.ui.toast({ title: 'Exported', message: out.slice(0, 200), variant: 'info' })
             showPresetActions(preset)
             return
@@ -657,10 +680,10 @@ const tui: TuiPlugin = async (api, options) => {
 
   const togglePresetVisibility = (preset) => {
     const cmd = preset.hidden
-      ? `gsr route use ${preset.name} 2>&1`  // activate makes it visible
-      : `gsr preset list 2>&1`  // check — visibility is toggled via the TUI internal mechanism
+      ? `gsr route use ${preset.name}`  // activate makes it visible
+      : `gsr preset list`  // check — visibility is toggled via the TUI internal mechanism
     // Use the CLI approach: gsr preset show + modify yaml isn't exposed, use route activate as proxy
-    const out = runSafe(`gsr sync 2>&1`, '')
+    const out = runSafe(`gsr sync`, '')
     api.ui.toast({ title: 'Visibility toggled', message: `Run gsr sync to confirm changes.`, variant: 'info' })
     showPresetsMenu()
   }
@@ -671,7 +694,8 @@ const tui: TuiPlugin = async (api, options) => {
         title={`Delete preset: ${name}?`}
         message={`This will permanently delete the preset "${name}". This cannot be undone.`}
         onConfirm={() => {
-          const out = runSafe(`gsr preset delete ${name} 2>&1`, 'Delete failed.')
+          const out = runSafe(`gsr preset delete ${name}`, 'Delete failed.')
+          invalidateCache();
           api.ui.toast({ title: 'Deleted', message: out.slice(0, 100), variant: 'success' })
           showPresetsMenu()
         }}
@@ -687,7 +711,8 @@ const tui: TuiPlugin = async (api, options) => {
         placeholder="New preset name..."
         onConfirm={(newName) => {
           if (!newName?.trim()) { showPresetsMenu(); return }
-          const out = runSafe(`gsr preset copy ${name} ${newName.trim()} 2>&1`, 'Copy failed.')
+          const out = runSafe(`gsr preset copy ${name} ${newName.trim()}`, 'Copy failed.')
+          invalidateCache();
           api.ui.toast({ title: 'Copied', message: `Created: ${newName.trim()}`, variant: 'success' })
           showPresetsMenu()
         }}
@@ -699,7 +724,7 @@ const tui: TuiPlugin = async (api, options) => {
   // T3 ── showPresetDetail ───────────────────────────────────────────────────
 
   const showPresetDetail = (name: string) => {
-    const raw = runSafe(`gsr preset show ${name} 2>/dev/null`, '')
+    const raw = runSafe(`gsr preset show ${name}`, '')
     const { phases } = parsePresetDetail(raw)
 
     const phaseOptions = phases.length > 0
@@ -841,7 +866,7 @@ const tui: TuiPlugin = async (api, options) => {
           onConfirm={() => {
             // Build the create command — use CLI with arguments
             // gsr preset create <name> creates an empty preset
-            const createOut = runSafe(`gsr preset create ${wizardState.name} 2>&1`, '')
+            const createOut = runSafe(`gsr preset create ${wizardState.name}`, '')
             if (createOut.includes('Error') || createOut.includes('error')) {
               api.ui.toast({ title: 'Create failed', message: createOut.slice(0, 150), variant: 'error' })
             } else {
@@ -858,7 +883,7 @@ const tui: TuiPlugin = async (api, options) => {
   // T5 ── showEditPhasesWizard ───────────────────────────────────────────────
 
   const showEditPhasesWizard = (presetName: string) => {
-    const raw = runSafe(`gsr preset show ${presetName} 2>/dev/null`, '')
+    const raw = runSafe(`gsr preset show ${presetName}`, '')
     const { phases } = parsePresetDetail(raw)
 
     if (phases.length === 0) {
@@ -1042,18 +1067,26 @@ const tui: TuiPlugin = async (api, options) => {
   // ── Auto-trigger on model failure ─────────────────────────────────────────
 
   api.event.on("session.error", async (event) => {
-    const autoFallback = api.kv.get("gsr.autoFallback", false);
-    const preset = getActivePreset();
-    const raw = runSafe(`gsr fallback list ${preset} 2>/dev/null`);
-    const phases = parseGsrFallbackList(raw).phases;
-    const phase = phases.find(p => p.fallbacks.length > 0);
+    // Defer CLI calls via setTimeout to avoid blocking Bun's event loop
+    // during the session.error handler, which can cause segfaults in Bun
+    setTimeout(() => {
+      try {
+        const autoFallback = api.kv.get("gsr.autoFallback", false);
+        const preset = getActivePreset();
+        const raw = runSafe(`gsr fallback list ${preset}`);
+        const phases = parseGsrFallbackList(raw).phases;
+        const phase = phases.find((p: any) => p.fallbacks.length > 0);
 
-    if (autoFallback && phase) {
-      executePromote(phase, 1);
-    } else {
-      api.ui.toast({ title: "GSR: Model failed", message: "Open GSR — Manage fallbacks to switch", variant: "warning" });
-      if (phase) showFallbackFlow();
-    }
+        if (autoFallback && phase) {
+          executePromote(phase, 1);
+        } else {
+          api.ui.toast({ title: "GSR: Model failed", message: "Open /gsr to switch fallback model", variant: "warning" });
+          if (phase) showFallbackFlow();
+        }
+      } catch {
+        api.ui.toast({ title: "GSR: Model failed", message: "Open /gsr to manage fallbacks", variant: "warning" });
+      }
+    }, 50);
   });
 };
 
