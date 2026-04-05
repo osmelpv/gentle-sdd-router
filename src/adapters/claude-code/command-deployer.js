@@ -161,10 +161,17 @@ export async function deployGsrCommandsClaudeCode(commandsSourceDir, targetDir) 
   let skipped = 0;
   const errors = [];
 
+  // Catalog commands are eliminated
+  const SKIP_FILES = new Set(['gsr-catalog-disable.md', 'gsr-catalog-enable.md', 'gsr-catalog-list.md', 'gsr-catalog-use.md']);
+  // Commands handled by TUI plugin slash registration → deploy as -manual
+  const RENAME_MAP = { 'gsr.md': 'gsr-manual.md', 'gsr-fallback.md': 'gsr-fallback-manual.md' };
+
   for (const file of sourceFiles) {
+    if (SKIP_FILES.has(file)) continue;
     try {
       const sourcePath = join(sourceDir, file);
-      const targetPath = join(effectiveTargetDir, file);
+      const deployedFileName = RENAME_MAP[file] ?? file;
+      const targetPath = join(effectiveTargetDir, deployedFileName);
       const rawContent = readFileSync(sourcePath, 'utf8');
       const transformed = transformForClaudeCode(rawContent);
 

@@ -399,11 +399,19 @@ export function deployGsrCommands(options = {}) {
   let written = 0;
   let skipped = 0;
 
+  // Catalog commands are eliminated — never deploy them
+  const SKIP_FILES = new Set(['gsr-catalog-disable.md', 'gsr-catalog-enable.md', 'gsr-catalog-list.md', 'gsr-catalog-use.md']);
+
+  // Commands that conflict with TUI plugin slash registrations → deploy under -manual suffix
+  const RENAME_MAP = {
+    'gsr.md': 'gsr-manual.md',
+    'gsr-fallback.md': 'gsr-fallback-manual.md',
+  };
+
   for (const file of sourceFiles) {
+    if (SKIP_FILES.has(file)) continue;
     const sourcePath = join(sourceDir, file);
-    // Rename gsr-fallback.md → gsr-fallback-manual.md to avoid conflict with
-    // the TUI plugin's registered /gsr-fallback command in the command palette.
-    const deployedFileName = file === 'gsr-fallback.md' ? 'gsr-fallback-manual.md' : file;
+    const deployedFileName = RENAME_MAP[file] ?? file;
     const targetPath = join(targetDir, deployedFileName);
     const sourceContent = readFileSync(sourcePath, 'utf8');
 

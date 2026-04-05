@@ -469,7 +469,7 @@ describe('writeOpenCodeConfig', () => {
 // ── deployGsrCommands / removeGsrCommands ────────────────────────────────────
 
 describe('deployGsrCommands', () => {
-  test('deploys 15 markdown files including gsr.md', () => {
+  test('deploys 15 markdown files — gsr.md as gsr-manual.md, gsr-fallback.md as gsr-fallback-manual.md', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-deploy-'));
 
     try {
@@ -478,12 +478,16 @@ describe('deployGsrCommands', () => {
       // No error from source-dir lookup
       assert.equal(result.error, undefined, 'no error finding source directory');
 
-      // 14 gsr-*.md + 1 gsr.md = 15 total files in target dir
+      // 15 total files deployed (gsr.md → gsr-manual.md, gsr-fallback.md → gsr-fallback-manual.md)
       const deployed = fs.readdirSync(tempDir).filter(f => f.endsWith('.md'));
       assert.equal(deployed.length, 15, `expected 15 .md files, got ${deployed.length}: ${deployed.join(', ')}`);
 
-      // gsr.md specifically must be present
-      assert.ok(deployed.includes('gsr.md'), 'gsr.md dispatcher was deployed');
+      // gsr.md is deployed as gsr-manual.md (avoids conflict with TUI plugin /gsr slash command)
+      assert.ok(deployed.includes('gsr-manual.md'), 'gsr.md deployed as gsr-manual.md');
+      assert.ok(!deployed.includes('gsr.md'), 'gsr.md must NOT be deployed directly');
+
+      // gsr-fallback.md deployed as gsr-fallback-manual.md
+      assert.ok(deployed.includes('gsr-fallback-manual.md'), 'gsr-fallback.md deployed as gsr-fallback-manual.md');
 
       // All written count matches
       assert.equal(result.written, 15, 'deployGsrCommands reports 15 written files');
@@ -682,7 +686,7 @@ describe('generateOpenCodeOverlay — identity: prompt field and _gsr_generated 
 });
 
 describe('removeGsrCommands', () => {
-  test('removes only gsr-*.md files — gsr.md survives uninstall (accepted behavior)', () => {
+  test('removes all gsr-*.md files — all 15 are now gsr-*.md pattern', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-remove-'));
 
     try {
@@ -692,18 +696,12 @@ describe('removeGsrCommands', () => {
       const beforeRemove = fs.readdirSync(tempDir).filter(f => f.endsWith('.md'));
       assert.equal(beforeRemove.length, 15, 'precondition: 15 files deployed');
 
-      // Remove gsr-*.md files
+      // Remove gsr-*.md files — now ALL deployed files match (gsr.md → gsr-manual.md)
       const result = removeGsrCommands({ commandsDir: tempDir });
 
-      // 14 gsr-*.md files should be removed
-      assert.equal(result.removed, 14, 'removeGsrCommands removes 14 gsr-*.md files');
-
       const afterRemove = fs.readdirSync(tempDir).filter(f => f.endsWith('.md'));
-
-      // gsr.md (no hyphen after gsr) is NOT matched by gsr-* glob — it survives
-      // This is documented, accepted behavior: the dispatcher is a harmless no-op
-      assert.equal(afterRemove.length, 1, 'exactly 1 .md file survives (gsr.md)');
-      assert.ok(afterRemove.includes('gsr.md'), 'gsr.md dispatcher survives removeGsrCommands');
+      assert.equal(afterRemove.length, 0, 'all gsr-*.md files removed (none survive)');
+      assert.equal(result.removed, 15, 'removeGsrCommands removes all 15 gsr-*.md files');
     } finally {
       fs.rmSync(tempDir, { recursive: true });
     }
