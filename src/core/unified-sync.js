@@ -16,8 +16,8 @@
  * @module unified-sync
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import fs, { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
+import path, { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -427,6 +427,46 @@ async function runValidateStep(opts) {
   }
 }
 
+// ── Helpers: TUI Plugin registration ─────────────────────────────────────────
+
+/**
+ * Ensure the gsr plugin is registered in `<opencodeConfigDir>/tui.json`.
+ *
+ * Only ADDS the entry if missing — never removes or duplicates existing entries.
+ * Uses an atomic write (temp-file + rename) so concurrent processes never see
+ * a partial JSON.
+ *
+ * @param {string} opencodeConfigDir - e.g. ~/.config/opencode or test override
+ * @param {string} pluginFilePath    - absolute path to gsr-plugin.tsx
+ * @returns {boolean} true if tui.json was changed, false if already registered (no-op)
+ */
+export function ensureTuiJsonPlugin(opencodeConfigDir, pluginFilePath) {
+  const tuiJsonPath = path.join(opencodeConfigDir, 'tui.json');
+  let cfg = {};
+  try {
+    cfg = JSON.parse(fs.readFileSync(tuiJsonPath, 'utf8'));
+  } catch {
+    // file doesn't exist or is invalid JSON — start from scratch
+  }
+
+  const plugins = Array.isArray(cfg.plugin) ? cfg.plugin : [];
+
+  // Check if already registered (by plugin file path)
+  const alreadyRegistered = plugins.some(p =>
+    Array.isArray(p) && p[0] === pluginFilePath
+  );
+
+  if (!alreadyRegistered) {
+    plugins.push([pluginFilePath, { enabled: true }]);
+    cfg.plugin = plugins;
+    const tmp = tuiJsonPath + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2) + '\n');
+    fs.renameSync(tmp, tuiJsonPath);
+    return true; // changed
+  }
+  return false; // no-op
+}
+
 // ── Step 7: Deploy TUI Plugin ─────────────────────────────────────────────
 
 /**
@@ -556,7 +596,17 @@ async function deployGsrPluginStep(opts) {
       // Non-fatal: deps declaration is best-effort
     }
 
-    const result = { deployed, skipped: !deployed, targetPath, pkgPath: depsResult.pkgPath };
+    // Register plugin in tui.json
+    let tuiJsonUpdated = false;
+    try {
+      tuiJsonUpdated = ensureTuiJsonPlugin(configDir, targetPath);
+    } catch (tuiErr) {
+      // Non-fatal: tui.json registration is best-effort
+      // eslint-disable-next-line no-console
+      console.warn(`[gsr] Warning: could not register plugin in tui.json: ${tuiErr.message}`);
+    }
+
+    const result = { deployed, skipped: !deployed, targetPath, pkgPath: depsResult.pkgPath, tuiJsonUpdated };
     if (depsResult.changed) {
       result.installNote = 'OpenCode will install plugin deps on next startup (bun install)';
     }
