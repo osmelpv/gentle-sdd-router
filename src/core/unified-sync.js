@@ -8,7 +8,7 @@
  *   4. commands      — deploy gsr-*.md slash commands to OpenCode
  *   5. claude-code   — deploy gsr-*.md slash commands to Claude Code (~/.claude/commands/)
  *   6. validate      — readback opencode.json and verify expected agents
- *   7. tui-plugin    — deploy gsr-tui-plugin.js to ~/.config/opencode/plugins/
+ *   7. tui-plugin    — deploy gsr-tui-plugin.js to ~/.config/opencode/plugins/ (as gsr-plugin.tsx)
  *
  * All steps return structured results; the caller decides what to print.
  * No step throws — failures are captured in the step result.
@@ -484,7 +484,7 @@ export function ensurePluginDeps(configDir) {
 
 /**
  * Step 7: Deploy src/adapters/opencode/gsr-tui-plugin.js to
- *         ~/.config/opencode/plugins/gsr-plugin.js
+ *         ~/.config/opencode/plugins/gsr-plugin.tsx
  *
  * Also creates/merges ~/.config/opencode/package.json with the 4
  * required peer dependencies so OpenCode / Bun installs them on startup.
@@ -528,7 +528,7 @@ async function deployGsrPluginStep(opts) {
       }
     }
 
-    const targetPath = join(targetDir, 'gsr-plugin.js');
+    const targetPath = join(targetDir, 'gsr-plugin.tsx');
     const sourceContent = readFileSync(sourcePath, 'utf8');
 
     // Noop detection: skip if content identical

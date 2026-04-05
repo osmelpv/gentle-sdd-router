@@ -1,318 +1,130 @@
+// @ts-nocheck
+/** @jsxImportSource @opentui/solid */
 /**
  * gsr-tui-plugin.js
  * OpenCode TUI Plugin — native fallback dialogs for gsr
  *
- * peerDeps: @opencode-ai/plugin, @opentui/core, @opentui/solid, solid-js
+ * peerDeps: @opencode-ai/plugin/tui, @opentui/solid, solid-js
  *
- * Deployed as-is to ~/.config/opencode/plugins/gsr-plugin.js
+ * Deployed to ~/.config/opencode/plugins/gsr-plugin.tsx
  * OpenCode / Bun handles JSX natively.
+ *
+ * Pure helper functions live in gsr-tui-plugin-helpers.js (importable in Node.js tests).
  *
  * @module adapters/opencode/gsr-tui-plugin
  */
 
-import { execSync, exec } from 'node:child_process';
-import { promisify } from 'node:util';
+// Re-export pure helpers so external consumers (tests, deployer) can import them
+// from this module. The helpers file has no JSX and is Node.js-safe.
+export {
+  parseGsrFallbackList,
+  readGsrFallbackData,
+  getAutoFallbackSetting,
+  setAutoFallbackSetting,
+} from './gsr-tui-plugin-helpers.js';
 
-const execAsync = promisify(exec);
+import { parseGsrFallbackList } from './gsr-tui-plugin-helpers.js';
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Resolve the active preset name from `gsr status` or router.yaml.
- * Tries `gsr status` first; falls back to reading router.yaml directly.
- *
- * @returns {Promise<string|null>}
- */
-async function getActivePreset() {
-  try {
-    const { stdout } = await execAsync('gsr status', { timeout: 5000 });
-    // Look for: "active_preset: <name>" or "preset: <name>"
-    const match = stdout.match(/active[_\s]preset[:\s]+([^\s\n]+)/i);
-    if (match) return match[1].trim();
-  } catch {
-    // gsr not in PATH or failed — fall through to file read
-  }
-
-  // Try to read router.yaml directly (CWD-relative)
-  try {
-    const { readFileSync } = await import('node:fs');
-    const { join } = await import('node:path');
-    const yaml = readFileSync(join(process.cwd(), 'router', 'router.yaml'), 'utf8');
-    const match = yaml.match(/active_preset\s*:\s*([^\s\n]+)/);
-    if (match) return match[1].trim();
-  } catch {
-    // Ignore
-  }
-
-  return null;
-}
-
-/**
- * Parse the text output of `gsr fallback list <preset>` into structured data.
- *
- * Expected output format (per gsr CLI):
- *   Phase: orchestrator
- *     1. primary: anthropic/claude-opus-4-5
- *     Fallbacks:
- *       1. openai/gpt-4o
- *       2. google/gemini-2.0-flash
- *
- *   Phase: apply
- *     ...
- *
- * @param {string} presetName
- * @returns {Promise<{ phases: Array<{ name: string, primary: string, fallbacks: Array<{ index: number, model: string }> }> }>}
- */
-export async function readGsrFallbackData(presetName) {
-  let output;
-  try {
-    const { stdout } = await execAsync(`gsr fallback list ${presetName}`, { timeout: 8000 });
-    output = stdout;
-  } catch (err) {
-    throw new Error(`gsr fallback list failed: ${err.message}`);
-  }
-
-  const phases = [];
-  let currentPhase = null;
-  let inFallbacks = false;
-
-  for (const raw of output.split('\n')) {
-    const line = raw.trimEnd();
-
-    // "Phase: <name>" or "phase: <name>"
-    const phaseMatch = line.match(/^\s*[Pp]hase\s*:\s*(.+)$/);
-    if (phaseMatch) {
-      if (currentPhase && currentPhase.fallbacks.length > 0) {
-        phases.push(currentPhase);
-      }
-      currentPhase = { name: phaseMatch[1].trim(), primary: '', fallbacks: [] };
-      inFallbacks = false;
-      continue;
-    }
-
-    if (!currentPhase) continue;
-
-    // "primary: <model>" or "1. primary: <model>"
-    const primaryMatch = line.match(/primary\s*:\s*(.+)$/i);
-    if (primaryMatch) {
-      currentPhase.primary = primaryMatch[1].trim();
-      inFallbacks = false;
-      continue;
-    }
-
-    // "Fallbacks:" section header
-    if (/fallbacks\s*:/i.test(line)) {
-      inFallbacks = true;
-      continue;
-    }
-
-    // Numbered fallback: "  1. <model>" or "    1. <model>"
-    if (inFallbacks) {
-      const fallbackMatch = line.match(/^\s+(\d+)\.\s+(.+)$/);
-      if (fallbackMatch) {
-        currentPhase.fallbacks.push({
-          index: parseInt(fallbackMatch[1], 10),
-          model: fallbackMatch[2].trim(),
-        });
-      }
-    }
-  }
-
-  // Flush last phase
-  if (currentPhase && currentPhase.fallbacks.length > 0) {
-    phases.push(currentPhase);
-  }
-
-  return { phases };
-}
-
-// ── Auto-fallback helpers (exported for testing) ──────────────────────────────
-
-/**
- * Read the auto-fallback setting from OpenCode KV store.
- *
- * @param {{ kv: { get: (key: string, defaultValue: any) => any } }} api
- * @returns {boolean}
- */
-export function getAutoFallbackSetting(api) {
-  return api.kv.get('gsr.autoFallback', false);
-}
-
-/**
- * Write the auto-fallback setting to OpenCode KV store.
- *
- * @param {{ kv: { set: (key: string, value: any) => void } }} api
- * @param {boolean} value
- */
-export function setAutoFallbackSetting(api, value) {
-  api.kv.set('gsr.autoFallback', value);
-}
-
-// ── UI Flows ─────────────────────────────────────────────────────────────────
-
-/**
- * Two-step fallback management flow.
- *
- * Step 1 → Select a phase
- * Step 2 → Select a fallback to promote
- *
- * @param {object} api - OpenCode TUI plugin API
- * @param {string} [forcedPhase] - Skip step 1 and show this phase directly
- */
-async function showFallbackFlow(api, forcedPhase) {
-  let presetName;
-
-  try {
-    presetName = await getActivePreset();
-    if (!presetName) {
-      api.ui.toast({ message: '⚠ Could not detect active gsr preset. Is gsr installed?', variant: 'warning' });
-      return;
-    }
-  } catch (err) {
-    api.ui.toast({ message: `✗ gsr preset error: ${err.message}`, variant: 'error' });
-    return;
-  }
-
-  // If a specific phase was forced (from auto-fallback detection), go straight to step 2
-  if (forcedPhase) {
-    await showFallbackStep2(api, presetName, forcedPhase);
-    return;
-  }
-
-  // ── Step 1: Select phase ──────────────────────────────────────────────────
-  let fallbackData;
-  try {
-    fallbackData = await readGsrFallbackData(presetName);
-  } catch (err) {
-    api.ui.toast({ message: `✗ ${err.message}`, variant: 'error' });
-    return;
-  }
-
-  if (fallbackData.phases.length === 0) {
-    api.ui.toast({ message: 'ℹ No phases with fallbacks found for this preset.', variant: 'info' });
-    return;
-  }
-
-  const phaseOptions = fallbackData.phases.map(p => ({
-    title: p.name,
-    value: p.name,
-    description: `Primary: ${p.primary} — ${p.fallbacks.length} fallback(s) available`,
-    category: 'GSR',
-  }));
-
-  // Step 1: phase selector — must be passed as render function to dialog.replace()
-  api.ui.dialog.replace(() => api.ui.DialogSelect({
-    title: `GSR: Select phase to manage (${presetName})`,
-    placeholder: 'Type to filter phases…',
-    options: phaseOptions,
-    onSelect: async (option) => {
-      await showFallbackStep2(api, presetName, option.value);
-    },
-  }));
-}
-
-/**
- * Step 2: Select which fallback to promote for a given phase.
- *
- * @param {object} api
- * @param {string} presetName
- * @param {string} phaseName
- */
-async function showFallbackStep2(api, presetName, phaseName) {
-  let fallbackData;
-  try {
-    fallbackData = await readGsrFallbackData(presetName);
-  } catch (err) {
-    api.ui.toast({ message: `✗ ${err.message}`, variant: 'error' });
-    return;
-  }
-
-  const phase = fallbackData.phases.find(p => p.name === phaseName);
-  if (!phase) {
-    api.ui.toast({ message: `ℹ Phase "${phaseName}" has no fallbacks.`, variant: 'info' });
-    return;
-  }
-
-  const fallbackOptions = phase.fallbacks.map(fb => ({
-    title: fb.model,
-    value: fb.index,
-    description: `Promote → new primary. Current primary (${phase.primary}) moves to fallback chain.`,
-    category: 'Fallbacks',
-  }));
-
-  // Step 2: fallback selector — replace current dialog content
-  api.ui.dialog.replace(() => api.ui.DialogSelect({
-    title: `Promote fallback for "${phaseName}"`,
-    placeholder: 'Select fallback to promote to primary…',
-    options: fallbackOptions,
-    current: null,
-    onSelect: async (option) => {
-      api.ui.dialog.clear();
-      try {
-        await execAsync(
-          `gsr fallback promote ${presetName} ${phaseName} ${option.value}`,
-          { timeout: 10000 }
-        );
-        api.ui.toast({ message: `✓ Promoted ${option.title} to primary for ${phaseName}!`, variant: 'success' });
-      } catch (err) {
-        api.ui.toast({ message: `✗ Promote failed: ${err.message}`, variant: 'error' });
-      }
-    },
-  }));
-}
-
-// ── GSR_FALLBACK_REQUEST detection ────────────────────────────────────────────
-
-/**
- * Check if a message.updated event contains a GSR_FALLBACK_REQUEST block.
- * Returns the phase name if found, null otherwise.
- *
- * Expected format in message content:
- *   GSR_FALLBACK_REQUEST: phase=<phaseName>
- *
- * @param {object} event - message.updated event
- * @returns {string|null} phaseName or null
- */
-function detectFallbackRequest(event) {
-  const content = event?.message?.content ?? event?.content ?? '';
-  if (typeof content !== 'string') return null;
-
-  const match = content.match(/GSR_FALLBACK_REQUEST\s*:\s*phase=([^\s\n]+)/i);
-  if (match) return match[1].trim();
-  return null;
-}
-
-/**
- * Check if a session.error event represents a model quota/timeout failure.
- * Returns the phase name (if parseable) or a generic placeholder.
- *
- * @param {object} event
- * @returns {{ isModelError: boolean, phase: string|null }}
- */
-function parseModelError(event) {
-  const message = event?.error?.message ?? event?.message ?? '';
-  const msgStr = typeof message === 'string' ? message : JSON.stringify(message);
-
-  const isModelError = /quota|rate.?limit|timeout|429|model.*unavailable|overloaded/i.test(msgStr);
-
-  // Try to extract phase from event metadata
-  const phase = event?.agent?.id ?? event?.phase ?? event?.metadata?.phase ?? null;
-
-  return { isModelError, phase };
-}
-
-// ── Main Plugin ───────────────────────────────────────────────────────────────
+// ── Main TUI Plugin ───────────────────────────────────────────────────────────
 
 /**
  * tui — OpenCode TUI Plugin for gsr fallback management.
  *
- * OpenCode detects TUI plugins by looking for a named export called `tui`.
+ * OpenCode detects TUI plugins via `export default { id, tui }`.
  *
  * @param {object} api - OpenCode TUI Plugin API
  * @param {object} options - Plugin options
- * @param {object} meta - Plugin metadata
  */
-export const tui = async (api, options, meta) => {
+const tui = async (api, options) => {
+
+  // Read fallback config via CLI (uses require inside callback — Bun-safe)
+  const readFallbackData = async () => {
+    const { execSync } = require('child_process');
+    try {
+      const raw = execSync('gsr fallback list 2>/dev/null', { encoding: 'utf8' });
+      return parseGsrFallbackList(raw);
+    } catch {
+      return { phases: [] };
+    }
+  };
+
+  const getActivePreset = () => {
+    const { execSync } = require('child_process');
+    try {
+      const raw = execSync('gsr status 2>/dev/null', { encoding: 'utf8' });
+      const match = raw.match(/active[:\s]+(\S+)/i);
+      return match?.[1] || 'default';
+    } catch {
+      return 'default';
+    }
+  };
+
+  const executePromote = async (phase, index) => {
+    const { execSync } = require('child_process');
+    const preset = getActivePreset();
+    try {
+      execSync(`gsr fallback promote ${preset} ${phase.name} ${index} 2>&1`, { encoding: 'utf8' });
+      execSync('gsr sync 2>&1', { encoding: 'utf8' });
+      api.ui.toast({
+        title: 'Fallback promoted',
+        message: `${phase.fallbacks[index - 1]} is now primary for ${phase.name}`,
+        variant: 'success',
+      });
+    } catch (e) {
+      api.ui.toast({
+        title: 'Error',
+        message: 'Could not promote fallback. Check gsr is in PATH.',
+        variant: 'error',
+      });
+    }
+  };
+
+  const showFallbackSelector = (phase) => {
+    // Step 2 — fallback selector, replaces step 1
+    api.ui.dialog.replace(() => (
+      <api.ui.DialogSelect
+        title={`GSR — Promote fallback (${phase.name})`}
+        options={phase.fallbacks.map((fb, i) => ({
+          title: fb,
+          value: i + 1,
+          description: `→ becomes primary · ${phase.primary} → fallback #1`,
+        }))}
+        onSelect={async (opt) => {
+          api.ui.dialog.clear();
+          await executePromote(phase, opt.value);
+        }}
+        onCancel={() => showFallbackFlow()}
+      />
+    ));
+  };
+
+  const showFallbackFlow = async () => {
+    const data = await readFallbackData();
+    const phases = data.phases.filter(p => p.fallbacks.length > 0);
+
+    if (phases.length === 0) {
+      api.ui.toast({
+        message: 'No fallbacks configured. Use: gsr fallback add <preset> <phase> <model>',
+        variant: 'info',
+      });
+      return;
+    }
+
+    // Step 1 — phase selector
+    api.ui.dialog.replace(() => (
+      <api.ui.DialogSelect
+        title="GSR — Select phase to change"
+        options={phases.map(p => ({
+          title: p.name,
+          value: p,
+          description: `Primary: ${p.primary} · ${p.fallbacks.length} fallback(s)`,
+        }))}
+        onSelect={(opt) => showFallbackSelector(opt.value)}
+        onCancel={() => api.ui.dialog.clear()}
+      />
+    ));
+  };
+
   // 1. Register GSR — Manage fallbacks as a native TUI command
   api.command.register(() => [
     {
@@ -320,92 +132,35 @@ export const tui = async (api, options, meta) => {
       value: 'gsr-fallback',
       description: 'Promote a fallback model to primary via native dialog',
       category: 'GSR',
-      // NOTE: No slash property — avoids conflict with gsr-fallback-manual.md markdown command
-      onSelect: () => showFallbackFlow(api),
+      slash: { name: 'gsr-fallback' },
+      onSelect: () => showFallbackFlow(),
     },
   ]);
 
-  // 2. Listen to session.error for model failures
+  // 2. Auto-detect model failure via events
   api.event.on('session.error', async (event) => {
-    const { isModelError, phase } = parseModelError(event);
-    if (!isModelError) return;
-
-    const autoFallback = getAutoFallbackSetting(api);
-
+    const autoFallback = api.kv.get('gsr.autoFallback', false);
     if (autoFallback) {
-      // Silent auto-promote: use fallback index 1 for the detected phase
-      const presetName = await getActivePreset();
-      if (!presetName) {
-        api.ui.toast({ message: '⚠ GSR auto-fallback: could not detect preset.', variant: 'warning' });
-        return;
-      }
-
-      if (phase) {
-        try {
-          await execAsync(
-            `gsr fallback promote ${presetName} ${phase} 1`,
-            { timeout: 10000 }
-          );
-          api.ui.toast({
-            message: `✓ GSR auto-promoted fallback for ${phase}.`,
-            variant: 'success',
-          });
-        } catch (err) {
-          api.ui.toast({
-            message: `✗ GSR auto-fallback failed: ${err.message}`,
-            variant: 'error',
-          });
-        }
-      } else {
-        api.ui.toast({
-          message: '⚠ GSR: model error detected but phase unknown. Use /gsr-fallback to manage manually.',
-          variant: 'warning',
-        });
-      }
+      // Silent promote: promote index 1 of first phase that has fallbacks
+      const data = await readFallbackData();
+      const phase = data.phases.find(p => p.fallbacks.length > 0);
+      if (phase) await executePromote(phase, 1);
     } else {
-      // Show dialog for the detected phase (or full flow if phase unknown)
-      await showFallbackFlow(api, phase ?? undefined);
-    }
-  });
-
-  // 3. Listen to message.updated for GSR_FALLBACK_REQUEST blocks
-  api.event.on('message.updated', async (event) => {
-    const phase = detectFallbackRequest(event);
-    if (!phase) return;
-
-    const autoFallback = getAutoFallbackSetting(api);
-    const presetName = await getActivePreset();
-
-    if (!presetName) {
-      api.ui.toast({ message: '⚠ GSR fallback request detected but no preset found.', variant: 'warning' });
-      return;
-    }
-
-    if (autoFallback) {
-      try {
-        await execAsync(
-          `gsr fallback promote ${presetName} ${phase} 1`,
-          { timeout: 10000 }
-        );
-        api.ui.toast({
-          message: `✓ GSR auto-promoted fallback for ${phase} (request detected).`,
-          variant: 'success',
-        });
-      } catch (err) {
-        api.ui.toast({
-          message: `✗ GSR auto-fallback failed: ${err.message}`,
-          variant: 'error',
-        });
-      }
-    } else {
-      await showFallbackFlow(api, phase);
+      api.ui.toast({
+        title: 'GSR: Model failed',
+        message: 'Open GSR — Manage fallbacks to switch model',
+        variant: 'warning',
+      });
+      showFallbackFlow();
     }
   });
 };
 
 /**
- * GsrPlugin — backward-compatible alias for the `tui` export.
- * OpenCode requires the export named `tui`; this alias is kept for
- * internal consumers (tests, CLI deployer) that reference GsrPlugin.
+ * GsrPlugin — backward-compatible alias for the `tui` function.
+ * Kept so existing tests that reference GsrPlugin still work.
  */
 export const GsrPlugin = tui;
+
+const plugin = { id: 'gentle-sdd-router', tui };
+export default plugin;
