@@ -1,4 +1,62 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "agent": {}
+  "plugin": [
+    ".",
+    "metronous-opencode",
+    "opencode-gemini-auth@latest"
+  ],
+  "agent": {
+    "sdd-orchestrator": {
+      "model": "google/gemini-3.1-pro-preview",
+      "prompt": "{file:/home/j0k3r/.config/opencode/prompts/sdd/sdd-orchestrator.md}",
+      "tools": {
+        "bash": true,
+        "delegate": true,
+        "edit": true,
+        "read": true,
+        "write": true,
+        "glob": true,
+        "task": true,
+        "navigation-agent_code_inspect_tree": true,
+        "navigation-agent_code_list_endpoints": true,
+        "navigation-agent_code_find_symbol": true,
+        "navigation-agent_code_search_text": true,
+        "navigation-agent_code_trace_flow": true,
+        "navigation-agent_code_trace_callers": true
+      },
+      "description": "Agent Teams Orchestrator - coordinates sub-agents",
+      "mode": "primary",
+      "permission": {
+        "bash": "allow",
+        "delegate": "allow",
+        "edit": "allow",
+        "read": "allow",
+        "write": "allow",
+        "glob": "allow",
+        "task": {
+          "sdd-*": "allow"
+        },
+        "navigation-agent_code_inspect_tree": "allow",
+        "navigation-agent_code_list_endpoints": "allow",
+        "navigation-agent_code_find_symbol": "allow",
+        "navigation-agent_code_search_text": "allow",
+        "navigation-agent_code_trace_flow": "allow",
+        "navigation-agent_code_trace_callers": "allow"
+      }
+    }
+  },
+  "mcp": {
+    "navigation-agent": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@navigation-agent/mcp-server@latest"
+      ],
+      "enabled": true
+    }
+  },
+  "instructions": [
+    "/home/j0k3r/.config/opencode/rules/*.md"
+  ]
 }

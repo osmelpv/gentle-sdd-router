@@ -5,47 +5,43 @@
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
-  "keywords": [
-    "sdd",
-    "router",
-    "cli",
-    "adoption",
-    "documentation",
-    "opencode",
-    "release",
-    "compatibility"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/osmelpv/gentle-sdd-router.git"
-  },
-  "homepage": "https://github.com/osmelpv/gentle-sdd-router#readme",
-  "bugs": {
-    "url": "https://github.com/osmelpv/gentle-sdd-router/issues"
+  "exports": {
+    ".": "./src/cli.js",
+    "./tui": {
+      "import": "./tui.tsx",
+      "config": {
+        "enabled": true,
+        "theme": "gentle-sdd"
+      }
+    }
   },
   "files": [
     "README.md",
     "assets/",
     "bin/",
-    "docs/architecture.md",
-    "docs/getting-started.md",
-    "docs/host-adoption.en.md",
-    "docs/host-adoption.es.md",
-    "docs/import-export.md",
-    "docs/migration-guide.md",
-    "docs/presets-guide.md",
-    "docs/release-checklist.md",
+    "docs/",
     "src/",
-    "router/"
+    "router/",
+    "tui.tsx",
+    "config.ts",
+    "components.tsx",
+    "themes/"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=20",
+    "opencode": ">=1.3.13"
   },
   "bin": {
     "gsr": "./bin/gsr.js"
   },
   "scripts": {
     "test": "node --test"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*",
+    "@opentui/core": "*",
+    "@opentui/solid": "*",
+    "solid-js": "*"
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",
