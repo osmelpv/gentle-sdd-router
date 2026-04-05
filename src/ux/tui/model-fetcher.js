@@ -4,9 +4,17 @@ import http from 'node:http';
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/models';
 const OLLAMA_URL = 'http://localhost:11434/api/tags';
 
+/** @type {Map<string, {result: object, timestamp: number}>} */
+const filterCache = new Map();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+// Legacy single-entry cache kept for backward compatibility
 let cachedModels = null;
 let cacheTimestamp = 0;
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+// SDK provider list cache (30 second TTL)
+const SDK_PROVIDER_CACHE_TTL_MS = 30 * 1000;
+let sdkProviderCache = null; // { result: string[], timestamp: number }
 
 /**
  * Fetch models from OpenRouter (public API, no auth needed).
@@ -151,12 +159,30 @@ function groupByProvider(models) {
  * Fetch and return all models grouped by provider.
  * Uses cache if available and fresh (5 min TTL).
  *
+ * @param {object} [options]
+ * @param {string[]} [options.providerFilter]  When provided and non-empty, only providers
+ *   whose ID is in this whitelist are returned. Cache is keyed per unique filter combination.
  * @returns {Promise<{ providers: object, fromCache: boolean, sources: string[] }>}
  */
-export async function fetchAllModels() {
+export async function fetchAllModels(options = {}) {
+  const { providerFilter } = options;
+
+  // Build a stable cache key: undefined/empty filter uses the legacy single-entry cache;
+  // non-empty filters get their own slot in filterCache.
+  const hasFilter = Array.isArray(providerFilter) && providerFilter.length > 0;
+  const cacheKey = hasFilter ? JSON.stringify([...providerFilter].sort()) : null;
   const now = Date.now();
-  if (cachedModels && (now - cacheTimestamp) < CACHE_TTL_MS) {
-    return { ...cachedModels, fromCache: true };
+
+  if (cacheKey) {
+    const cached = filterCache.get(cacheKey);
+    if (cached && (now - cached.timestamp) < CACHE_TTL_MS) {
+      return { ...cached.result, fromCache: true };
+    }
+  } else {
+    // Legacy cache path (no filter)
+    if (cachedModels && (now - cacheTimestamp) < CACHE_TTL_MS) {
+      return { ...cachedModels, fromCache: true };
+    }
   }
 
   const sources = [];
@@ -188,21 +214,69 @@ export async function fetchAllModels() {
     allModels = getOfflineFallback();
   }
 
+  // Apply provider whitelist filter when requested
+  if (hasFilter) {
+    const filterSet = new Set(providerFilter);
+    allModels = allModels.filter(m => {
+      const provider = m.id.includes('/') ? m.id.split('/')[0] : 'unknown';
+      return filterSet.has(provider);
+    });
+  }
+
   const providers = groupByProvider(allModels);
   const result = { providers, sources, fromCache: false };
 
-  cachedModels = result;
-  cacheTimestamp = now;
+  if (cacheKey) {
+    filterCache.set(cacheKey, { result, timestamp: now });
+  } else {
+    cachedModels = result;
+    cacheTimestamp = now;
+  }
 
   return result;
 }
 
 /**
  * Clear the model cache (useful after config changes or for testing).
+ * Clears both the legacy unfiltered cache, all per-filter cache entries,
+ * and the SDK provider list cache.
  */
 export function clearModelCache() {
   cachedModels = null;
   cacheTimestamp = 0;
+  filterCache.clear();
+  sdkProviderCache = null;
+}
+
+/**
+ * Fetches connected providers using OpenCode SDK.
+ * Returns array of provider IDs that have API keys configured.
+ * Falls back to empty array if OpenCode server is not running.
+ *
+ * Result is cached for 30 seconds to avoid calling the SDK on every render.
+ *
+ * @returns {Promise<string[]>}
+ */
+export async function fetchConnectedProviders() {
+  const now = Date.now();
+
+  // Return cached result if still fresh
+  if (sdkProviderCache && (now - sdkProviderCache.timestamp) < SDK_PROVIDER_CACHE_TTL_MS) {
+    return sdkProviderCache.result;
+  }
+
+  try {
+    const { createOpencodeClient } = await import('@opencode-ai/sdk');
+    const { client } = await createOpencodeClient({ timeout: 2000 });
+    const result = await client.config.providers();
+    // result.data.providers is Provider[] with { id, name, ... }
+    const providers = result.data.providers.map(p => p.id);
+    sdkProviderCache = { result: providers, timestamp: now };
+    return providers;
+  } catch {
+    // SDK not available or server not running — return empty, do not cache
+    return [];
+  }
 }
 
 /**

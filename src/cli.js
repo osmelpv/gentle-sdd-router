@@ -70,6 +70,14 @@ import { getPublicPresetMetadata, getActivePublicPresetMetadata } from './core/p
 import { resolveControllerLabel, resolvePersona } from './core/controller.js';
 import { resolveIdentity, resetIdentityCache } from './core/agent-identity.js';
 import { getSimpleStatus, getVerboseStatus } from './core/status-reporter.js';
+import {
+  readFallbackChain,
+  writeFallbackChain,
+  formatFallbackList,
+  validateModelId,
+  getPresetPhases,
+  resolveLane,
+} from './core/fallback-io.js';
 
 const CURRENT_SCHEMA_VERSION = 4;
 let wizardEntrypointForTesting = null;
@@ -219,6 +227,8 @@ export async function runCli(argv) {
       return await runCatalog(rest);
     case 'sdd':
       return runSddCommand(rest);
+    case 'fallback':
+      return runFallbackCommand(rest);
     case 'role':
       return runRoleCommand(rest);
     case 'phase':
@@ -530,7 +540,7 @@ async function runUpdate(args) {
   process.stdout.write('Config migration complete.\n');
 }
 
-function runApply(args) {
+async function runApply(args) {
   const target = args[0];
 
   if (!target) {
@@ -595,7 +605,7 @@ function runApply(args) {
   process.stdout.write('\n');
   process.stdout.write(`Written to: ${report.writtenPath}\n`);
 
-  // Also deploy /gsr-* slash command files
+  // Also deploy /gsr-* slash command files (OpenCode)
   try {
     const cmdResult = deployGsrCommands();
     if (cmdResult.written > 0) {
@@ -606,6 +616,17 @@ function runApply(args) {
     }
   } catch {
     // Non-blocking: overlay is the priority
+  }
+
+  // Deploy /gsr-* slash command files to Claude Code (~/.claude/commands/)
+  try {
+    const { deployGsrCommandsClaudeCode } = await import('./adapters/claude-code/command-deployer.js');
+    const claudeResult = await deployGsrCommandsClaudeCode();
+    if (claudeResult.deployed > 0) {
+      process.stdout.write(`Deployed ${claudeResult.deployed} /gsr command(s) to Claude Code (${claudeResult.targetDir})\n`);
+    }
+  } catch {
+    // Non-blocking: Claude Code may not be installed
   }
 }
 
@@ -1565,6 +1586,13 @@ function renderGeneralHelp() {
     '    import <source>         Import from file, URL, or gsr:// string.',
     '  profile                   Legacy alias for preset commands.',
     '',
+    '  fallback                  Manage per-agent/per-lane fallback chains.',
+    '    list <preset> [phase]   List fallback chains for a preset.',
+    '    add <preset> <phase> <model>  Append a model to the fallback chain.',
+    '    remove <preset> <phase> <index>  Remove by 1-based index.',
+    '    move <preset> <phase> <from> <to>  Reorder entries (1-based).',
+    '    set <preset> <phase> <model,model,...>  Replace entire chain.',
+    '',
     '  catalog                   Legacy/advanced compatibility commands (scheduled for removal).',
     '',
     '  inspect                   Read-only views of metadata and boundaries.',
@@ -1912,6 +1940,101 @@ function renderCommandHelp(topic, subtopic) {
       'Without --confirm, shows a preview of what will be deleted.',
       'With --confirm, executes the uninstall.',
     ].join('\n') + '\n';
+  }
+
+  if (normalized === 'fallback') {
+    const sub = subtopic?.toLowerCase();
+    if (!sub) {
+      return [
+        'Usage: gsr fallback <subcommand> [args]',
+        'Manage per-agent/per-lane fallback chains in preset profile files.',
+        '',
+        '  list <preset> [phase]              List fallback chains.',
+        '  add <preset> <phase> <model>       Append a model to the chain.',
+        '  remove <preset> <phase> <index>    Remove entry by 1-based index.',
+        '  move <preset> <phase> <from> <to>  Reorder entries (both 1-based).',
+        '  set <preset> <phase> <models>      Replace entire chain (comma-separated).',
+        '',
+        'Options:',
+        '  --lane N   Target lane index (0-based, default: 0)',
+        '',
+        'Examples:',
+        '  gsr fallback list premium',
+        '  gsr fallback list premium orchestrator',
+        '  gsr fallback add premium orchestrator openai/gpt-5.4',
+        '  gsr fallback remove premium orchestrator 2',
+        '  gsr fallback move premium orchestrator 3 1',
+        '  gsr fallback set premium orchestrator "mistral/mistral-large-3,openai/gpt-5.3-instant"',
+        '  gsr fallback add premium apply openai/gpt-5.4 --lane 0',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'list') {
+      return [
+        'Usage: gsr fallback list <preset> [phase] [--lane N]',
+        'List fallback chains for a preset.',
+        '  <preset>   Preset name (required).',
+        '  [phase]    Phase name. If omitted, shows all phases.',
+        '  --lane N   Show only lane N (0-based, default: all lanes).',
+        '',
+        'Examples:',
+        '  gsr fallback list premium',
+        '  gsr fallback list premium orchestrator',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'add') {
+      return [
+        'Usage: gsr fallback add <preset> <phase> <model> [--lane N]',
+        'Append a model to the end of the fallback chain.',
+        '  <preset>   Preset name.',
+        '  <phase>    Phase name.',
+        '  <model>    Model ID in "provider/model" format.',
+        '  --lane N   Lane index (0-based, default: 0).',
+        '',
+        'Example:',
+        '  gsr fallback add premium orchestrator openai/gpt-5.4',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'remove') {
+      return [
+        'Usage: gsr fallback remove <preset> <phase> <index> [--lane N]',
+        'Remove a fallback entry by 1-based index.',
+        '  <preset>   Preset name.',
+        '  <phase>    Phase name.',
+        '  <index>    1-based position in the chain.',
+        '  --lane N   Lane index (0-based, default: 0).',
+        '',
+        'Example:',
+        '  gsr fallback remove premium orchestrator 2',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'move') {
+      return [
+        'Usage: gsr fallback move <preset> <phase> <from> <to> [--lane N]',
+        'Move a fallback entry from one position to another (both 1-based).',
+        '  <preset>   Preset name.',
+        '  <phase>    Phase name.',
+        '  <from>     Source position (1-based).',
+        '  <to>       Destination position (1-based).',
+        '  --lane N   Lane index (0-based, default: 0).',
+        '',
+        'Example:',
+        '  gsr fallback move premium orchestrator 3 1',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'set') {
+      return [
+        'Usage: gsr fallback set <preset> <phase> <models> [--lane N]',
+        'Replace the entire fallback chain with a comma-separated list.',
+        '  <preset>   Preset name.',
+        '  <phase>    Phase name.',
+        '  <models>   Comma-separated model IDs.',
+        '  --lane N   Lane index (0-based, default: 0).',
+        '',
+        'Example:',
+        '  gsr fallback set premium orchestrator "mistral/mistral-large-3,openai/gpt-5.3-instant"',
+      ].join('\n') + '\n';
+    }
+    return null;
   }
 
   if (normalized === 'sdd') {
@@ -3425,6 +3548,305 @@ function _printIdentityForPreset(presetName, preset, cwd) {
   process.stdout.write(`=== ${presetName} ===\n`);
   process.stdout.write(`Sources: ${identity.sources.join(', ')}\n`);
   process.stdout.write(`Prompt:\n${identity.prompt}\n`);
+}
+
+// === FALLBACK COMMANDS ========================================================
+
+/**
+ * Internal dispatcher for `gsr fallback <subcommand>`.
+ * @param {string[]} args
+ */
+export async function runFallbackCommand(args) {
+  const [sub, ...rest] = args;
+
+  if (sub === 'help' || sub === '--help' || !sub) {
+    process.stdout.write(renderCommandHelp('fallback') ?? '');
+    return;
+  }
+
+  switch (sub) {
+    case 'list':   return runFallbackList(rest);
+    case 'add':    return runFallbackAdd(rest);
+    case 'remove': return runFallbackRemove(rest);
+    case 'move':   return runFallbackMove(rest);
+    case 'set':    return runFallbackSet(rest);
+    default:
+      printUsage();
+      throw new Error(`Unknown fallback command: ${sub}`);
+  }
+}
+
+/**
+ * Parse --lane N flag from args. Returns 0 if not specified.
+ * @param {string[]} args
+ * @returns {number}
+ */
+function parseLaneFlag(args) {
+  const idx = args.indexOf('--lane');
+  if (idx !== -1) {
+    const val = args[idx + 1];
+    const n = parseInt(val, 10);
+    if (!Number.isFinite(n) || n < 0) {
+      throw new Error(`--lane requires a non-negative integer (got: "${val}").`);
+    }
+    return n;
+  }
+  return 0;
+}
+
+/**
+ * gsr fallback list <preset> [phase] [--lane N]
+ * No phase → list ALL phases and their fallback chains.
+ * With phase → list that phase's chain(s).
+ * @param {string[]} args
+ */
+export async function runFallbackList(args) {
+  const configPath = discoverConfigPath();
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr install` first.\n');
+    return;
+  }
+
+  const positionals = args.filter((a) => !a.startsWith('--'));
+  const presetName = positionals[0];
+  const phaseName = positionals[1];
+
+  if (!presetName) {
+    throw new Error('gsr fallback list requires a preset name.');
+  }
+
+  let phases;
+  try {
+    phases = phaseName ? [phaseName] : getPresetPhases(configPath, presetName);
+  } catch (err) {
+    process.stdout.write(`Error: ${err.message}\n`);
+    return;
+  }
+
+  process.stdout.write(`Fallback chains for preset '${presetName}':\n\n`);
+
+  for (const phase of phases) {
+    let chain;
+    try {
+      chain = readFallbackChain(configPath, presetName, phase, 0);
+    } catch {
+      chain = [];
+    }
+    process.stdout.write(`${phase} (lane 0):\n`);
+    process.stdout.write(formatFallbackList(chain) + '\n');
+    process.stdout.write('\n');
+  }
+}
+
+/**
+ * gsr fallback add <preset> <phase> <model> [--lane N]
+ * Appends model to end of chain.
+ * @param {string[]} args
+ */
+export async function runFallbackAdd(args) {
+  const configPath = discoverConfigPath();
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr install` first.\n');
+    return;
+  }
+
+  const positionals = args.filter((a, i) => !a.startsWith('--') && (i === 0 || !args[i - 1].startsWith('--')));
+  const presetName = positionals[0];
+  const phaseName = positionals[1];
+  const modelId = positionals[2];
+  const laneIndex = parseLaneFlag(args);
+
+  if (!presetName || !phaseName || !modelId) {
+    throw new Error('gsr fallback add requires: <preset> <phase> <model>');
+  }
+
+  // Validate model format
+  const validationError = validateModelId(modelId);
+  if (validationError) {
+    process.stdout.write(`Error: ${validationError}\n`);
+    return;
+  }
+
+  let chain;
+  try {
+    chain = readFallbackChain(configPath, presetName, phaseName, laneIndex);
+  } catch (err) {
+    process.stdout.write(`Error: ${err.message}\n`);
+    return;
+  }
+
+  const newChain = [...chain, modelId];
+  await writeFallbackChain(configPath, presetName, phaseName, laneIndex, newChain);
+
+  process.stdout.write(`Added '${modelId}' to fallbacks for ${presetName}/${phaseName} (lane ${laneIndex}).\n`);
+  process.stdout.write(`Chain is now:\n${formatFallbackList(newChain)}\n`);
+}
+
+/**
+ * gsr fallback remove <preset> <phase> <index> [--lane N]
+ * Removes entry by 1-based index.
+ * @param {string[]} args
+ */
+export async function runFallbackRemove(args) {
+  const configPath = discoverConfigPath();
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr install` first.\n');
+    return;
+  }
+
+  const positionals = args.filter((a, i) => !a.startsWith('--') && (i === 0 || !args[i - 1].startsWith('--')));
+  const presetName = positionals[0];
+  const phaseName = positionals[1];
+  const indexStr = positionals[2];
+  const laneIndex = parseLaneFlag(args);
+
+  if (!presetName || !phaseName || !indexStr) {
+    throw new Error('gsr fallback remove requires: <preset> <phase> <index>');
+  }
+
+  const oneBasedIndex = parseInt(indexStr, 10);
+  if (!Number.isFinite(oneBasedIndex) || oneBasedIndex < 1) {
+    throw new Error(`Index must be a positive integer (got: "${indexStr}").`);
+  }
+
+  let chain;
+  try {
+    chain = readFallbackChain(configPath, presetName, phaseName, laneIndex);
+  } catch (err) {
+    process.stdout.write(`Error: ${err.message}\n`);
+    return;
+  }
+
+  if (oneBasedIndex > chain.length) {
+    process.stdout.write(`Error: Index ${oneBasedIndex} is out of bounds (chain has ${chain.length} entries).\n`);
+    return;
+  }
+
+  const removed = chain[oneBasedIndex - 1];
+  const newChain = chain.filter((_, idx) => idx !== oneBasedIndex - 1);
+  await writeFallbackChain(configPath, presetName, phaseName, laneIndex, newChain);
+
+  process.stdout.write(`Removed '${removed}' from fallbacks for ${presetName}/${phaseName} (lane ${laneIndex}).\n`);
+  if (newChain.length > 0) {
+    process.stdout.write(`Chain is now:\n${formatFallbackList(newChain)}\n`);
+  } else {
+    process.stdout.write('Chain is now empty.\n');
+  }
+}
+
+/**
+ * gsr fallback move <preset> <phase> <from> <to> [--lane N]
+ * Moves entry from one 1-based index to another.
+ * @param {string[]} args
+ */
+export async function runFallbackMove(args) {
+  const configPath = discoverConfigPath();
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr install` first.\n');
+    return;
+  }
+
+  const positionals = args.filter((a, i) => !a.startsWith('--') && (i === 0 || !args[i - 1].startsWith('--')));
+  const presetName = positionals[0];
+  const phaseName = positionals[1];
+  const fromStr = positionals[2];
+  const toStr = positionals[3];
+  const laneIndex = parseLaneFlag(args);
+
+  if (!presetName || !phaseName || !fromStr || !toStr) {
+    throw new Error('gsr fallback move requires: <preset> <phase> <from> <to>');
+  }
+
+  const fromIndex = parseInt(fromStr, 10);
+  const toIndex = parseInt(toStr, 10);
+  if (!Number.isFinite(fromIndex) || fromIndex < 1) {
+    throw new Error(`"from" must be a positive integer (got: "${fromStr}").`);
+  }
+  if (!Number.isFinite(toIndex) || toIndex < 1) {
+    throw new Error(`"to" must be a positive integer (got: "${toStr}").`);
+  }
+
+  let chain;
+  try {
+    chain = readFallbackChain(configPath, presetName, phaseName, laneIndex);
+  } catch (err) {
+    process.stdout.write(`Error: ${err.message}\n`);
+    return;
+  }
+
+  if (fromIndex > chain.length) {
+    process.stdout.write(`Error: "from" index ${fromIndex} is out of bounds (chain has ${chain.length} entries).\n`);
+    return;
+  }
+  if (toIndex > chain.length) {
+    process.stdout.write(`Error: "to" index ${toIndex} is out of bounds (chain has ${chain.length} entries).\n`);
+    return;
+  }
+  if (fromIndex === toIndex) {
+    process.stdout.write(`Nothing to move — "from" and "to" are the same (${fromIndex}).\n`);
+    return;
+  }
+
+  // Perform the move
+  const newChain = [...chain];
+  const [moved] = newChain.splice(fromIndex - 1, 1);
+  newChain.splice(toIndex - 1, 0, moved);
+
+  await writeFallbackChain(configPath, presetName, phaseName, laneIndex, newChain);
+
+  process.stdout.write(`Moved '${moved}' from position ${fromIndex} to ${toIndex} in ${presetName}/${phaseName} (lane ${laneIndex}).\n`);
+  process.stdout.write(`Chain is now:\n${formatFallbackList(newChain)}\n`);
+}
+
+/**
+ * gsr fallback set <preset> <phase> <model,model,...> [--lane N]
+ * Replaces entire chain.
+ * @param {string[]} args
+ */
+export async function runFallbackSet(args) {
+  const configPath = discoverConfigPath();
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr install` first.\n');
+    return;
+  }
+
+  const positionals = args.filter((a, i) => !a.startsWith('--') && (i === 0 || !args[i - 1].startsWith('--')));
+  const presetName = positionals[0];
+  const phaseName = positionals[1];
+  const modelsStr = positionals[2];
+  const laneIndex = parseLaneFlag(args);
+
+  if (!presetName || !phaseName || !modelsStr) {
+    throw new Error('gsr fallback set requires: <preset> <phase> <model,model,...>');
+  }
+
+  const newChain = modelsStr.split(',').map((s) => s.trim()).filter(Boolean);
+
+  // Validate all model IDs
+  const errors = [];
+  for (const modelId of newChain) {
+    const err = validateModelId(modelId);
+    if (err) errors.push(err);
+  }
+  if (errors.length > 0) {
+    for (const err of errors) {
+      process.stdout.write(`Error: ${err}\n`);
+    }
+    return;
+  }
+
+  // Verify preset/phase exist before writing
+  try {
+    readFallbackChain(configPath, presetName, phaseName, laneIndex);
+  } catch (err) {
+    process.stdout.write(`Error: ${err.message}\n`);
+    return;
+  }
+
+  await writeFallbackChain(configPath, presetName, phaseName, laneIndex, newChain);
+
+  process.stdout.write(`Fallback chain for ${presetName}/${phaseName} (lane ${laneIndex}) set to:\n`);
+  process.stdout.write(formatFallbackList(newChain) + '\n');
 }
 
 export { resetIdentityCache };

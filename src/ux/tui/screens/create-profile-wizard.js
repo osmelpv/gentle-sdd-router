@@ -306,6 +306,7 @@ export function CreateProfileWizard({ configPath, router, setDescription, showRe
         onCancel: () => dispatch({ type: 'BACK' }),
         setDescription,
         title: 'Step 3/6 — Custom Phase Composition',
+        configPath,
       });
     }
 

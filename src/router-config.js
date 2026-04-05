@@ -93,6 +93,7 @@ export {
 export { getProjectSddAgentSpecs } from './core/project-sdd-agent-routing.js';
 
 export { removeOpenCodeOverlay, deployGsrCommands, removeGsrCommands, cleanStaleGlobalOverlay } from './adapters/opencode/overlay-generator.js';
+export { deployGsrCommandsClaudeCode, transformForClaudeCode, CLAUDE_COMMANDS_DIR } from './adapters/claude-code/command-deployer.js';
 export { materializeGlobalSddAgents } from './adapters/opencode/global-sdd-agent-materializer.js';
 export { materializeProjectSddAgents } from './adapters/opencode/project-sdd-agent-materializer.js';
 

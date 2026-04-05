@@ -4,6 +4,7 @@ import { ModelPicker } from './model-picker.js';
 import { Menu } from './menu.js';
 import { colors, cursor as cursorChar } from '../theme.js';
 import { CANONICAL_PHASES, PHASE_METADATA } from '../../../core/phases.js';
+import { normalizeFallbacks } from '../../../core/router-v4-io.js';
 
 const h = React.createElement;
 
@@ -39,7 +40,7 @@ function getCompositionBadge(lanes) {
   if (counts.agent) parts.push(counts.agent > 1 ? `${counts.agent}A` : 'A');
   if (counts.judge) parts.push('J');
   if (counts.radar) parts.push('R');
-  for (const [role, count] of Object.entries(counts)) {
+  for (const [role] of Object.entries(counts)) {
     if (!['agent', 'judge', 'radar'].includes(role)) {
       parts.push(role.charAt(0).toUpperCase());
     }
@@ -47,19 +48,41 @@ function getCompositionBadge(lanes) {
   return parts.join('+');
 }
 
-export function PhaseComposer({ phases, onPhasesChange, onSave, onCancel, setDescription, title }) {
+/**
+ * Get normalized fallback model ID strings from a lane object.
+ * @param {object} lane
+ * @returns {string[]}
+ */
+function getLaneFallbacks(lane) {
+  if (!lane?.fallbacks) return [];
+  const normalized = normalizeFallbacks(lane.fallbacks);
+  return normalized.map((item) => item.model);
+}
+
+export function PhaseComposer({ phases, onPhasesChange, onSave, onCancel, setDescription, title, configPath }) {
   const [activePanel, setActivePanel] = useState('left');
   const [phaseCursor, setPhaseCursor] = useState(0);
-  const [rightView, setRightView] = useState('detail'); // 'detail' | 'model-picker' | 'add-role'
+  // rightView: 'detail' | 'model-picker' | 'add-role' | 'fallback-manager'
+  const [rightView, setRightView] = useState('detail');
   const [slotCursor, setSlotCursor] = useState(0);
   const [editingSlotIdx, setEditingSlotIdx] = useState(null);
   const [pendingRole, setPendingRole] = useState(null);
   const [pickerKey, setPickerKey] = useState(0);
 
+  // Fallback manager state
+  const [fallbackLaneIdx, setFallbackLaneIdx] = useState(0); // which lane we're editing fallbacks for
+  const [fallbackCursor, setFallbackCursor] = useState(0);  // cursor within the fallback chain
+  // pickerContext: 'slot' (editing slot model) | 'fallback' (adding fallback)
+  const [pickerContext, setPickerContext] = useState('slot');
+
   const activePhaseName = phaseCursor < CANONICAL_PHASES.length ? CANONICAL_PHASES[phaseCursor] : null;
   const activeMeta = activePhaseName ? PHASE_METADATA[activePhaseName] : null;
   const phaseLanes = activePhaseName ? (phases[activePhaseName] || []) : [];
   const isMono = activeMeta?.alwaysMono === true;
+
+  // Active fallback lane (when in fallback-manager view)
+  const activeFallbackLane = phaseLanes[fallbackLaneIdx] ?? null;
+  const activeFallbackChain = activeFallbackLane ? getLaneFallbacks(activeFallbackLane) : [];
 
   // Total item count for left panel (10 phases + save button)
   const leftItemCount = CANONICAL_PHASES.length + 1;
@@ -73,6 +96,9 @@ export function PhaseComposer({ phases, onPhasesChange, onSave, onCancel, setDes
     setSlotCursor(0);
     setEditingSlotIdx(null);
     setPendingRole(null);
+    setFallbackLaneIdx(0);
+    setFallbackCursor(0);
+    setPickerContext('slot');
   }, [phaseCursor]);
 
   // Update footer description
@@ -83,9 +109,14 @@ export function PhaseComposer({ phases, onPhasesChange, onSave, onCancel, setDes
     }
     if (activePanel === 'right' && rightView === 'detail' && phaseLanes[slotCursor]) {
       const lane = phaseLanes[slotCursor];
-      setDescription(`[${lane.role || 'agent'}] ${lane.target || '(empty)'} — Enter to change model, x to remove (optional only)`);
+      setDescription(`[${lane.role || 'agent'}] ${lane.target || '(empty)'} — Enter to change model, F to manage fallbacks, x to remove (optional only)`);
     }
-  }, [activePanel, phaseCursor, rightView, slotCursor]);
+    if (activePanel === 'right' && rightView === 'fallback-manager') {
+      const lane = phaseLanes[fallbackLaneIdx];
+      const role = lane?.role || 'agent';
+      setDescription(`Fallbacks for ${activePhaseName} [${role}] (lane ${fallbackLaneIdx}) — ↑↓ move cursor, D delete, A add, Esc back`);
+    }
+  }, [activePanel, phaseCursor, rightView, slotCursor, fallbackLaneIdx, fallbackCursor]);
 
   // LEFT panel input
   useInput((input, key) => {
@@ -119,8 +150,9 @@ export function PhaseComposer({ phases, onPhasesChange, onSave, onCancel, setDes
     if (rightView === 'model-picker') return; // ModelPicker handles its own input
 
     if (key.escape || key.leftArrow) {
-      if (rightView === 'add-role') {
+      if (rightView === 'add-role' || rightView === 'fallback-manager') {
         setRightView('detail');
+        setFallbackCursor(0);
         return;
       }
       setActivePanel('left');
@@ -140,12 +172,21 @@ export function PhaseComposer({ phases, onPhasesChange, onSave, onCancel, setDes
         if (slotCursor < phaseLanes.length) {
           // Edit this slot's model
           setEditingSlotIdx(slotCursor);
+          setPickerContext('slot');
           setRightView('model-picker');
           setPickerKey(prev => prev + 1);
         } else if (!isMono) {
           // "Add role" item
           setRightView('add-role');
         }
+      }
+
+      // f key — open fallback manager for the focused slot
+      if ((input === 'f' || input === 'F') && slotCursor < phaseLanes.length) {
+        setFallbackLaneIdx(slotCursor);
+        setFallbackCursor(0);
+        setRightView('fallback-manager');
+        return;
       }
 
       // x key to remove optional slot
@@ -168,30 +209,107 @@ export function PhaseComposer({ phases, onPhasesChange, onSave, onCancel, setDes
         }
       }
     }
+
+    // ── Fallback manager keyboard handling (Task 10) ─────────────────────────
+    if (rightView === 'fallback-manager') {
+      const chainLen = activeFallbackChain.length;
+
+      if (key.upArrow || input === 'k') {
+        setFallbackCursor(prev => (prev > 0 ? prev - 1 : Math.max(chainLen - 1, 0)));
+      }
+      if (key.downArrow || input === 'j') {
+        setFallbackCursor(prev => (prev < chainLen - 1 ? prev + 1 : 0));
+      }
+
+      // D — delete focused entry
+      if ((input === 'd' || input === 'D') && chainLen > 0) {
+        const newChain = activeFallbackChain.filter((_, idx) => idx !== fallbackCursor);
+        _updateFallbackChain(newChain);
+        setFallbackCursor(prev => Math.min(prev, Math.max(newChain.length - 1, 0)));
+      }
+
+      // U — move entry up in chain (swap with previous)
+      if (input === 'u' && chainLen > 1 && fallbackCursor > 0) {
+        const newChain = [...activeFallbackChain];
+        const temp = newChain[fallbackCursor - 1];
+        newChain[fallbackCursor - 1] = newChain[fallbackCursor];
+        newChain[fallbackCursor] = temp;
+        _updateFallbackChain(newChain);
+        setFallbackCursor(prev => prev - 1);
+      }
+
+      // N — move entry down in chain (swap with next)
+      if (input === 'n' && chainLen > 1 && fallbackCursor < chainLen - 1) {
+        const newChain = [...activeFallbackChain];
+        const temp = newChain[fallbackCursor + 1];
+        newChain[fallbackCursor + 1] = newChain[fallbackCursor];
+        newChain[fallbackCursor] = temp;
+        _updateFallbackChain(newChain);
+        setFallbackCursor(prev => prev + 1);
+      }
+
+      // A — open model picker to add a new fallback (Task 11)
+      if (input === 'a' || input === 'A') {
+        setPickerContext('fallback');
+        setRightView('model-picker');
+        setPickerKey(prev => prev + 1);
+      }
+    }
   });
 
-  // Handle model selection from picker
+  /**
+   * Update the fallback chain for the active fallback lane (internal helper).
+   * Converts array back to CSV string and calls onPhasesChange.
+   */
+  function _updateFallbackChain(newChain) {
+    const newLanes = phaseLanes.map((lane, idx) => {
+      if (idx !== fallbackLaneIdx) return lane;
+      const updated = { ...lane };
+      if (newChain.length === 0) {
+        delete updated.fallbacks;
+      } else {
+        updated.fallbacks = newChain.join(', ');
+      }
+      return updated;
+    });
+    onPhasesChange({ ...phases, [activePhaseName]: newLanes });
+  }
+
+  // Handle model selection from picker (Task 11 integration)
   const handleModelSelect = (modelId) => {
-    if (pendingRole) {
+    if (pickerContext === 'fallback') {
+      // Adding a new fallback entry — append to chain
+      const newChain = [...activeFallbackChain, modelId];
+      _updateFallbackChain(newChain);
+      setFallbackCursor(newChain.length - 1);
+      setPickerContext('slot');
+      setRightView('fallback-manager');
+    } else if (pendingRole) {
       // Adding new role
       const newLane = { target: modelId, role: pendingRole, kind: 'lane', phase: activePhaseName };
       const newLanes = [...phaseLanes, newLane];
       onPhasesChange({ ...phases, [activePhaseName]: newLanes });
       setPendingRole(null);
+      setRightView('detail');
     } else if (editingSlotIdx !== null) {
       // Editing existing slot
       const newLanes = [...phaseLanes];
       newLanes[editingSlotIdx] = { ...newLanes[editingSlotIdx], target: modelId };
       onPhasesChange({ ...phases, [activePhaseName]: newLanes });
+      setRightView('detail');
     }
     setEditingSlotIdx(null);
-    setRightView('detail');
   };
 
   const handlePickerCancel = () => {
     setPendingRole(null);
     setEditingSlotIdx(null);
-    setRightView('detail');
+    if (pickerContext === 'fallback') {
+      setPickerContext('slot');
+      setRightView('fallback-manager');
+    } else {
+      setRightView('detail');
+    }
   };
 
   // === RENDER LEFT PANEL ===
@@ -250,12 +368,21 @@ export function PhaseComposer({ phases, onPhasesChange, onSave, onCancel, setDes
       const currentCount = phaseLanes.filter(l => (l.role || 'agent') === role).length;
       const isRemovable = currentCount > fixedCount;
       const removeHint = isRemovable ? ' [x:rm]' : '';
+      const fallbackCount = getLaneFallbacks(lane).length;
+      const fallbackHint = fallbackCount > 0 ? ` [${fallbackCount}fb]` : '';
 
       return h(Text, { key: `slot-${idx}`, color: isActive ? colors.lavender : colors.text, bold: isActive },
         prefix, h(Text, { color: roleColor }, role.padEnd(18)),
-        model, removeHint,
+        model, fallbackHint, removeHint,
       );
     });
+
+    // Fallback manager hint
+    if (slotCursor < phaseLanes.length) {
+      slotItems.push(h(Text, { key: '__fb-hint__', color: colors.overlay },
+        '  ', '[F] Manage fallbacks',
+      ));
+    }
 
     // Add role button (if not mono and there are available optional roles)
     if (!isMono) {
@@ -280,11 +407,22 @@ export function PhaseComposer({ phases, onPhasesChange, onSave, onCancel, setDes
       ...slotItems,
     );
   } else if (rightView === 'model-picker') {
+    // Build excludeTargets: current lane target + all current fallback models
+    // (only when in fallback context — avoid excluding current target when editing slot)
+    const currentTarget = phaseLanes[fallbackLaneIdx]?.target;
+    const excludeTargets = pickerContext === 'fallback'
+      ? [currentTarget, ...activeFallbackChain].filter(Boolean)
+      : [];
+
     rightContent = h(ModelPicker, {
       key: `composer-pick-${activePhaseName}-${editingSlotIdx ?? 'new'}-${pickerKey}`,
       onSelect: handleModelSelect,
       onCancel: handlePickerCancel,
       setDescription,
+      connectedOnly: true,
+      configPath,
+      excludeTargets,
+      label: pickerContext === 'fallback' ? 'Select fallback model' : undefined,
     });
   } else if (rightView === 'add-role') {
     const usedRoles = new Set(phaseLanes.map(l => l.role || 'agent'));
@@ -310,12 +448,50 @@ export function PhaseComposer({ phases, onPhasesChange, onSave, onCancel, setDes
         onSelect: (role) => {
           if (role === '__back__') { setRightView('detail'); return; }
           setPendingRole(role);
+          setPickerContext('slot');
           setRightView('model-picker');
           setPickerKey(prev => prev + 1);
         },
         setDescription,
         showBack: true,
       }),
+    );
+  } else if (rightView === 'fallback-manager') {
+    // ── Fallback manager view (Task 9) ────────────────────────────────────────
+    const lane = phaseLanes[fallbackLaneIdx];
+    const role = lane?.role || 'agent';
+    const chain = activeFallbackChain;
+    const chainLen = chain.length;
+
+    const chainItems = chain.map((model, idx) => {
+      const isActive = idx === fallbackCursor;
+      const prefix = isActive ? cursorChar : '  ';
+      const canUp = idx > 0;
+      const canDown = idx < chainLen - 1;
+      const moveHints = canUp && canDown ? ' [u↑] [n↓]' : canUp ? ' [u↑]' : canDown ? ' [n↓]' : '';
+
+      return h(Text, { key: `fb-${idx}`, color: isActive ? colors.lavender : colors.text, bold: isActive },
+        prefix,
+        h(Text, { color: colors.subtext }, `${idx + 1}. `),
+        model,
+        isActive ? h(Text, { color: colors.overlay }, `  [D] delete${moveHints}`) : null,
+      );
+    });
+
+    if (chainLen === 0) {
+      chainItems.push(h(Text, { key: 'empty', color: colors.overlay }, '  (no fallbacks defined)'));
+    }
+
+    rightContent = h(Box, { flexDirection: 'column' },
+      h(Text, { bold: true, color: colors.peach },
+        `Fallbacks: ${activePhaseName} `,
+        h(Text, { color: colors.overlay }, `[${role}] lane ${fallbackLaneIdx}`),
+      ),
+      h(Text, { key: 'sep', color: colors.overlay }, '\u2500'.repeat(36)),
+      h(Text, { key: 'spacer' }, ''),
+      ...chainItems,
+      h(Text, { key: 'spacer2' }, ''),
+      h(Text, { color: colors.blue }, '  [A] Add fallback    [Esc] Back'),
     );
   }
 

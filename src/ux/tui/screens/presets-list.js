@@ -3,6 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import { Menu } from '../components/menu.js';
 import { colors, cursor as cursorChar } from '../theme.js';
 import { appendTuiDebug } from '../../../debug/tui-debug-log.js';
+import { unifiedSync } from '../../../core/unified-sync.js';
 
 const h = React.createElement;
 
@@ -112,7 +113,12 @@ export function PresetsScreen({ config, configPath, router, setDescription, show
         setConfig(freshConfig);
       }
 
-      setLastMessage(`Preset '${preset.label}' is now ${newHiddenValue ? 'hidden' : 'visible'}. Run 'gsr sync'.`);
+      try {
+        await unifiedSync({ configPath });
+        setLastMessage(`Preset '${preset.label}' is now ${newHiddenValue ? 'hidden' : 'visible'}. OpenCode updated.`);
+      } catch (syncErr) {
+        setLastMessage(`Saved. Sync failed: ${syncErr.message} — run 'gsr sync' manually.`);
+      }
     } catch (err) {
       appendTuiDebug('presets_toggle_error', {
         preset: preset.label,
@@ -168,7 +174,7 @@ export function PresetsScreen({ config, configPath, router, setDescription, show
 
     const actions = [
       { label: 'View details', value: 'view', description: 'View preset phases and configuration.' },
-      { label: preset.isVisible ? 'Hide from TAB' : 'Show in TAB', value: 'toggle-visibility', description: preset.isVisible ? 'Hide this preset from TAB cycling.' : 'Make this preset visible in TAB cycling.' },
+      { label: preset.isVisible ? 'Hide from OpenCode TAB' : 'Show in OpenCode TAB', value: 'toggle-visibility', description: preset.isVisible ? 'Hide this preset from TAB cycling.' : 'Make this preset visible in TAB cycling.' },
       ...(!preset.isActive ? [{ label: 'Delete preset', value: 'delete', description: 'Permanently delete this preset from disk.' }] : []),
     ];
 

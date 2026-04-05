@@ -34,6 +34,73 @@ function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+/**
+ * Warn if a fallback model ID doesn't follow the expected provider/model format.
+ * Never throws — only warns.
+ *
+ * @param {string} id
+ */
+export function validateFallbackModelId(id) {
+  if (!id || typeof id !== 'string' || !id.includes('/')) {
+    console.warn(
+      `[gsr] Fallback model ID "${id}" does not follow the expected "provider/model" format. ` +
+      `Example: "openai/gpt-5" or "anthropic/claude-sonnet".`
+    );
+  }
+}
+
+/**
+ * Normalize a lane's fallbacks value into a structured array.
+ *
+ * Accepts:
+ *   - CSV string: "modelA, modelB" → [{model:"modelA",on:["any"]}, {model:"modelB",on:["any"]}]
+ *   - Array of strings: ["modelA","modelB"] → same output
+ *   - Already-structured array: [{model:"modelA",on:["quota_exceeded"]}] → pass through
+ *   - Falsy (null, undefined, "") → []
+ *
+ * @param {string|Array} fallbacksValue
+ * @returns {Array<{model: string, on: string[]}>}
+ */
+export function normalizeFallbacks(fallbacksValue) {
+  if (!fallbacksValue) return [];
+
+  // CSV string
+  if (typeof fallbacksValue === 'string') {
+    const trimmed = fallbacksValue.trim();
+    if (!trimmed) return [];
+    return trimmed.split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((model) => {
+        validateFallbackModelId(model);
+        return { model, on: ['any'] };
+      });
+  }
+
+  // Array form
+  if (Array.isArray(fallbacksValue)) {
+    if (fallbacksValue.length === 0) return [];
+
+    return fallbacksValue.map((item) => {
+      // Already-structured object: {model, on}
+      if (isObject(item) && typeof item.model === 'string') {
+        validateFallbackModelId(item.model);
+        return item;
+      }
+      // Plain string
+      if (typeof item === 'string') {
+        validateFallbackModelId(item);
+        return { model: item, on: ['any'] };
+      }
+      // Unknown form — skip with warning
+      console.warn(`[gsr] Unrecognized fallback entry: ${JSON.stringify(item)}. Expected string or {model, on} object.`);
+      return null;
+    }).filter(Boolean);
+  }
+
+  return [];
+}
+
 function checkExecutionHints(value, context) {
   for (const key of Object.keys(value)) {
     if (EXECUTION_HINT_FIELDS.has(key)) {
@@ -195,6 +262,13 @@ export function validateProfileFile(profile, filePath) {
               `Must be a positive integer.`
             );
           }
+        }
+        // Validate fallback model ID formats (warn only, never throw)
+        if (lane.fallbacks !== undefined) {
+          const normalized = normalizeFallbacks(lane.fallbacks);
+          // validateFallbackModelId is called inside normalizeFallbacks — this is the validation pass only
+          // We do NOT mutate lane.fallbacks here to avoid breaking the v3 schema validator downstream
+          void normalized;
         }
       }
     }
@@ -410,6 +484,8 @@ export function assembleV4Config(coreConfig, profiles) {
     catalogs: catalogsMap,
     ...(coreConfig.persona !== undefined ? { persona: coreConfig.persona } : {}),
     ...(coreConfig.identity !== undefined ? { identity: coreConfig.identity } : {}),
+    // Preserve optional settings block (e.g. settings.platforms) — non-breaking pass-through
+    ...(coreConfig.settings !== undefined ? { settings: coreConfig.settings } : {}),
   };
 
   const profileMap = new Map(
@@ -498,7 +574,7 @@ export function buildV4WritePlan(oldConfig, newConfig) {
   const oldCore = oldConfig ? (oldSource?.coreConfig ?? serializableConfig(oldConfig)) : null;
   const newCore = newSource?.coreConfig ?? serializableConfig(newConfig);
 
-  const coreFields = ['active_catalog', 'active_sdd', 'active_preset', 'active_profile', 'activation_state', 'metadata', 'sdds'];
+  const coreFields = ['active_catalog', 'active_sdd', 'active_preset', 'active_profile', 'activation_state', 'metadata', 'sdds', 'settings'];
   const coreChanged = !oldCore || coreFields.some(
     (field) => JSON.stringify(oldCore[field]) !== JSON.stringify(newCore[field])
   );
@@ -512,6 +588,8 @@ export function buildV4WritePlan(oldConfig, newConfig) {
     activation_state: newCore.activation_state ?? newConfig.activation_state,
     metadata: newCore.metadata ?? newConfig.metadata,
     ...((newCore.sdds ?? newConfig.sdds) ? { sdds: newCore.sdds ?? newConfig.sdds } : {}),
+    // Preserve optional settings block (e.g. settings.platforms) — non-breaking
+    ...((newCore.settings ?? newConfig.settings) ? { settings: newCore.settings ?? newConfig.settings } : {}),
   };
 
   const profileWrites = [];

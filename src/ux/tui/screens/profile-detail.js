@@ -5,6 +5,7 @@ import { Menu } from '../components/menu.js';
 import { colors } from '../theme.js';
 import { getActivePresetOwner } from '../../../core/public-preset-metadata.js';
 import { appendTuiDebug } from '../../../debug/tui-debug-log.js';
+import { unifiedSync } from '../../../core/unified-sync.js';
 
 const h = React.createElement;
 
@@ -103,7 +104,7 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
   const actions = [
     { label: 'Edit phases', value: 'edit', description: 'Open the phase/lane editor to modify models, roles, and fallbacks.' },
     { label: 'Edit Identity', value: 'edit-identity', description: 'Configure agent context, prompt, and AGENTS.md inheritance for this preset.' },
-    { label: isVisible ? 'Hide from TAB' : 'Show in TAB', value: 'toggle-visibility', description: isVisible ? 'Hide this preset from TAB cycling in OpenCode.' : 'Make this preset visible in TAB cycling.' },
+    { label: isVisible ? 'Hide from OpenCode TAB' : 'Show in OpenCode TAB', value: 'toggle-visibility', description: isVisible ? 'Hide this preset from TAB cycling in OpenCode.' : 'Make this preset visible in TAB cycling.' },
     { label: 'Export', value: 'export', description: 'Export this preset as YAML to stdout.' },
     { label: 'Copy', value: 'copy', description: 'Clone this preset with a new name.' },
     { label: 'Delete', value: 'delete', description: 'Delete this preset from disk.' },
@@ -189,7 +190,12 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
             setLocalConfig(freshConfig);
             if (setConfig) setConfig(freshConfig);
             
-            showResult(`Preset '${activePresetName}' is now ${newHidden ? 'hidden' : 'visible'}. Run 'gsr sync' to update OpenCode.`);
+            try {
+              await unifiedSync({ configPath: localConfigPath });
+              showResult(`Preset '${activePresetName}' is now ${newHidden ? 'hidden' : 'visible'}. OpenCode updated.`);
+            } catch (syncErr) {
+              showResult(`Saved. Sync failed: ${syncErr.message} — run 'gsr sync' manually.`);
+            }
           } catch (err) {
             appendTuiDebug('profile_detail_toggle_error', {
               preset: activePresetName,

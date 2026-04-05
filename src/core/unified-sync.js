@@ -1,12 +1,13 @@
 /**
  * Unified Sync Pipeline
  *
- * Orchestrates the 5-step sync pipeline:
- *   1. contracts  — generate/update .sync-manifest.json
- *   2. overlay    — generate OpenCode overlay from config
- *   3. apply      — merge overlay into opencode.json
- *   4. commands   — deploy gsr-*.md slash commands
- *   5. validate   — readback opencode.json and verify expected agents
+ * Orchestrates the 6-step sync pipeline:
+ *   1. contracts     — generate/update .sync-manifest.json
+ *   2. overlay       — generate OpenCode overlay from config
+ *   3. apply         — merge overlay into opencode.json
+ *   4. commands      — deploy gsr-*.md slash commands to OpenCode
+ *   5. claude-code   — deploy gsr-*.md slash commands to Claude Code (~/.claude/commands/)
+ *   6. validate      — readback opencode.json and verify expected agents
  *
  * All steps return structured results; the caller decides what to print.
  * No step throws — failures are captured in the step result.
@@ -308,7 +309,49 @@ async function runCommandsStep(opts) {
 }
 
 /**
- * Step 5: Validate — readback opencode.json and compare expected vs actual agents
+ * Step 5: Deploy gsr-*.md slash commands to Claude Code (~/.claude/commands/)
+ *
+ * Gracefully skips (log at debug level) when Claude Code is not installed.
+ * "Not installed" is defined as: ~/.claude/ directory does not exist after
+ * the deployer attempts to create it — practically, this means the deploy
+ * always attempts but NEVER fails the pipeline.
+ */
+async function runCommandsClaudeCodeStep(opts) {
+  const { dryRun, commandsSourceDir, claudeCommandsDir } = opts;
+
+  if (dryRun) {
+    return stepOk('claude-code', { dryRun: true, deployed: 0, skipped: 0 });
+  }
+
+  try {
+    const { deployGsrCommandsClaudeCode, CLAUDE_COMMANDS_DIR } = await import('../adapters/claude-code/command-deployer.js');
+    const effectiveTargetDir = claudeCommandsDir ?? CLAUDE_COMMANDS_DIR;
+    const result = await deployGsrCommandsClaudeCode(commandsSourceDir, effectiveTargetDir);
+
+    if (result.errors.length > 0) {
+      // Partial failure — report but don't fail the whole pipeline
+      return stepOk('claude-code', {
+        deployed: result.deployed,
+        skipped: result.skipped,
+        errors: result.errors,
+        targetDir: result.targetDir,
+      });
+    }
+
+    return stepOk('claude-code', {
+      deployed: result.deployed,
+      skipped: result.skipped,
+      targetDir: result.targetDir,
+    });
+  } catch (err) {
+    // Non-fatal: Claude Code may not be installed or accessible — skip silently
+    // (captured in result, not thrown)
+    return stepSkipped('claude-code', `Claude Code commands skipped: ${err.message}`);
+  }
+}
+
+/**
+ * Step 6: Validate — readback opencode.json and compare expected vs actual agents
  *
  * requiresReopen is true ONLY when the apply step actually changed gsr-* entries
  * (added new agents or modified existing ones). Manifest-only or non-gsr writes
@@ -385,12 +428,13 @@ async function runValidateStep(opts) {
 
 /**
  * @typedef {Object} UnifiedSyncOptions
- * @property {string} [configPath]   - router.yaml path (auto-discovered if omitted)
- * @property {boolean} [dryRun]      - Run all steps but don't write files (default: false)
- * @property {boolean} [force]       - Overwrite user entries in opencode.json (default: false)
- * @property {string} [cwd]          - Working dir for identity resolution (default: process.cwd())
- * @property {string} [targetPath]   - Explicit path for opencode.json (used in tests)
- * @property {string} [commandsDir]  - Explicit path for commands dir (used in tests)
+ * @property {string} [configPath]         - router.yaml path (auto-discovered if omitted)
+ * @property {boolean} [dryRun]            - Run all steps but don't write files (default: false)
+ * @property {boolean} [force]             - Overwrite user entries in opencode.json (default: false)
+ * @property {string} [cwd]               - Working dir for identity resolution (default: process.cwd())
+ * @property {string} [targetPath]         - Explicit path for opencode.json (used in tests)
+ * @property {string} [commandsDir]        - Explicit path for OpenCode commands dir (used in tests)
+ * @property {string} [claudeCommandsDir]  - Explicit path for Claude Code commands dir (used in tests)
  */
 
 /**
@@ -415,6 +459,7 @@ export async function unifiedSync(options = {}) {
     cwd = process.cwd(),
     targetPath,
     commandsDir,
+    claudeCommandsDir,
   } = options;
 
   const steps = [];
@@ -430,6 +475,7 @@ export async function unifiedSync(options = {}) {
     steps.push(stepSkipped('overlay', 'contracts step failed'));
     steps.push(stepSkipped('apply', 'contracts step failed'));
     steps.push(stepSkipped('commands', 'contracts step failed'));
+    steps.push(stepSkipped('claude-code', 'contracts step failed'));
     steps.push(stepSkipped('validate', 'contracts step failed'));
 
     return {
@@ -484,11 +530,15 @@ export async function unifiedSync(options = {}) {
     warnings.push(...applyStep.data.warnings);
   }
 
-  // Step 4: commands
+  // Step 4: commands (OpenCode)
   const commandsStep = await runCommandsStep({ dryRun, commandsDir });
   steps.push(commandsStep);
 
-  // Step 5: validate
+  // Step 5: commands (Claude Code)
+  const claudeCodeStep = await runCommandsClaudeCodeStep({ dryRun, claudeCommandsDir });
+  steps.push(claudeCodeStep);
+
+  // Step 6: validate
   const validateStep = await runValidateStep({
     overlayData,
     targetPath: applyStep.data?.writtenPath ?? targetPath,

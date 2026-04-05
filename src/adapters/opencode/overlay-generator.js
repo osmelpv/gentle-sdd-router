@@ -1,10 +1,36 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, readdirSync, unlinkSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { resolvePersona } from '../../core/controller.js';
 import { resolveIdentity } from '../../core/agent-identity.js';
+import { normalizeFallbacks } from '../../core/router-v4-io.js';
 
 const OPENCODE_CONFIG_PATH = join(homedir(), '.config', 'opencode', 'opencode.json');
+
+// ── Fallback Protocol ─────────────────────────────────────────────────────────
+
+/**
+ * Load the fallback protocol text from router/contracts/fallback-protocol.md.
+ * Returns empty string if the file is not found (graceful degradation).
+ */
+function loadFallbackProtocolText() {
+  try {
+    const moduleDir = dirname(fileURLToPath(import.meta.url));
+    const contractPath = resolve(moduleDir, '..', '..', '..', 'router', 'contracts', 'fallback-protocol.md');
+    if (existsSync(contractPath)) {
+      return readFileSync(contractPath, 'utf8').trim();
+    }
+    console.warn('[gsr] fallback-protocol.md not found at expected path:', contractPath);
+    return '';
+  } catch (err) {
+    console.warn('[gsr] Failed to load fallback-protocol.md:', err.message);
+    return '';
+  }
+}
+
+/** Fallback protocol text loaded once at module init. */
+const FALLBACK_PROTOCOL_TEXT = loadFallbackProtocolText();
 const GSR_AGENT_PREFIX = 'gsr-';
 
 /**
@@ -109,7 +135,49 @@ export function generateOpenCodeOverlay(config, options = {}) {
 
       // Apply router-level override for this agent (if present) — overrides win
       const agentOverride = routerOverrides[agentName] ?? {};
-      const resolvedPrompt = agentOverride.prompt ?? identity.prompt;
+      let resolvedPrompt = agentOverride.prompt ?? identity.prompt;
+
+      // Task 4: Build _gsr_fallbacks map keyed by phase name (preliminary pass to check if any fallbacks exist)
+      // We need this BEFORE the protocol injection to gate the injection
+      const preCheckPhases = preset.phases ?? {};
+      const presetHasFallbacks = Object.values(preCheckPhases).some((lanes) => {
+        if (!Array.isArray(lanes) || lanes.length === 0) return false;
+        const primaryLane = lanes[0];
+        if (!primaryLane || typeof primaryLane !== 'object') return false;
+        const rawFallbacks = primaryLane.fallbacks;
+        if (!rawFallbacks) return false;
+        if (Array.isArray(rawFallbacks)) return rawFallbacks.length > 0;
+        if (typeof rawFallbacks === 'string') return rawFallbacks.trim().length > 0;
+        return false;
+      });
+
+      // Task 5: Inject fallback protocol into prompt ONLY when preset has fallbacks (design D2)
+      if (FALLBACK_PROTOCOL_TEXT && presetHasFallbacks && !resolvedPrompt.includes('GSR Fallback Protocol')) {
+        resolvedPrompt = resolvedPrompt + '\n\n' + FALLBACK_PROTOCOL_TEXT;
+      }
+
+      // Task 4: Build _gsr_fallbacks map keyed by phase name
+      // Each entry: { [phaseName]: [model1, model2, ...] }
+      const gsrFallbacks = {};
+      const phases = preset.phases ?? {};
+      for (const [phaseName, lanes] of Object.entries(phases)) {
+        if (!Array.isArray(lanes) || lanes.length === 0) continue;
+        const primaryLane = lanes[0];
+        if (!primaryLane || typeof primaryLane !== 'object') continue;
+
+        const rawFallbacks = primaryLane.fallbacks;
+        if (rawFallbacks !== undefined) {
+          // Already normalized by validateProfileFile, but handle both forms defensively
+          const normalized = Array.isArray(rawFallbacks)
+            ? rawFallbacks
+            : normalizeFallbacks(rawFallbacks);
+          gsrFallbacks[phaseName] = normalized.map((fb) =>
+            typeof fb === 'string' ? fb : fb.model
+          );
+        } else {
+          gsrFallbacks[phaseName] = [];
+        }
+      }
 
       const entry = {
         mode: 'primary',
@@ -118,6 +186,8 @@ export function generateOpenCodeOverlay(config, options = {}) {
         prompt: resolvedPrompt,
         tools: mapPermissions(preset.permissions),
         _gsr_generated: true,
+        _gsr_fallbacks: gsrFallbacks,
+        _gsr_orchestrator_fallbacks: gsrFallbacks.orchestrator ?? [],
       };
 
       if (preset.hidden === true) {

@@ -74,3 +74,13 @@ Global operational state and data sync.
 
 - `/gsr-status` — Show router state, active preset, and resolved routes
 - `/gsr-sync` — Full sync: contracts + overlay + slash commands + validate (idempotent)
+
+## Fallback
+
+Model failure recovery commands.
+
+- `/gsr-fallback` — Activate next model fallback after a GSR_FALLBACK_REQUEST.
+  Auto-triggered when the agent detects a model failure: fires an SDK toast notification,
+  reads connected providers from `config.providers()` to annotate each fallback with
+  connection status badges, then presents the ordered fallback chain for selection.
+  SDK usage is a progressive enhancement — degrades gracefully if unavailable.
