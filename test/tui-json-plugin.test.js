@@ -201,7 +201,7 @@ describe('unifiedSync — tui-plugin step registers plugin in tui.json', () => {
   let tmpDir;
   let configPath;
   let opencodeConfigDir;
-  let pluginsDir;
+  let projectDir;
 
   beforeEach(() => {
     // Minimal router dir
@@ -217,8 +217,8 @@ describe('unifiedSync — tui-plugin step registers plugin in tui.json', () => {
 
     // Isolated opencode config dir
     opencodeConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-tuijson-oc-'));
-    pluginsDir = path.join(opencodeConfigDir, 'plugins');
-    fs.mkdirSync(pluginsDir, { recursive: true });
+    // projectDir is the tmpDir (simulates the gsr project root)
+    projectDir = tmpDir;
   });
 
   afterEach(() => {
@@ -227,12 +227,12 @@ describe('unifiedSync — tui-plugin step registers plugin in tui.json', () => {
   });
 
   test('tui-plugin step creates tui.json with plugin entry on first run', async () => {
-    const result = await unifiedSync({ configPath, pluginsDir, opencodeConfigDir });
+    const result = await unifiedSync({ configPath, projectDir, opencodeConfigDir });
 
     const tuiStep = result.steps.find(s => s.name === 'tui-plugin');
     assert.ok(tuiStep, 'tui-plugin step must exist');
     assert.equal(tuiStep.status, 'ok', 'tui-plugin step must succeed');
-    assert.equal(tuiStep.data.tuiJsonUpdated, true, 'tuiJsonUpdated must be true on first run');
+    assert.equal(tuiStep.data.registered, true, 'registered must be true on first run');
 
     const tuiJsonPath = path.join(opencodeConfigDir, 'tui.json');
     assert.ok(fs.existsSync(tuiJsonPath), 'tui.json must be created');
@@ -240,26 +240,26 @@ describe('unifiedSync — tui-plugin step registers plugin in tui.json', () => {
     const cfg = JSON.parse(fs.readFileSync(tuiJsonPath, 'utf8'));
     assert.ok(Array.isArray(cfg.plugin), 'cfg.plugin must be an array');
     assert.equal(cfg.plugin.length, 1, 'plugin array must have one entry');
-    // The registered path must end with gsr-plugin.tsx
-    assert.ok(cfg.plugin[0][0].endsWith('gsr-plugin.tsx'), 'plugin path must end with gsr-plugin.tsx');
+    // The registered path is the project directory (where tui.tsx lives)
+    assert.equal(cfg.plugin[0][0], projectDir, 'plugin path must be the project directory');
     assert.deepEqual(cfg.plugin[0][1], { enabled: true }, 'plugin must have enabled:true');
   });
 
-  test('tui-plugin step reports tuiJsonUpdated=false on second identical run', async () => {
-    await unifiedSync({ configPath, pluginsDir, opencodeConfigDir });
+  test('tui-plugin step reports registered=false on second identical run', async () => {
+    await unifiedSync({ configPath, projectDir, opencodeConfigDir });
 
-    const result = await unifiedSync({ configPath, pluginsDir, opencodeConfigDir });
+    const result = await unifiedSync({ configPath, projectDir, opencodeConfigDir });
     const tuiStep = result.steps.find(s => s.name === 'tui-plugin');
-    assert.equal(tuiStep.data.tuiJsonUpdated, false, 'tuiJsonUpdated must be false on second run (no-op)');
+    assert.equal(tuiStep.data.registered, false, 'registered must be false on second run (no-op)');
 
     const cfg = JSON.parse(fs.readFileSync(path.join(opencodeConfigDir, 'tui.json'), 'utf8'));
     assert.equal(cfg.plugin.length, 1, 'plugin array must still have exactly one entry after second run');
   });
 
-  test('tui-plugin step result always has tuiJsonUpdated boolean field', async () => {
-    const result = await unifiedSync({ configPath, pluginsDir, opencodeConfigDir });
+  test('tui-plugin step result always has registered boolean field', async () => {
+    const result = await unifiedSync({ configPath, projectDir, opencodeConfigDir });
     const tuiStep = result.steps.find(s => s.name === 'tui-plugin');
     assert.ok(tuiStep, 'tui-plugin step must exist');
-    assert.equal(typeof tuiStep.data.tuiJsonUpdated, 'boolean', 'tuiJsonUpdated must be a boolean');
+    assert.equal(typeof tuiStep.data.registered, 'boolean', 'registered must be a boolean');
   });
 });

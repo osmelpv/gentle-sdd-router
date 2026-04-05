@@ -8,7 +8,7 @@
  *   4. commands      — deploy gsr-*.md slash commands to OpenCode
  *   5. claude-code   — deploy gsr-*.md slash commands to Claude Code (~/.claude/commands/)
  *   6. validate      — readback opencode.json and verify expected agents
- *   7. tui-plugin    — deploy gsr-tui-plugin.js to ~/.config/opencode/plugins/ (as gsr-plugin.tsx)
+ *   7. tui-plugin    — register project directory in ~/.config/opencode/tui.json
  *
  * All steps return structured results; the caller decides what to print.
  * No step throws — failures are captured in the step result.
@@ -524,97 +524,46 @@ export function ensurePluginDeps(configDir) {
 
 /**
  * Step 7: Deploy src/adapters/opencode/gsr-tui-plugin.js to
- *         ~/.config/opencode/plugins/gsr-plugin.tsx
+ * Registers the gsr project directory in ~/.config/opencode/tui.json so OpenCode
+ * loads tui.tsx at the project root as the TUI plugin entry point.
  *
- * Also creates/merges ~/.config/opencode/package.json with the 4
- * required peer dependencies so OpenCode / Bun installs them on startup.
+ * tui.tsx is a thin wrapper that re-exports from src/adapters/opencode/gsr-tui-plugin.js.
+ * This avoids copying files and broken relative imports in the plugins/ directory.
  *
- * - Noop if destination content is identical (idempotent).
- * - Graceful skip if ~/.config/opencode/plugins/ does not exist and cannot be created.
- * - Never fails the pipeline — captured as 'skipped' or 'ok'.
+ * - Idempotent: noop if already registered.
+ * - Graceful skip if tui.json is not accessible.
+ * - Never fails the pipeline.
  *
  * @param {object} opts
  * @param {boolean} opts.dryRun
- * @param {string} [opts.pluginsDir] - override target dir (for testing)
- * @param {string} [opts.pluginSourcePath] - override source file path (for testing)
+ * @param {string} [opts.projectDir] - override project dir (for testing)
  * @param {string} [opts.opencodeConfigDir] - override ~/.config/opencode (for testing)
  */
 async function deployGsrPluginStep(opts) {
-  const { dryRun, pluginsDir, pluginSourcePath, opencodeConfigDir } = opts;
+  const { dryRun, projectDir, opencodeConfigDir } = opts;
 
   if (dryRun) {
-    return stepOk('tui-plugin', { dryRun: true, deployed: false, skipped: true });
+    return stepOk('tui-plugin', { dryRun: true, registered: false, skipped: true });
   }
 
   try {
-    // Resolve source path
-    const moduleDir = dirname(fileURLToPath(import.meta.url));
-    const sourcePath = pluginSourcePath
-      ?? join(moduleDir, '..', 'adapters', 'opencode', 'gsr-tui-plugin.js');
-
-    if (!existsSync(sourcePath)) {
-      return stepSkipped('tui-plugin', `TUI plugin source not found: ${sourcePath}`);
-    }
-
-    // Resolve target directory
-    const targetDir = pluginsDir ?? join(homedir(), '.config', 'opencode', 'plugins');
-
-    // Graceful: if plugins dir doesn't exist, try to create it
-    if (!existsSync(targetDir)) {
-      try {
-        mkdirSync(targetDir, { recursive: true });
-      } catch {
-        return stepSkipped('tui-plugin', `OpenCode plugins dir not accessible: ${targetDir}`);
-      }
-    }
-
-    const targetPath = join(targetDir, 'gsr-plugin.tsx');
-    const sourceContent = readFileSync(sourcePath, 'utf8');
-
-    // Noop detection: skip if content identical
-    let deployed = true;
-    if (existsSync(targetPath)) {
-      const existing = readFileSync(targetPath, 'utf8');
-      if (existing === sourceContent) {
-        deployed = false;
-      }
-    }
-
-    if (deployed) {
-      // Atomic write: temp file + rename
-      const tempPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
-      writeFileSync(tempPath, sourceContent, 'utf8');
-      renameSync(tempPath, targetPath);
-    }
-
-    // Ensure peer dependencies are declared in ~/.config/opencode/package.json
     const configDir = opencodeConfigDir ?? join(homedir(), '.config', 'opencode');
-    let depsResult = { changed: false, pkgPath: join(configDir, 'package.json') };
-    try {
-      depsResult = ensurePluginDeps(configDir);
-    } catch {
-      // Non-fatal: deps declaration is best-effort
-    }
 
-    // Register plugin in tui.json
-    let tuiJsonUpdated = false;
+    // The project directory — tui.tsx lives at its root
+    const pluginDir = projectDir ?? process.cwd();
+
+    // Register project dir in tui.json
+    let registered = false;
     try {
-      tuiJsonUpdated = ensureTuiJsonPlugin(configDir, targetPath);
+      registered = ensureTuiJsonPlugin(configDir, pluginDir);
     } catch (tuiErr) {
-      // Non-fatal: tui.json registration is best-effort
       // eslint-disable-next-line no-console
       console.warn(`[gsr] Warning: could not register plugin in tui.json: ${tuiErr.message}`);
     }
 
-    const result = { deployed, skipped: !deployed, targetPath, pkgPath: depsResult.pkgPath, tuiJsonUpdated };
-    if (depsResult.changed) {
-      result.installNote = 'OpenCode will install plugin deps on next startup (bun install)';
-    }
-
-    return stepOk('tui-plugin', result);
+    return stepOk('tui-plugin', { registered, skipped: !registered, pluginDir });
   } catch (err) {
-    // Never fail the pipeline — graceful skip
-    return stepSkipped('tui-plugin', `TUI plugin deploy skipped: ${err.message}`);
+    return stepSkipped('tui-plugin', `TUI plugin registration skipped: ${err.message}`);
   }
 }
 
@@ -657,8 +606,7 @@ export async function unifiedSync(options = {}) {
     targetPath,
     commandsDir,
     claudeCommandsDir,
-    pluginsDir,
-    pluginSourcePath,
+    projectDir,
     opencodeConfigDir,
   } = options;
 
@@ -749,7 +697,7 @@ export async function unifiedSync(options = {}) {
   steps.push(validateStep);
 
   // Step 7: deploy TUI plugin
-  const tuiPluginStep = await deployGsrPluginStep({ dryRun, pluginsDir, pluginSourcePath, opencodeConfigDir });
+  const tuiPluginStep = await deployGsrPluginStep({ dryRun, projectDir, opencodeConfigDir });
   steps.push(tuiPluginStep);
 
   // Derive requiresReopen from validate step
