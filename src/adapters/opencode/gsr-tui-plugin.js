@@ -200,18 +200,15 @@ async function showFallbackFlow(api, forcedPhase) {
     category: 'GSR',
   }));
 
-  api.ui.DialogSelect({
+  // Step 1: phase selector — must be passed as render function to dialog.replace()
+  api.ui.dialog.replace(() => api.ui.DialogSelect({
     title: `GSR: Select phase to manage (${presetName})`,
     placeholder: 'Type to filter phases…',
     options: phaseOptions,
     onSelect: async (option) => {
-      api.ui.dialog.replace(
-        () => null, // Replaced below; SolidJS root is managed by OpenCode
-        undefined
-      );
       await showFallbackStep2(api, presetName, option.value);
     },
-  });
+  }));
 }
 
 /**
@@ -243,30 +240,25 @@ async function showFallbackStep2(api, presetName, phaseName) {
     category: 'Fallbacks',
   }));
 
-  api.ui.dialog.replace(
-    () => null, // OpenCode handles the SolidJS root
-    undefined
-  );
-
-  api.ui.DialogSelect({
+  // Step 2: fallback selector — replace current dialog content
+  api.ui.dialog.replace(() => api.ui.DialogSelect({
     title: `Promote fallback for "${phaseName}"`,
     placeholder: 'Select fallback to promote to primary…',
     options: fallbackOptions,
     current: null,
     onSelect: async (option) => {
+      api.ui.dialog.clear();
       try {
         await execAsync(
           `gsr fallback promote ${presetName} ${phaseName} ${option.value}`,
           { timeout: 10000 }
         );
         api.ui.toast({ message: `✓ Promoted ${option.title} to primary for ${phaseName}!`, variant: 'success' });
-        api.ui.dialog.clear();
       } catch (err) {
         api.ui.toast({ message: `✗ Promote failed: ${err.message}`, variant: 'error' });
-        api.ui.dialog.clear();
       }
     },
-  });
+  }));
 }
 
 // ── GSR_FALLBACK_REQUEST detection ────────────────────────────────────────────
@@ -312,21 +304,23 @@ function parseModelError(event) {
 // ── Main Plugin ───────────────────────────────────────────────────────────────
 
 /**
- * GsrPlugin — OpenCode TUI Plugin for gsr fallback management.
+ * tui — OpenCode TUI Plugin for gsr fallback management.
+ *
+ * OpenCode detects TUI plugins by looking for a named export called `tui`.
  *
  * @param {object} api - OpenCode TUI Plugin API
  * @param {object} options - Plugin options
  * @param {object} meta - Plugin metadata
  */
-export const GsrPlugin = async (api, options, meta) => {
-  // 1. Register /gsr-fallback as a native TUI command
+export const tui = async (api, options, meta) => {
+  // 1. Register GSR — Manage fallbacks as a native TUI command
   api.command.register(() => [
     {
-      title: 'GSR: Manage fallbacks',
+      title: 'GSR — Manage fallbacks',
       value: 'gsr-fallback',
-      description: 'Promote a fallback model to primary for any phase',
+      description: 'Promote a fallback model to primary via native dialog',
       category: 'GSR',
-      slash: { name: 'gsr-fallback' },
+      // NOTE: No slash property — avoids conflict with gsr-fallback-manual.md markdown command
       onSelect: () => showFallbackFlow(api),
     },
   ]);
@@ -408,3 +402,10 @@ export const GsrPlugin = async (api, options, meta) => {
     }
   });
 };
+
+/**
+ * GsrPlugin — backward-compatible alias for the `tui` export.
+ * OpenCode requires the export named `tui`; this alias is kept for
+ * internal consumers (tests, CLI deployer) that reference GsrPlugin.
+ */
+export const GsrPlugin = tui;

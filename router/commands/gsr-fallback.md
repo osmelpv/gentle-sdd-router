@@ -1,5 +1,5 @@
 ---
-description: "[Fallback] Promote a fallback model to primary for any phase"
+description: "[Fallback] Manual fallback flow (chat-based). Prefer the GSR Manage Fallbacks command in the palette."
 ---
 
 ## Step 1 — Read active preset and fallback config

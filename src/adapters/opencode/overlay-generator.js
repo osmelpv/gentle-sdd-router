@@ -401,7 +401,10 @@ export function deployGsrCommands(options = {}) {
 
   for (const file of sourceFiles) {
     const sourcePath = join(sourceDir, file);
-    const targetPath = join(targetDir, file);
+    // Rename gsr-fallback.md → gsr-fallback-manual.md to avoid conflict with
+    // the TUI plugin's registered /gsr-fallback command in the command palette.
+    const deployedFileName = file === 'gsr-fallback.md' ? 'gsr-fallback-manual.md' : file;
+    const targetPath = join(targetDir, deployedFileName);
     const sourceContent = readFileSync(sourcePath, 'utf8');
 
     // Skip if identical content already exists
@@ -417,7 +420,7 @@ export function deployGsrCommands(options = {}) {
     const tempPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
     writeFileSync(tempPath, sourceContent, 'utf8');
     renameSync(tempPath, targetPath);
-    files.push(file);
+    files.push(deployedFileName);
     written++;
   }
 
