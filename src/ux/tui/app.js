@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { render, Box, Text, useApp, useInput } from 'ink';
 import { useRouter } from './use-router.js';
 import { Header } from './components/header.js';
@@ -19,6 +19,7 @@ import { SddCreateWizard } from './screens/sdd-create-wizard.js';
 import { SddPhaseEditor } from './screens/sdd-phase-editor.js';
 import { SddRoleEditor } from './screens/sdd-role-editor.js';
 import { AgentIdentityEditor } from './screens/agent-identity-editor.js';
+import { appendTuiDebug, resetTuiDebugLog } from '../../debug/tui-debug-log.js';
 
 const h = React.createElement;
 
@@ -33,6 +34,17 @@ function App({ initialConfig, initialConfigPath }) {
   const [selectedProfile, setSelectedProfile] = useState(null);
   const [selectedSdd, setSelectedSdd] = useState(null);
 
+  useEffect(() => {
+    appendTuiDebug('app_state', {
+      screen: router.current,
+      breadcrumb: router.breadcrumb,
+      configPath,
+      activePreset: config?.active_preset ?? null,
+      selectedProfile,
+      selectedCatalog,
+    });
+  }, [router.current, router.breadcrumb, configPath, config?.active_preset, selectedProfile, selectedCatalog]);
+
   // Global quit (only when not in text input screens)
   useInput((input, key) => {
     const textScreens = ['create-profile', 'edit-profile', 'sdd-create-wizard', 'sdd-list', 'sdd-detail', 'sdd-phase-editor', 'sdd-role-editor', 'agent-identity-editor'];
@@ -43,20 +55,36 @@ function App({ initialConfig, initialConfigPath }) {
   });
 
   const showResult = (text) => {
+    appendTuiDebug('show_result', {
+      screen: router.current,
+      text,
+    });
     setResult(text);
     router.push('result');
   };
 
   const reloadConfig = () => {
+    appendTuiDebug('reload_config_start', {
+      currentConfigPath: configPath,
+      cwd: process.cwd(),
+    });
     return import('../../router-config.js').then(mod => {
       try {
         const newConfigPath = mod.discoverConfigPath([process.cwd()]);
         if (newConfigPath) {
           const newConfig = mod.loadRouterConfig(newConfigPath);
+          appendTuiDebug('reload_config_success', {
+            requestedConfigPath: configPath,
+            newConfigPath,
+            activePreset: newConfig?.active_preset ?? null,
+          });
           setConfig(newConfig);
           setConfigPath(newConfigPath);
         }
-      } catch { /* stay with current */ }
+      } catch (error) {
+        appendTuiDebug('reload_config_error', { error });
+        /* stay with current */
+      }
     });
   };
 
@@ -101,6 +129,10 @@ function App({ initialConfig, initialConfigPath }) {
 }
 
 export async function startTui(configPath, config) {
+  resetTuiDebugLog({
+    configPath,
+    activePreset: config?.active_preset ?? null,
+  });
   const { waitUntilExit } = render(h(App, { initialConfig: config, initialConfigPath: configPath }), {
     exitOnCtrlC: true,
   });

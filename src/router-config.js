@@ -10,6 +10,7 @@ export {
   resolveRouterState,
   setActivationState,
   setActiveProfile,
+  setPresetMetadata,
   stringifyYaml,
   validateRouterSchemaV3,
   validateRouterConfig,

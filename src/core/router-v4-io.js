@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseYaml } from './router.js';
+import { appendTuiDebug } from '../debug/tui-debug-log.js';
 
 /** Resolve the plugin's own router/ directory (where built-in presets live). */
 const __pluginDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -245,6 +246,11 @@ export function validateProfileFile(profile, filePath) {
 export function loadV4Profiles(routerDir, options = {}) {
   const includeGlobal = options.includeGlobal !== false && process.env.GSR_TEST_NO_GLOBAL !== '1';
   const projectProfilesDir = path.join(routerDir, 'profiles');
+  appendTuiDebug('load_v4_profiles_start', {
+    routerDir,
+    includeGlobal,
+    projectProfilesDir,
+  });
 
   if (!fs.existsSync(projectProfilesDir)) {
     throw new Error(`No profiles directory found at "${projectProfilesDir}". A v4 router requires at least one profile file.`);
@@ -269,6 +275,16 @@ export function loadV4Profiles(routerDir, options = {}) {
   if (results.length === 0) {
     throw new Error(`No profile files found under "${projectProfilesDir}". A v4 router requires at least one *.router.yaml file.`);
   }
+
+  appendTuiDebug('load_v4_profiles_done', {
+    routerDir,
+    profiles: results.map((result) => ({
+      name: result.content?.name ?? null,
+      catalogName: result.catalogName,
+      filePath: result.filePath,
+      hidden: result.content?.hidden ?? null,
+    })),
+  });
 
   return results;
 }
@@ -409,6 +425,14 @@ export function assembleV4Config(coreConfig, profiles) {
     enumerable: false,
     writable: true,
     configurable: true,
+  });
+
+  appendTuiDebug('assemble_v4_config_done', {
+    activePreset: assembled?.active_preset ?? null,
+    activeCatalog: assembled?.active_catalog ?? null,
+    presetHidden: Object.fromEntries(
+      Object.entries(assembled?.catalogs?.default?.presets ?? {}).map(([name, preset]) => [name, preset?.hidden ?? null])
+    ),
   });
 
   return assembled;

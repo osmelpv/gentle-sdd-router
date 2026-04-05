@@ -5,6 +5,7 @@ import { gzipSync, gunzipSync } from 'node:zlib';
 import { get } from 'node:https';
 import { parseYaml, stringifyYaml } from './router.js';
 import { validateProfileFile } from './router-v4-io.js';
+import { appendTuiDebug } from '../debug/tui-debug-log.js';
 
 const COMPACT_PREFIX = 'gsr://';
 const URL_TIMEOUT_MS = 10000;
@@ -540,11 +541,20 @@ export function updatePresetMetadata(name, updates, routerDir, options = {}) {
 
   const profilePath = findProfilePath(name, routerDir, options.catalog);
   if (!profilePath) {
+    appendTuiDebug('update_preset_metadata_missing', { name, updates, routerDir, options });
     throw new Error(`Preset '${name}' not found.`);
   }
 
   const rawYaml = readFileSync(profilePath, 'utf8');
   const existing = parseYaml(rawYaml);
+  appendTuiDebug('update_preset_metadata_read', {
+    name,
+    routerDir,
+    options,
+    profilePath,
+    existingHidden: existing?.hidden,
+    updates,
+  });
 
   // Apply updates, preserving name and phases
   const updated = { ...existing, ...updates };
@@ -557,6 +567,14 @@ export function updatePresetMetadata(name, updates, routerDir, options = {}) {
   const tempPath = `${profilePath}.${process.pid}.${Date.now()}.tmp`;
   writeFileSync(tempPath, yaml, 'utf8');
   renameSync(tempPath, profilePath);
+
+  const writtenYaml = readFileSync(profilePath, 'utf8');
+  const written = parseYaml(writtenYaml);
+  appendTuiDebug('update_preset_metadata_written', {
+    name,
+    profilePath,
+    writtenHidden: written?.hidden,
+  });
 
   return { presetName: name, path: profilePath };
 }

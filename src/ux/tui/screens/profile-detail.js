@@ -4,6 +4,7 @@ import { TextInput } from '@inkjs/ui';
 import { Menu } from '../components/menu.js';
 import { colors } from '../theme.js';
 import { getActivePresetOwner } from '../../../core/public-preset-metadata.js';
+import { appendTuiDebug } from '../../../debug/tui-debug-log.js';
 
 const h = React.createElement;
 
@@ -14,17 +15,31 @@ function formatCtx(cw) {
   return String(cw);
 }
 
-export function ProfileDetailScreen({ config: propConfig, configPath: propConfigPath, router, setDescription, showResult, reloadConfig, selectedCatalog, selectedProfile, updateConfig }) {
+export function ProfileDetailScreen({ config: propConfig, configPath: propConfigPath, router, setDescription, showResult, reloadConfig, selectedCatalog, selectedProfile, setConfig }) {
   const [localConfig, setLocalConfig] = useState(propConfig);
   const [localConfigPath, setLocalConfigPath] = useState(propConfigPath);
   const [subView, setSubView] = useState('menu'); // 'menu' | 'copying'
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLocalConfig(propConfig);
+    setLocalConfigPath(propConfigPath);
+  }, [propConfig, propConfigPath]);
+
+  useEffect(() => {
+    appendTuiDebug('profile_detail_render', {
+      screen: 'profile-detail',
+      selectedProfile,
+      selectedCatalog,
+      configPath: localConfigPath,
+      activePreset: localConfig?.active_preset ?? null,
+    });
+  }, [selectedProfile, selectedCatalog, localConfigPath, localConfig?.active_preset]);
+
+  useEffect(() => {
     (async () => {
       try {
-        const mod = await import('../../../router-localConfig.js');
-        const pathMod = await import('node:path');
+        const mod = await import('../../../router-config.js');
         const freshConfigPath = mod.discoverConfigPath([process.cwd()]);
         if (freshConfigPath) {
           const freshConfig = mod.loadRouterConfig(freshConfigPath);
@@ -105,7 +120,7 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
         onSubmit: async (newName) => {
           if (!newName.trim()) { setSubView('menu'); return; }
           try {
-            const mod = await import('../../../router-localConfig.js');
+            const mod = await import('../../../router-config.js');
             const path = await import('node:path');
             const routerDir = path.dirname(localConfigPath);
             mod.copyProfile(activePresetName, newName.trim(), routerDir);
@@ -140,7 +155,7 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
       onSelect: async (value) => {
         if (value === '__back__') { router.pop(); return; }
 
-        const mod = await import('../../../router-localConfig.js');
+        const mod = await import('../../../router-config.js');
         const routerDir = localConfigPath ? localConfigPath.replace(/\/router\.yaml$/, '') : null;
 
         if (value === 'edit') {
@@ -155,29 +170,31 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
 
         if (value === 'toggle-visibility') {
           try {
-            const path = await import('node:path');
-            const routerDir = path.dirname(localConfigPath);
-            const newHidden = isVisible ? true : false;
-            mod.updatePresetMetadata(activePresetName, { hidden: newHidden }, routerDir);
-            
-            // Clear cache and reload fresh localConfig
-            const cacheKey = Object.keys(require.cache).find(k => k.includes('adapters/opencode/index'));
-            if (cacheKey) delete require.cache[cacheKey];
-            
-            const { discoverConfigPath: disc, loadRouterConfig: load } = await import('../../../adapters/opencode/index.js');
-            const newConfigPath = disc([process.cwd()]);
-            const newConfig = load(newConfigPath);
-            
-            if (setLocalConfig) {
-              setLocalConfig(newConfig);
-            }
-            
-            if (updateConfig) {
-              updateConfig(newConfig);
-            }
+            const newHidden = isVisible;
+            appendTuiDebug('profile_detail_toggle_start', {
+              preset: activePresetName,
+              fromVisible: isVisible,
+              toHidden: newHidden,
+              configPath: localConfigPath,
+            });
+            const nextConfig = mod.setPresetMetadata(localConfig, activePresetName, { hidden: newHidden });
+            mod.saveRouterConfig(nextConfig, localConfigPath, localConfig);
+
+            const freshConfig = mod.loadRouterConfig(localConfigPath);
+            const freshPreset = freshConfig?.catalogs?.[selectedCatalog || activeOwner?.catalogName || freshConfig?.active_catalog || 'default']?.presets?.[activePresetName];
+            appendTuiDebug('profile_detail_toggle_reloaded', {
+              preset: activePresetName,
+              hiddenInFreshConfig: freshPreset?.hidden,
+            });
+            setLocalConfig(freshConfig);
+            if (setConfig) setConfig(freshConfig);
             
             showResult(`Preset '${activePresetName}' is now ${newHidden ? 'hidden' : 'visible'}. Run 'gsr sync' to update OpenCode.`);
           } catch (err) {
+            appendTuiDebug('profile_detail_toggle_error', {
+              preset: activePresetName,
+              error: err,
+            });
             showResult(`Error: ${err.message}`);
           }
           return;

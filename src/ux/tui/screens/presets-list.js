@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Menu } from '../components/menu.js';
 import { colors, cursor as cursorChar } from '../theme.js';
+import { appendTuiDebug } from '../../../debug/tui-debug-log.js';
 
 const h = React.createElement;
 
@@ -44,8 +45,30 @@ export function PresetsScreen({ config, configPath, router, setDescription, show
     presets.push({ label: '__none__', displayLabel: 'No presets found', description: 'Install gsr first or create a preset.', isActive: false });
   }
 
+  useEffect(() => {
+    appendTuiDebug('presets_screen_render', {
+      screen: 'presets',
+      selectedPresetName,
+      configPath,
+      activePreset,
+      presets: presets.map((preset) => ({
+        label: preset.label,
+        isVisible: preset.isVisible ?? null,
+        isActive: preset.isActive ?? null,
+        tag: preset.tag ?? null,
+      })),
+    });
+  }, [config, configPath, activePreset, selectedPresetName]);
+
+  useEffect(() => {
+    if (selectedPresetName && !presets.some(p => p.label === selectedPresetName)) {
+      setSelectedPresetName(null);
+    }
+  }, [selectedPresetName, presets]);
+
   const handleSelect = async (value) => {
     if (value === '__none__') return;
+    appendTuiDebug('presets_select', { value });
     setSelectedPresetName(value);
   };
 
@@ -53,30 +76,49 @@ export function PresetsScreen({ config, configPath, router, setDescription, show
     if (value === '__none__') return;
 
     const preset = presets.find(p => p.label === value);
-    if (!preset) return;
+    if (!preset) {
+      appendTuiDebug('presets_toggle_missing_preset', { value });
+      return;
+    }
+
+    const newHiddenValue = preset.isVisible;
 
     try {
+      appendTuiDebug('presets_toggle_start', {
+        preset: preset.label,
+        fromVisible: preset.isVisible,
+        toHidden: newHiddenValue,
+        configPath,
+      });
+      
       const mod = await import('../../../router-config.js');
-      const pathMod = await import('node:path');
-      const routerDir = pathMod.dirname(configPath);
-      
-      mod.updatePresetMetadata(preset.label, { hidden: !preset.isVisible }, routerDir);
-      
-      // Clear require cache to force fresh config load
-      const cacheKey = Object.keys(require.cache).find(k => k.includes('adapters/opencode/index'));
-      if (cacheKey) delete require.cache[cacheKey];
-      
-      const { discoverConfigPath: disc, loadRouterConfig: load } = await import('../../../adapters/opencode/index.js');
-      const newConfigPath = disc([process.cwd()]);
-      const newConfig = load(newConfigPath);
-      
+      const nextConfig = mod.setPresetMetadata(config, preset.label, { hidden: newHiddenValue });
+      mod.saveRouterConfig(nextConfig, configPath, config);
+
+      // Reload the exact config file backing the current TUI session.
+      const freshConfig = mod.loadRouterConfig(configPath);
+      const freshPreset = freshConfig?.catalogs?.[preset.catalogName]?.presets?.[preset.label];
+      appendTuiDebug('presets_toggle_reloaded', {
+        preset: preset.label,
+        hiddenInFreshConfig: freshPreset?.hidden,
+        catalogName: preset.catalogName,
+        freshActivePreset: freshConfig?.active_preset ?? null,
+      });
       if (setConfig) {
-        setConfig(newConfig);
+        appendTuiDebug('presets_toggle_set_config', {
+          preset: preset.label,
+          hiddenInFreshConfig: freshPreset?.hidden,
+        });
+        setConfig(freshConfig);
       }
-      
-      showResult(`Preset '${preset.label}' is now ${!preset.isVisible ? 'hidden' : 'visible'}. Run 'gsr sync' to update OpenCode.`);
+
+      setLastMessage(`Preset '${preset.label}' is now ${newHiddenValue ? 'hidden' : 'visible'}. Run 'gsr sync'.`);
     } catch (err) {
-      showResult(`Error: ${err.message}`);
+      appendTuiDebug('presets_toggle_error', {
+        preset: preset.label,
+        error: err,
+      });
+      setLastMessage(`Error: ${err.message}`);
     }
   };
 
@@ -109,9 +151,11 @@ export function PresetsScreen({ config, configPath, router, setDescription, show
   useInput((input, key) => {
     if (key.escape) {
       if (selectedPresetName) {
+        appendTuiDebug('presets_escape_close_actions', { selectedPresetName });
         setSelectedPresetName(null);
         return;
       }
+      appendTuiDebug('presets_escape_back', { screen: 'presets' });
       router.pop();
     }
   });
@@ -119,7 +163,6 @@ export function PresetsScreen({ config, configPath, router, setDescription, show
   if (selectedPresetName) {
     const preset = presets.find(p => p.label === selectedPresetName);
     if (!preset) {
-      setSelectedPresetName(null);
       return null;
     }
 
@@ -188,16 +231,16 @@ function PresetMenu({ items, onSelect, onToggleVisibility, onDelete, setDescript
     ? [...items, { label: '__back__', displayLabel: 'Back', description: 'Return to previous menu.' }]
     : items;
 
-  useState(() => {
+  useEffect(() => {
     setCursor(prev => (prev >= allItems.length ? 0 : prev));
-  });
+  }, [allItems.length]);
 
-  useState(() => {
+  useEffect(() => {
     const item = allItems[cursor];
     if (item && setDescription) {
       setDescription(item.description || '');
     }
-  });
+  }, [cursor, allItems, setDescription]);
 
   useInput((input, key) => {
     if (key.upArrow || input === 'k') {
@@ -208,10 +251,12 @@ function PresetMenu({ items, onSelect, onToggleVisibility, onDelete, setDescript
     }
     if (key.return) {
       const item = allItems[cursor];
+      appendTuiDebug('preset_menu_enter', { item: item?.label ?? null, cursor });
       if (item) onSelect(item.label);
     }
     if (input === 'v' || input === 'V') {
       const item = allItems[cursor];
+      appendTuiDebug('preset_menu_toggle_key', { item: item?.label ?? null, cursor });
       if (item && item.label !== '__back__' && item.label !== '__none__' && onToggleVisibility) {
         onToggleVisibility(item.label);
       }

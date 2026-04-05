@@ -90,6 +90,54 @@ export function setActiveProfile(config, profileName) {
   };
 }
 
+export function setPresetMetadata(config, presetName, updates) {
+  if (!isObject(config)) {
+    throw new Error('Config is required.');
+  }
+  if (config.version !== 3) {
+    throw new Error('setPresetMetadata currently supports version: 3 configs only.');
+  }
+  if (!presetName || typeof presetName !== 'string' || !presetName.trim()) {
+    throw new Error('Preset name is required.');
+  }
+  if (!isObject(updates)) {
+    throw new Error('Updates must be an object.');
+  }
+
+  const owner = findPresetOwner(config, presetName.trim());
+  if (!owner) {
+    throw new Error(`Preset "${presetName}" does not exist.`);
+  }
+
+  const catalogName = owner.catalogName;
+  const catalog = config.catalogs?.[catalogName];
+  const currentPreset = catalog?.presets?.[presetName];
+
+  const newConfig = {
+    ...config,
+    catalogs: {
+      ...config.catalogs,
+      [catalogName]: {
+        ...catalog,
+        presets: {
+          ...catalog.presets,
+          [presetName]: {
+            ...currentPreset,
+            ...updates,
+          },
+        },
+      },
+    },
+  };
+
+  const v4SourceDescriptor = Object.getOwnPropertyDescriptor(config, '_v4Source');
+  if (v4SourceDescriptor) {
+    Object.defineProperty(newConfig, '_v4Source', v4SourceDescriptor);
+  }
+
+  return newConfig;
+}
+
 export function setActivationState(config, activationState) {
   const normalized = normalizeActivationState(activationState, 'activationState');
   const nextConfig = {

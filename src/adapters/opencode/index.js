@@ -65,6 +65,7 @@ import {
   GSR_AGENT_PREFIX as _GSR_AGENT_PREFIX,
   cleanStaleGlobalOverlay as _cleanStaleGlobalOverlay,
 } from './overlay-generator.js';
+import { appendTuiDebug } from '../../debug/tui-debug-log.js';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 
@@ -162,6 +163,11 @@ export function tryGetConfigPath(startPoints = [process.cwd(), MODULE_DIR]) {
 export function loadRouterConfig(configPath = getConfigPath()) {
   const raw = fs.readFileSync(configPath, 'utf8');
   const config = parseYaml(raw);
+  appendTuiDebug('load_router_config_start', {
+    configPath,
+    version: config?.version ?? null,
+    activePreset: config?.active_preset ?? null,
+  });
 
   if (config.version === 4 || config.version === 5) {
     const routerDir = path.dirname(configPath);
@@ -176,10 +182,22 @@ export function loadRouterConfig(configPath = getConfigPath()) {
     });
 
     validateRouterConfig(assembled);
+    appendTuiDebug('load_router_config_assembled', {
+      configPath,
+      routerDir,
+      activePreset: assembled?.active_preset ?? null,
+      presetHidden: Object.fromEntries(
+        Object.entries(assembled?.catalogs?.default?.presets ?? {}).map(([name, preset]) => [name, preset?.hidden ?? null])
+      ),
+    });
     return assembled;
   }
 
   validateRouterConfig(config);
+  appendTuiDebug('load_router_config_plain', {
+    configPath,
+    activePreset: config?.active_preset ?? null,
+  });
   return config;
 }
 
@@ -205,6 +223,12 @@ export function deactivateOpenCodeCommand(context = detectOpenCodeRuntimeContext
 
 export function saveRouterConfig(config, configPath = getConfigPath(), previousConfig = null) {
   validateRouterConfig(config);
+  appendTuiDebug('save_router_config_start', {
+    configPath,
+    version: config?.version ?? null,
+    activePreset: config?.active_preset ?? null,
+    hasV4Source: Boolean(config?._v4Source ?? previousConfig?._v4Source),
+  });
 
   // Detect v4 configs: either config has _v4Source or previousConfig does (spread loses non-enumerable).
   const v4Source = config._v4Source ?? previousConfig?._v4Source ?? null;
@@ -232,7 +256,13 @@ export function saveRouterConfig(config, configPath = getConfigPath(), previousC
           configurable: true,
           writable: true,
         });
-    return saveV4Config(configWithSource, configPath, previousConfig);
+    const result = saveV4Config(configWithSource, configPath, previousConfig);
+    appendTuiDebug('save_router_config_done', {
+      configPath,
+      mode: 'v4',
+      activePreset: config?.active_preset ?? null,
+    });
+    return result;
   }
 
   const yaml = stringifyYaml(config);
@@ -251,6 +281,12 @@ export function saveRouterConfig(config, configPath = getConfigPath(), previousC
 
     throw error;
   }
+
+  appendTuiDebug('save_router_config_done', {
+    configPath,
+    mode: 'plain',
+    activePreset: config?.active_preset ?? null,
+  });
 }
 
 function saveV4Config(config, configPath, previousConfig) {
