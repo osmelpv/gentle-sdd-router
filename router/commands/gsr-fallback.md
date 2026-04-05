@@ -2,82 +2,81 @@
 description: "[Fallback] Promote a fallback model to primary for any phase"
 ---
 
-## Step 1 — Read and display phase list
+## Step 1 — Read active preset and fallback config
 
-!`node --input-type=module --eval "
-import { readFileSync } from 'node:fs';
-import { execSync } from 'node:child_process';
-try {
-  const raw = execSync('gsr fallback list $ARGUMENTS 2>/dev/null || gsr fallback list', { encoding: 'utf8' });
-  process.stdout.write(raw);
-} catch(e) {
-  process.stdout.write('Could not read fallback config. Make sure gsr is configured.\n');
-}
-" 2>/dev/null`
+!`gsr status 2>/dev/null || echo "gsr not found in PATH"`
 
-Based on the output above, present this to the user:
+!`gsr fallback list $ARGUMENTS 2>/dev/null || gsr fallback list 2>/dev/null || echo "NO_FALLBACKS"`
+
+Based on the output above:
 
 **PASO 1 — ¿Qué fase querés cambiar?**
 
-Show a numbered list of phases that have at least one fallback. Format each line as:
-  [N] <phase>  →  <current_primary_model>  (<X> fallbacks)
+Parse the `gsr fallback list` output. For each phase that has at least one fallback, show:
+
+```
+[N] <phase>  →  <current_primary_model>  (<X> fallbacks)
+```
 
 Example:
-  [1] orchestrator  →  anthropic/claude-sonnet-4-6  (3 fallbacks)
-  [2] explore       →  openai/gpt-5.4               (2 fallbacks)
+```
+[1] orchestrator  →  anthropic/claude-sonnet-4-6  (3 fallbacks)
+[2] explore       →  openai/gpt-5.4               (2 fallbacks)
+```
 
-If no phases have fallbacks, tell the user: "No fallbacks configured. Use `gsr fallback add <preset> <phase> <model>` to add some."
+- If `gsr not found in PATH`: tell the user to install gsr or add it to PATH.
+- If `NO_FALLBACKS` or no phases with fallbacks: tell the user "No fallbacks configured. Use `gsr fallback add <preset> <phase> <model>` to add some."
+- If `$ARGUMENTS` was provided, use it as the preset name. Otherwise use the active preset from `gsr status`.
 
 Ask: "Reply with a number to select a phase."
 
-Wait for user input before continuing to Step 2.
+**Wait for user input before continuing.**
 
 ---
 
-## Step 2 — Show fallback options for selected phase
+## Step 2 — Show fallback chain for selected phase
 
-Once the user picks a phase number, show:
+Once the user replies with a number, identify the selected phase from Step 1.
+
+Show:
 
 **PASO 2 — ¿Qué fallback promover a primario?**
 
-List the fallback chain for the selected phase:
-  Primario actual: <current_target>
+```
+Primario actual: <current_target_of_selected_phase>
 
-  [1] <fallback_1>
-  [2] <fallback_2>
-  [N] <fallback_N>
+[1] <fallback_1>
+[2] <fallback_2>
+[N] <fallback_N>
 
-  Resultado del intercambio:
-  → [elegido] se convierte en primario
-  → <current_target> pasa a ser fallback #1
-  → El resto mantiene su orden (sin el elegido)
+Resultado del intercambio:
+→ [elegido] se convierte en primario
+→ <current_target> pasa a ser fallback #1
+→ El resto mantiene su orden (sin el elegido)
+```
 
 Ask: "Reply with a number to promote that fallback."
 
-Wait for user input before executing Step 3.
+**Wait for user input before continuing.**
 
 ---
 
 ## Step 3 — Execute the swap
 
-Once the user picks a fallback number, run:
+Once the user replies with a fallback number:
 
-!`gsr fallback promote $ARGUMENTS <phase> <chosen_index>`
+1. Identify from Step 1: `PRESET` (active preset name from `gsr status` output, or `$ARGUMENTS`), `PHASE` (selected in Step 1), `INDEX` (chosen in Step 2).
 
-Replace `$ARGUMENTS` with the active preset name (read from `!`gsr status --json 2>/dev/null | node --input-type=module --eval "import {createReadStream} from 'node:stream'; let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{try{const j=JSON.parse(d);process.stdout.write(j.active_preset||'')}catch{}})"` or use `$ARGUMENTS` if preset was passed as argument).
+2. Run the promote command using those values:
 
-Then show the result and run:
+!`gsr fallback promote PRESET PHASE INDEX 2>&1`
 
-!`node --input-type=module --eval "
-import { createOpencodeClient } from '@opencode-ai/sdk';
-try {
-  const { client } = await createOpencodeClient({ timeout: 3000 });
-  await client.tui.showToast({ body: { 
-    message: '✓ Fallback promoted. Run gsr sync to apply.',
-    variant: 'success'
-  }});
-} catch(e) {}
-" 2>/dev/null || true`
+(Replace PRESET, PHASE, INDEX with the actual values resolved from Steps 1 and 2 — do NOT run this line literally with the words PRESET/PHASE/INDEX.)
 
-Finally tell the user:
-"✓ Done! The new primary model is active. OpenCode config has been updated via `gsr sync`."
+3. Then run sync:
+
+!`gsr sync 2>&1 | tail -5`
+
+4. Show the user what changed and confirm:
+
+"✓ Done! **[chosen_model]** is now the primary model for **[phase]**. The previous primary **[old_model]** is now fallback #1."
