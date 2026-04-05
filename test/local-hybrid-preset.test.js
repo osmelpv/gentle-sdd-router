@@ -8,8 +8,8 @@
  *   - Preset loads via loadV4Profiles without throwing
  *   - All 9 canonical SDD phases are covered (debug moved to sdd-debug catalog)
  *   - Each phase has at minimum one lane with a primary role
- *   - Primary targets use openrouter free tier models
- *   - Fallbacks include ollama/ local models for offline use
+ *   - Primary targets use a mix of anthropic/, opencode/, openai/, and opencode-go/ models
+ *   - Fallbacks include multi-vendor diversity for resilience
  *   - Identity section is present with inherit_agents_md: true and persona: gentleman
  *   - Preset name matches file convention: 'local-hybrid'
  */
@@ -133,12 +133,18 @@ describe('local-hybrid preset — phase coverage', () => {
 describe('local-hybrid preset — model assignment strategy', () => {
   test('main lane models match the intended hybrid routing strategy', () => {
     // Main lane = role: primary for most phases, role: judge for verify phase.
-    // The preset intentionally mixes free cloud, paid cloud, and local-first choices by phase.
+    // The preset intentionally mixes free cloud, paid cloud, and premium choices by phase.
     const preset = loadPreset();
     const EXPECTED_PREFIXES = {
+      orchestrator: 'anthropic/',
+      explore: 'opencode/',
+      propose: 'opencode/',
+      spec: 'opencode/',
+      design: 'anthropic/',
+      tasks: 'opencode/',
       apply: 'anthropic/',
       verify: 'openai/',
-      archive: 'google/',
+      archive: 'opencode-go/',
     };
 
     for (const [phaseName, lanes] of Object.entries(preset.phases)) {
@@ -149,44 +155,35 @@ describe('local-hybrid preset — model assignment strategy', () => {
         `Phase "${phaseName}" main lane must have a non-empty target`
       );
 
-      const expectedPrefix = EXPECTED_PREFIXES[phaseName] ?? 'opencode/';
-
-      if (phaseName in EXPECTED_PREFIXES) {
-        assert.ok(
-          mainLane.target.startsWith(expectedPrefix),
-          `Phase "${phaseName}" main target must use ${expectedPrefix} prefix, got: ${mainLane.target}`
-        );
-      } else {
-        assert.ok(
-          mainLane.target.startsWith(expectedPrefix),
-          `Phase "${phaseName}" main target must use ${expectedPrefix} prefix, got: ${mainLane.target}`
-        );
-      }
+      const expectedPrefix = EXPECTED_PREFIXES[phaseName];
+      assert.ok(
+        expectedPrefix,
+        `Phase "${phaseName}" must have an expected prefix defined`
+      );
+      assert.ok(
+        mainLane.target.startsWith(expectedPrefix),
+        `Phase "${phaseName}" main target must use ${expectedPrefix} prefix, got: ${mainLane.target}`
+      );
     }
   });
 
-  test('fallbacks include at least one ollama/ local model for offline use', () => {
+  test('fallbacks include multi-vendor diversity for resilience', () => {
     const preset = loadPreset();
-    let hasOllamaFallback = false;
+    const allFallbackProviders = new Set();
 
     for (const [_phaseName, lanes] of Object.entries(preset.phases)) {
-      const primaryLane = lanes.find((lane) => lane.role === 'primary');
+      const primaryLane = lanes.find((lane) => lane.role === 'primary' || lane.role === 'judge');
       if (!primaryLane) continue;
 
       const fallbacks = primaryLane.fallbacks;
-      if (typeof fallbacks === 'string' && fallbacks.includes('ollama/')) {
-        hasOllamaFallback = true;
-        break;
-      }
-      if (Array.isArray(fallbacks) && fallbacks.some((f) => String(f).includes('ollama/'))) {
-        hasOllamaFallback = true;
-        break;
-      }
+      const fallbackStr = typeof fallbacks === 'string' ? fallbacks : (fallbacks ?? []).join(', ');
+      const providers = fallbackStr.split(',').map((f) => f.trim().split('/')[0]).filter(Boolean);
+      for (const p of providers) allFallbackProviders.add(p);
     }
 
     assert.ok(
-      hasOllamaFallback,
-      'At least one phase must have an ollama/ fallback for offline use'
+      allFallbackProviders.size >= 3,
+      `Fallbacks must span at least 3 providers for resilience, got: ${[...allFallbackProviders].join(', ')}`
     );
   });
 

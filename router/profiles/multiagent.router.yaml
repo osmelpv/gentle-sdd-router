@@ -114,3 +114,4 @@ phases:
       phase: archive
       role: radar
       fallbacks: anthropic/claude-sonnet
+hidden: true

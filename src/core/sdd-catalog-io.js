@@ -41,6 +41,9 @@ const VALID_INVOKE_TRIGGERS = new Set(['on_issues', 'always', 'never', 'manual']
 /** Valid on_failure values for per-phase invoke declarations. */
 const VALID_ON_FAILURE_VALUES = new Set(['block', 'escalate', 'continue']);
 
+/** Valid delegation values for phases. */
+const VALID_DELEGATION_VALUES = new Set(['orchestrator', 'sub-agent']);
+
 // ─── validateSddYaml ─────────────────────────────────────────────────────────
 
 /**
@@ -144,6 +147,29 @@ export function validateSddYaml(parsed, filePath) {
     // invoke — optional per-phase invocation declaration
     const invoke = normalizeInvoke(phase.invoke, phaseName, filePath);
 
+    // delegation — enum: orchestrator | sub-agent (default: sub-agent)
+    const delegation = phase.delegation !== undefined ? phase.delegation : 'sub-agent';
+    if (!VALID_DELEGATION_VALUES.has(delegation)) {
+      throw new Error(
+        `[${filePath}] Phase '${phaseName}' has invalid 'delegation' value: "${delegation}". ` +
+        `Allowed values: orchestrator, sub-agent.`
+      );
+    }
+
+    // checkpoint — optional object for interactive gates between phases
+    const checkpoint = normalizeCheckpoint(phase.checkpoint, phaseName, filePath);
+
+    // loop_target — optional string, must reference an existing phase name
+    const loop_target = phase.loop_target !== undefined && phase.loop_target !== null
+      ? String(phase.loop_target)
+      : null;
+    if (loop_target !== null && !phaseNames.includes(loop_target)) {
+      throw new Error(
+        `[${filePath}] Phase '${phaseName}' has invalid 'loop_target': "${loop_target}" ` +
+        `does not reference an existing phase. Available phases: ${phaseNames.join(', ')}.`
+      );
+    }
+
     normalizedPhases[phaseName] = {
       intent: phase.intent.trim(),
       mode: inferredMode,
@@ -156,6 +182,9 @@ export function validateSddYaml(parsed, filePath) {
       output: typeof phase.output === 'string' ? phase.output : '',
       depends_on,
       invoke,
+      delegation,
+      checkpoint,
+      loop_target,
     };
   }
 
@@ -175,12 +204,30 @@ export function validateSddYaml(parsed, filePath) {
     };
   }
 
+  // Orchestrator block — optional top-level, stored as plain data
+  let orchestrator = null;
+  if (parsed.orchestrator != null) {
+    if (typeof parsed.orchestrator !== 'object' || Array.isArray(parsed.orchestrator)) {
+      throw new Error(`[${filePath}] 'orchestrator' must be a mapping if present.`);
+    }
+    orchestrator = {
+      retained_phases: Array.isArray(parsed.orchestrator.retained_phases)
+        ? parsed.orchestrator.retained_phases.filter(r => typeof r === 'string')
+        : [],
+      ...Object.fromEntries(
+        Object.entries(parsed.orchestrator)
+          .filter(([k]) => k !== 'retained_phases')
+      ),
+    };
+  }
+
   return {
     name: parsed.name,
     version,
     description: typeof parsed.description === 'string' ? parsed.description : '',
     phases: normalizedPhases,
     triggers,
+    orchestrator,
   };
 }
 
@@ -305,6 +352,53 @@ function normalizeInvoke(raw, phaseName, filePath) {
     on_failure: onFailure,
     ...(inputContext != null ? { input_context: inputContext } : {}),
     ...(outputExpected != null ? { output_expected: outputExpected } : {}),
+  };
+}
+
+/**
+ * Normalize and validate an optional per-phase checkpoint block.
+ * Returns null if checkpoint is absent. Throws on validation errors.
+ *
+ * @param {object|null|undefined} raw - Raw checkpoint value from YAML
+ * @param {string} phaseName - Phase name (for error messages)
+ * @param {string} filePath - Source file path (for error messages)
+ * @returns {{ before_next: boolean, show_user: string[], user_actions: string[], on_contradict: string|null }|null}
+ */
+function normalizeCheckpoint(raw, phaseName, filePath) {
+  if (raw == null) return null;
+
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(
+      `[${filePath}] Phase '${phaseName}' checkpoint must be a mapping.`
+    );
+  }
+
+  // before_next must be boolean if present
+  const beforeNext = raw.before_next !== undefined ? raw.before_next : false;
+  if (typeof beforeNext !== 'boolean') {
+    throw new Error(
+      `[${filePath}] Phase '${phaseName}' checkpoint.before_next must be a boolean.`
+    );
+  }
+
+  // show_user: optional array of strings
+  const showUser = Array.isArray(raw.show_user)
+    ? raw.show_user.filter(s => typeof s === 'string')
+    : [];
+
+  // user_actions: optional array of strings
+  const userActions = Array.isArray(raw.user_actions)
+    ? raw.user_actions.filter(s => typeof s === 'string')
+    : [];
+
+  // on_contradict: optional string
+  const onContradict = typeof raw.on_contradict === 'string' ? raw.on_contradict : null;
+
+  return {
+    before_next: beforeNext,
+    show_user: showUser,
+    user_actions: userActions,
+    on_contradict: onContradict,
   };
 }
 

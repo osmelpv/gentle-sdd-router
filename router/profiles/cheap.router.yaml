@@ -68,3 +68,4 @@ phases:
       role: primary
       fallbacks: google/gemini-flash
       contextWindow: 128000
+hidden: true

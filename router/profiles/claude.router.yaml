@@ -68,3 +68,4 @@ phases:
       role: primary
       fallbacks: anthropic/claude-sonnet
       contextWindow: 200000
+hidden: true

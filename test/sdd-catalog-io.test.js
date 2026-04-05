@@ -1339,3 +1339,291 @@ phases:
     }
   });
 });
+
+// ─── validateSddYaml — delegation, checkpoint, loop_target (sdd-debug-v2) ───
+
+describe('validateSddYaml — delegation field', () => {
+  test('should preserve delegation: orchestrator on phases', () => {
+    const parsed = {
+      name: 'debug-sdd',
+      version: 1,
+      phases: {
+        analyze: {
+          intent: 'Analyze the area',
+          delegation: 'orchestrator',
+        },
+      },
+    };
+    const result = validateSddYaml(parsed, '<test>');
+    assert.equal(result.phases.analyze.delegation, 'orchestrator');
+  });
+
+  test('should preserve delegation: sub-agent (default)', () => {
+    const parsed = {
+      name: 'debug-sdd',
+      version: 1,
+      phases: {
+        analyze: {
+          intent: 'Analyze the area',
+          delegation: 'sub-agent',
+        },
+      },
+    };
+    const result = validateSddYaml(parsed, '<test>');
+    assert.equal(result.phases.analyze.delegation, 'sub-agent');
+  });
+
+  test('should default delegation to sub-agent when absent', () => {
+    const parsed = {
+      name: 'debug-sdd',
+      version: 1,
+      phases: {
+        analyze: {
+          intent: 'Analyze the area',
+        },
+      },
+    };
+    const result = validateSddYaml(parsed, '<test>');
+    assert.equal(result.phases.analyze.delegation, 'sub-agent');
+  });
+
+  test('should reject invalid delegation value', () => {
+    const parsed = {
+      name: 'debug-sdd',
+      version: 1,
+      phases: {
+        analyze: {
+          intent: 'Analyze the area',
+          delegation: 'external',
+        },
+      },
+    };
+    assert.throws(() => validateSddYaml(parsed, '<test>'), /delegation/i);
+  });
+});
+
+describe('validateSddYaml — checkpoint field', () => {
+  test('should preserve checkpoint block on phase', () => {
+    const parsed = {
+      name: 'debug-sdd',
+      version: 1,
+      phases: {
+        diagnose: {
+          intent: 'Diagnose the issue',
+          checkpoint: {
+            before_next: true,
+            show_user: ['forensic_report', 'proposed_changes'],
+            user_actions: ['approve', 'question', 'contradict'],
+            on_contradict: 'loop_self',
+          },
+        },
+      },
+    };
+    const result = validateSddYaml(parsed, '<test>');
+    const cp = result.phases.diagnose.checkpoint;
+    assert.ok(cp, 'checkpoint must be present');
+    assert.equal(cp.before_next, true);
+    assert.deepEqual(cp.show_user, ['forensic_report', 'proposed_changes']);
+    assert.deepEqual(cp.user_actions, ['approve', 'question', 'contradict']);
+    assert.equal(cp.on_contradict, 'loop_self');
+  });
+
+  test('should default checkpoint to null when absent', () => {
+    const parsed = {
+      name: 'debug-sdd',
+      version: 1,
+      phases: {
+        analyze: {
+          intent: 'Analyze the area',
+        },
+      },
+    };
+    const result = validateSddYaml(parsed, '<test>');
+    assert.equal(result.phases.analyze.checkpoint, null);
+  });
+
+  test('should reject checkpoint with non-boolean before_next', () => {
+    const parsed = {
+      name: 'debug-sdd',
+      version: 1,
+      phases: {
+        diagnose: {
+          intent: 'Diagnose',
+          checkpoint: {
+            before_next: 'yes',
+          },
+        },
+      },
+    };
+    assert.throws(() => validateSddYaml(parsed, '<test>'), /checkpoint.*before_next|before_next.*boolean/i);
+  });
+});
+
+describe('validateSddYaml — loop_target field', () => {
+  test('should preserve loop_target field on phase', () => {
+    const parsed = {
+      name: 'debug-sdd',
+      version: 1,
+      phases: {
+        diagnose: {
+          intent: 'Diagnose the issue',
+        },
+        finalize: {
+          intent: 'Finalize the fix',
+          depends_on: ['diagnose'],
+          loop_target: 'diagnose',
+        },
+      },
+    };
+    const result = validateSddYaml(parsed, '<test>');
+    assert.equal(result.phases.finalize.loop_target, 'diagnose');
+  });
+
+  test('should default loop_target to null when absent', () => {
+    const parsed = {
+      name: 'debug-sdd',
+      version: 1,
+      phases: {
+        analyze: {
+          intent: 'Analyze the area',
+        },
+      },
+    };
+    const result = validateSddYaml(parsed, '<test>');
+    assert.equal(result.phases.analyze.loop_target, null);
+  });
+
+  test('should reject invalid loop_target (non-existent phase)', () => {
+    const parsed = {
+      name: 'debug-sdd',
+      version: 1,
+      phases: {
+        finalize: {
+          intent: 'Finalize the fix',
+          loop_target: 'nonexistent-phase',
+        },
+      },
+    };
+    assert.throws(() => validateSddYaml(parsed, '<test>'), /loop_target|nonexistent/i);
+  });
+});
+
+describe('loadCustomSdds — delegation/checkpoint/loop_target round-trip', () => {
+  test('should preserve delegation field through loadCustomSdds', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddYaml = `name: debug-test
+version: 1
+phases:
+  analyze:
+    intent: "Analyze the area"
+    delegation: orchestrator
+  apply:
+    intent: "Apply fixes"
+    delegation: sub-agent
+    depends_on:
+      - analyze
+`;
+      writeFile(catalogsDir, 'debug-test/sdd.yaml', sddYaml);
+      const [sdd] = loadCustomSdds(catalogsDir, { includeGlobal: false });
+      assert.equal(sdd.phases.analyze.delegation, 'orchestrator');
+      assert.equal(sdd.phases.apply.delegation, 'sub-agent');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('should preserve checkpoint through loadCustomSdds', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddYaml = `name: debug-test
+version: 1
+phases:
+  diagnose:
+    intent: "Diagnose"
+    checkpoint:
+      before_next: true
+      show_user:
+        - forensic_report
+      user_actions:
+        - approve
+        - contradict
+      on_contradict: loop_self
+`;
+      writeFile(catalogsDir, 'debug-test/sdd.yaml', sddYaml);
+      const [sdd] = loadCustomSdds(catalogsDir, { includeGlobal: false });
+      const cp = sdd.phases.diagnose.checkpoint;
+      assert.ok(cp, 'checkpoint must survive round-trip');
+      assert.equal(cp.before_next, true);
+      assert.deepEqual(cp.show_user, ['forensic_report']);
+      assert.deepEqual(cp.user_actions, ['approve', 'contradict']);
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('should preserve loop_target through loadCustomSdds', () => {
+    const tmp = makeTempDir();
+    try {
+      const catalogsDir = path.join(tmp, 'catalogs');
+      const sddYaml = `name: debug-test
+version: 1
+phases:
+  diagnose:
+    intent: "Diagnose"
+  finalize:
+    intent: "Finalize"
+    depends_on:
+      - diagnose
+    loop_target: diagnose
+`;
+      writeFile(catalogsDir, 'debug-test/sdd.yaml', sddYaml);
+      const [sdd] = loadCustomSdds(catalogsDir, { includeGlobal: false });
+      assert.equal(sdd.phases.finalize.loop_target, 'diagnose');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+});
+
+describe('validateSddYaml — orchestrator top-level block passthrough', () => {
+  test('should preserve orchestrator block at top level', () => {
+    const parsed = {
+      name: 'debug-sdd',
+      version: 1,
+      phases: {
+        diagnose: {
+          intent: 'Diagnose the issue',
+          delegation: 'orchestrator',
+        },
+        apply: {
+          intent: 'Apply fixes',
+          delegation: 'sub-agent',
+          depends_on: ['diagnose'],
+        },
+      },
+      orchestrator: {
+        retained_phases: ['diagnose'],
+      },
+    };
+    const result = validateSddYaml(parsed, '<test>');
+    assert.ok(result.orchestrator, 'orchestrator block must be present');
+    assert.deepEqual(result.orchestrator.retained_phases, ['diagnose']);
+  });
+
+  test('should default orchestrator to null when absent', () => {
+    const parsed = {
+      name: 'debug-sdd',
+      version: 1,
+      phases: {
+        analyze: {
+          intent: 'Analyze the area',
+        },
+      },
+    };
+    const result = validateSddYaml(parsed, '<test>');
+    assert.equal(result.orchestrator, null);
+  });
+});

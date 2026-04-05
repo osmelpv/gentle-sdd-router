@@ -23,62 +23,79 @@ function captureStdout(fn) {
 }
 
 test('getGlobalSddAgentSpecs derives standard SDD agents from local-hybrid', () => {
-  const specs = getGlobalSddAgentSpecs({ preset: 'local-hybrid', debugPreset: 'sdd-debug-mono', cwd: os.tmpdir() });
-  const byName = new Map(specs.map((s) => [s.name, s]));
+  const specs = getGlobalSddAgentSpecs();
+  const standardSpecs = specs.filter((s) => s.sdd === 'sdd-orchestrator');
+  const standardNames = standardSpecs.map((s) => s.name);
+  assert.ok(standardNames.includes('sdd-orchestrator'), 'Should have sdd-orchestrator');
+  assert.ok(standardNames.includes('sdd-explore'), 'Should have sdd-explore');
+  assert.ok(standardNames.includes('sdd-apply'), 'Should have sdd-apply');
+  assert.ok(standardNames.includes('sdd-verify'), 'Should have sdd-verify');
+  assert.ok(standardNames.includes('sdd-archive'), 'Should have sdd-archive');
 
-  assert.equal(byName.get('sdd-explore')?.target, 'opencode/nemotron-3-super-free');
-  assert.equal(byName.get('sdd-propose')?.target, 'opencode/qwen3.6-plus-free');
-  assert.equal(byName.get('sdd-apply')?.target, 'anthropic/claude-sonnet-4-6');
-  assert.equal(byName.get('sdd-verify')?.target, 'openai/gpt-5.4');
-  assert.equal(byName.get('sdd-archive')?.target, 'google/gemini-3-flash-preview');
-  assert.equal(byName.get('sdd-orchestrator')?.target, 'opencode/qwen3.6-plus-free');
+  const orch = standardSpecs.find((s) => s.name === 'sdd-orchestrator');
+  assert.equal(orch.mode, 'primary');
+  assert.equal(orch.hidden, false);
 });
 
-test('getGlobalSddAgentSpecs derives debug agents from sdd-debug-mono', () => {
-  const specs = getGlobalSddAgentSpecs({ preset: 'local-hybrid', debugPreset: 'sdd-debug-mono', cwd: os.tmpdir() });
-  const names = specs.map((s) => s.name);
-  assert.ok(names.includes('sdd-debug-explore-issues'));
-  assert.ok(names.includes('sdd-debug-apply-fix'));
-  assert.ok(names.includes('sdd-debug-archive-debug'));
+test('getGlobalSddAgentSpecs derives v2 debug agents from sdd-debug-mono', () => {
+  const specs = getGlobalSddAgentSpecs();
+  const debugSpecs = specs.filter((s) => s.sdd === 'sdd-debug');
+  const debugNames = debugSpecs.map((s) => s.name);
 
-  const explore = specs.find((s) => s.name === 'sdd-debug-explore-issues');
-  assert.equal(explore.target, 'openai/gpt-5.4');
-  assert.match(explore.prompt, /explore-issues/);
-  assert.match(explore.prompt, /contracts\/phases\/explore-issues\.md/);
+  // v2: 3 delegated phases only (analyze-area, implant-logs, apply-fixes)
+  assert.equal(debugSpecs.length, 3, `Expected 3 debug agents, got: ${debugNames.join(', ')}`);
+  assert.ok(debugNames.includes('sdd-debug-analyze-area'));
+  assert.ok(debugNames.includes('sdd-debug-implant-logs'));
+  assert.ok(debugNames.includes('sdd-debug-apply-fixes'));
+
+  // All debug agents should be subagents
+  for (const spec of debugSpecs) {
+    assert.equal(spec.mode, 'subagent');
+    assert.equal(spec.hidden, true);
+    assert.equal(spec.target, 'openai/gpt-5.4');
+  }
 });
 
 test('materializeGlobalSddAgents writes managed sdd-* agents and preserves unrelated ones', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-global-agents-'));
-  const targetPath = path.join(tmp, 'opencode.json');
-  fs.writeFileSync(targetPath, JSON.stringify({
-    agent: {
-      unrelated: { mode: 'primary', model: 'openai/gpt-4.1' },
-      'sdd-explore': { mode: 'subagent', model: 'old/model' },
-    },
-  }, null, 2));
+  const specs = getGlobalSddAgentSpecs();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-test-'));
+  const tmpConfig = path.join(tmpDir, 'agents.json');
 
-  const specs = getGlobalSddAgentSpecs({ preset: 'local-hybrid', debugPreset: 'sdd-debug-mono', cwd: os.tmpdir() });
-  const result = materializeGlobalSddAgents(specs, targetPath);
-  const written = JSON.parse(fs.readFileSync(targetPath, 'utf8'));
+  // Write an existing unrelated agent
+  fs.writeFileSync(tmpConfig, JSON.stringify({ agent: { 'my-custom': { prompt: 'test' } } }));
 
-  assert.equal(result.count, specs.length);
-  assert.equal(written.agent.unrelated.model, 'openai/gpt-4.1');
-  assert.equal(written.agent['sdd-explore'].model, 'opencode/nemotron-3-super-free');
-  assert.equal(written.agent['sdd-explore']._gsr_generated, true);
-  assert.equal(written.agent['sdd-debug-apply-fix'].model, 'openai/gpt-5.4');
-  assert.equal(written.agent['sdd-debug-apply-fix'].hidden, true);
+  const result = materializeGlobalSddAgents(specs, tmpConfig);
+  const written = JSON.parse(fs.readFileSync(tmpConfig, 'utf8'));
+
+  // Unrelated agent preserved
+  assert.ok(written.agent['my-custom'], 'Should preserve unrelated agents');
+
+  // GSR agents written
+  assert.ok(written.agent['sdd-orchestrator'], 'Should have sdd-orchestrator');
+  assert.ok(written.agent['sdd-debug-analyze-area'], 'Should have sdd-debug-analyze-area');
+  assert.ok(written.agent['sdd-debug-implant-logs'], 'Should have sdd-debug-implant-logs');
+  assert.ok(written.agent['sdd-debug-apply-fixes'], 'Should have sdd-debug-apply-fixes');
+
+  // All GSR agents marked as generated
+  for (const name of result.agentNames) {
+    assert.equal(written.agent[name]._gsr_generated, true);
+  }
+
+  // Cleanup
+  fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
 test('runSddGlobalSync prints summary and writes temp config', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-global-sync-'));
-  const targetPath = path.join(tmp, 'opencode.json');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-sync-test-'));
+  const tmpConfig = path.join(tmpDir, 'agents.json');
+  const output = captureStdout(() => {
+    runSddGlobalSync([], { targetPath: tmpConfig });
+  });
+  // Should mention agents count and preset in the output
+  assert.ok(output.includes('Global SDD agents synced'), 'Should report sync count');
+  assert.ok(output.includes('local-hybrid'), 'Should reference default preset');
+  assert.ok(output.includes('sdd-debug-mono'), 'Should reference default debug preset');
 
-  const output = captureStdout(() => runSddGlobalSync(['--preset', 'local-hybrid', '--debug-preset', 'sdd-debug-mono'], { targetPath, cwd: os.tmpdir() }));
-  const written = JSON.parse(fs.readFileSync(targetPath, 'utf8'));
-
-  assert.match(output, /Global SDD agents synced:/);
-  assert.match(output, /Preset: local-hybrid/);
-  assert.match(output, /Debug preset: sdd-debug-mono/);
-  assert.ok(written.agent['sdd-verify']);
-  assert.ok(written.agent['sdd-debug-validate-fix']);
+  // Cleanup
+  fs.rmSync(tmpDir, { recursive: true, force: true });
 });

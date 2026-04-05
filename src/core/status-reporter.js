@@ -214,7 +214,7 @@ export function buildConnectionGraph(presetPhaseNames, debugInvoke, customSdds) 
     if (sddPhases.length === 0) continue;
 
     lines.push('');
-    lines.push(`  ${sdd.name}`);
+    lines.push(`  ${sdd.name} (${sddPhases.length} phases)`);
 
     for (let i = 0; i < sddPhases.length; i++) {
       const phase = sddPhases[i];
@@ -225,12 +225,27 @@ export function buildConnectionGraph(presetPhaseNames, debugInvoke, customSdds) 
       const phaseConfig = sdd.phases[phase];
       const invoke = phaseConfig?.invoke;
 
+      // Build delegation tag
+      const delegation = phaseConfig?.delegation;
+      const delegTag = delegation ? `  [${delegation}]` : '';
+
       if (invoke?.target) {
         const onFailure = invoke.on_failure ? `, on_failure: ${invoke.on_failure}` : '';
         const timing = invoke.timing ? `${invoke.timing}, ` : '';
-        lines.push(`  ${connector} ${phase} ──invoke──→ ${invoke.target} (${timing}${onFailure || invoke.trigger || ''})`);
+        lines.push(`  ${connector} ${phase}${delegTag} ──invoke──→ ${invoke.target} (${timing}${onFailure || invoke.trigger || ''})`);
       } else {
-        lines.push(`  ${connector} ${phase}`);
+        lines.push(`  ${connector} ${phase}${delegTag}`);
+      }
+
+      // Sub-lines for checkpoint and loop_target
+      const indent = isLast ? '    ' : '│   ';
+
+      if (phaseConfig?.checkpoint?.before_next) {
+        lines.push(`  ${indent}└── 🛑 checkpoint → user approval`);
+      }
+
+      if (phaseConfig?.loop_target) {
+        lines.push(`  ${indent}└── 🔄 loop → ${phaseConfig.loop_target}`);
       }
     }
   }

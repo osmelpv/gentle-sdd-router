@@ -135,7 +135,9 @@ describe('runSddCreate', () => {
 describe('runSddList', () => {
   test('prints no-sdds message when catalogs dir is empty', async () => {
     const tmp = makeTempDir();
+    const origEnv = process.env.GSR_TEST_NO_GLOBAL;
     try {
+      process.env.GSR_TEST_NO_GLOBAL = '1';
       const { catalogsDir } = makeRouterDir(tmp);
       const output = await captureStdout(() => runSddList([], catalogsDir));
       assert.ok(
@@ -145,6 +147,11 @@ describe('runSddList', () => {
         `Expected empty state message, got: "${output}"`
       );
     } finally {
+      if (origEnv === undefined) {
+        delete process.env.GSR_TEST_NO_GLOBAL;
+      } else {
+        process.env.GSR_TEST_NO_GLOBAL = origEnv;
+      }
       cleanup(tmp);
     }
   });

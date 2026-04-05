@@ -49,7 +49,7 @@ test('getProjectSddAgentSpecs derives hidden sdd-<catalog>-<phase> agents from p
     assert.equal(byName.get('sdd-game-design-concept').hidden, true);
     assert.match(byName.get('sdd-game-design-concept').prompt, /game-design/);
     assert.match(byName.get('sdd-game-design-concept').prompt, /contracts\/phases\/concept\.md/);
-    assert.equal(byName.get('sdd-game-design-concept').target, 'opencode/qwen3.6-plus-free');
+    assert.equal(byName.get('sdd-game-design-concept').target, 'anthropic/claude-sonnet-4-6');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

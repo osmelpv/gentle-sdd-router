@@ -228,3 +228,4 @@ phases:
       phase: archive
       role: radar
       fallbacks: anthropic/claude-haiku
+hidden: true

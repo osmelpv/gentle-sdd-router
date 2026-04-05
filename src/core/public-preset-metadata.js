@@ -24,7 +24,7 @@ export function getPublicPresetMetadata(config) {
       const filePath = sourceInfo?.filePath ?? null;
       rows.push({
         name: presetName,
-        sdd: publicSddLabelFromCatalogName(catalogName),
+        sdd: preset?.sdd ?? sourceInfo?.sddName ?? publicSddLabelFromCatalogName(catalogName),
         scope: scopeFromFilePath(filePath),
         visibility: preset.hidden === true || catalog?.enabled === false ? 'hidden' : 'visible',
         active: presetName === activePreset,

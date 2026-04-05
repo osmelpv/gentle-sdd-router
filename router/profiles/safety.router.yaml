@@ -8,3 +8,4 @@ phases:
       phase: orchestrator
       role: primary
       contextWindow: 200000
+hidden: true

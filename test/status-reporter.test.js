@@ -575,6 +575,80 @@ describe('buildConnectionGraph — custom SDD sections', () => {
   });
 });
 
+// ── buildConnectionGraph — v2 metadata (delegation, checkpoint, loop) ────────
+
+describe('buildConnectionGraph — v2 metadata', () => {
+  test('shows delegation tag for phases with delegation field', () => {
+    const phases = ['orchestrator', 'verify'];
+    const customSdds = [{
+      name: 'my-debug',
+      phases: {
+        'analyze': { delegation: 'sub-agent' },
+        'diagnose': { delegation: 'orchestrator' },
+      },
+    }];
+    const result = buildConnectionGraph(phases, null, customSdds);
+    const joined = result.join('\n');
+    assert.ok(joined.includes('[sub-agent]'), `should show sub-agent tag. Got:\n${joined}`);
+    assert.ok(joined.includes('[orchestrator]'), `should show orchestrator tag. Got:\n${joined}`);
+  });
+
+  test('shows checkpoint sub-line when checkpoint.before_next is true', () => {
+    const phases = ['orchestrator', 'verify'];
+    const customSdds = [{
+      name: 'my-debug',
+      phases: {
+        'diagnose': { checkpoint: { before_next: true } },
+        'apply': {},
+      },
+    }];
+    const result = buildConnectionGraph(phases, null, customSdds);
+    const joined = result.join('\n');
+    assert.ok(joined.includes('checkpoint'), `should show checkpoint indicator. Got:\n${joined}`);
+    assert.ok(joined.includes('🛑'), `should show stop emoji. Got:\n${joined}`);
+  });
+
+  test('shows loop sub-line when loop_target is set', () => {
+    const phases = ['orchestrator', 'verify'];
+    const customSdds = [{
+      name: 'my-debug',
+      phases: {
+        'apply': {},
+        'finalize': { loop_target: 'diagnose' },
+      },
+    }];
+    const result = buildConnectionGraph(phases, null, customSdds);
+    const joined = result.join('\n');
+    assert.ok(joined.includes('loop') && joined.includes('diagnose'),
+      `should show loop indicator pointing to diagnose. Got:\n${joined}`);
+    assert.ok(joined.includes('🔄'), `should show loop emoji. Got:\n${joined}`);
+  });
+
+  test('shows phase count in SDD header', () => {
+    const phases = ['orchestrator', 'verify'];
+    const customSdds = [{
+      name: 'my-debug',
+      phases: { a: {}, b: {}, c: {} },
+    }];
+    const result = buildConnectionGraph(phases, null, customSdds);
+    const joined = result.join('\n');
+    assert.ok(joined.includes('3 phases') || joined.includes('(3)'),
+      `should show phase count in header. Got:\n${joined}`);
+  });
+
+  test('does not show delegation tag when delegation field is absent', () => {
+    const phases = ['orchestrator', 'verify'];
+    const customSdds = [{
+      name: 'my-sdd',
+      phases: { 'step-1': {}, 'step-2': {} },
+    }];
+    const result = buildConnectionGraph(phases, null, customSdds);
+    const joined = result.join('\n');
+    assert.ok(!joined.includes('[sub-agent]') && !joined.includes('[orchestrator]'),
+      `should NOT show delegation tags when absent. Got:\n${joined}`);
+  });
+});
+
 // ── Triangulation: getVerboseStatus PRESETS section ───────────────────────────
 
 describe('getVerboseStatus — PRESETS section', () => {

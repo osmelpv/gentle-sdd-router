@@ -68,3 +68,4 @@ phases:
       role: primary
       fallbacks: openai/gpt
       contextWindow: 128000
+hidden: true

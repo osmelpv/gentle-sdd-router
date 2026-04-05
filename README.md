@@ -340,9 +340,9 @@ GSR ships with a real cross-SDD invocation out of the box: **sdd-debug**. This i
 SDD-Orchestrator (default)
   └─ verify phase finds issues
        └─ debug_invoke.trigger = on_issues → INVOKES sdd-debug
-            └─ sdd-debug runs 7 phases:
-                 explore-issues → triage → diagnose → propose-fix
-                 → apply-fix → validate-fix → archive-debug
+             └─ sdd-debug runs 5 phases:
+                  analyze-area → implant-logs → collect-and-diagnose
+                  → apply-fixes → finalize
             └─ returns standardized debug_result
        └─ verify re-runs
             └─ PASS → continue to archive ✅
@@ -350,9 +350,10 @@ SDD-Orchestrator (default)
 ```
 
 **The sdd-debug SDD** (`router/catalogs/sdd-debug/`) ships globally with GSR and includes:
-- **7 phases** with a strict dependency chain — no shortcuts
-- **7 role contracts** (explorer, triager, diagnostician, fix-proposer, fix-implementer, fix-validator, debug-archiver) — each with professional constraints, red lines, and security-first rules
-- **7 phase contracts** with input/output specifications and required skills
+- **5 phases** with a strict dependency chain — no shortcuts
+- **4 role contracts** (debug-analyst, log-implanter, fix-implementer, debug-archiver) — each with professional constraints, red lines, and security-first rules
+- **Key features**: AI-first execution, interactive user checkpoint, guard position registry with SDD-DBG-GXXX markers, orchestrator-retained strategic phases (collect-and-diagnose, finalize)
+- **5 phase contracts** with input/output specifications and required skills
 - **Standardized `debug_result` output** so the caller knows exactly what happened
 
 **Two preset variants** ship with GSR:
@@ -362,7 +363,7 @@ SDD-Orchestrator (default)
 | `sdd-debug-mono` | 1 | No | GPT-5.4 across all phases |
 | `sdd-debug-multi` | 2 + judge | Yes (mandatory, reasoning model) | GPT-5.4 + Claude + Gemini judge |
 
-> **Key constraint**: `apply-fix` is ALWAYS 1 agent — even in multi mode. No parallel code writing during debug.
+> **Key constraint**: `apply-fixes` is ALWAYS 1 agent — even in multi mode. No parallel code writing during debug.
 
 Every built-in preset (multivendor, claude, local-hybrid, etc.) comes with a `debug_invoke` block pre-wired:
 

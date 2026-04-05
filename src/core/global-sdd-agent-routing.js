@@ -24,14 +24,15 @@ const STANDARD_PHASE_AGENT_NAMES = {
   archive: 'sdd-archive',
 };
 
+/**
+ * v2 debug phase → role mappings.
+ * Only delegated phases get agent specs; orchestrator-retained phases
+ * (collect-and-diagnose, finalize) are handled by the orchestrator lane.
+ */
 const DEBUG_PHASE_ROLE_NAMES = {
-  'explore-issues': 'explorer',
-  triage: 'triager',
-  diagnose: 'diagnostician',
-  'propose-fix': 'fix-proposer',
-  'apply-fix': 'fix-implementer',
-  'validate-fix': 'fix-validator',
-  'archive-debug': 'debug-archiver',
+  'analyze-area': 'debug-analyst',
+  'implant-logs': 'log-implanter',
+  'apply-fixes': 'fix-implementer',
 };
 
 function loadPluginConfig() {
@@ -65,10 +66,25 @@ function orchestratorPrompt() {
   return 'You are the SDD orchestrator. Coordinate sub-agents, never do work inline. Delegate substantial work, synthesize results, and preserve the non-executing/report-only boundary. If a local orchestrator skill exists, follow it.';
 }
 
+/**
+ * Debug v2 prompt — references skill files for delegated phases and
+ * falls back to phase/role contracts when no skill exists.
+ */
 function debugPrompt(phaseName) {
   const roleName = DEBUG_PHASE_ROLE_NAMES[phaseName];
+  const skillMap = {
+    'analyze-area': '~/.config/opencode/skills/sdd-debug-analyze/SKILL.md',
+    'implant-logs': '~/.config/opencode/skills/sdd-debug-implant/SKILL.md',
+    'apply-fixes': '~/.config/opencode/skills/sdd-debug-apply/SKILL.md',
+  };
+  const skillPath = skillMap[phaseName];
   const phasePath = path.join(PLUGIN_ROUTER_DIR, 'catalogs', 'sdd-debug', 'contracts', 'phases', `${phaseName}.md`);
   const rolePath = path.join(PLUGIN_ROUTER_DIR, 'catalogs', 'sdd-debug', 'contracts', 'roles', `${roleName}.md`);
+
+  if (skillPath) {
+    return `You are the executor for the sdd-debug phase '${phaseName}', not the orchestrator. Do this phase's work yourself. Do NOT delegate, Do NOT call task/delegate, and Do NOT launch sub-agents. Read your skill file at ${skillPath} and follow it exactly. Phase contract: ${phasePath}. Role contract: ${rolePath}.`;
+  }
+
   return `You are the executor for the sdd-debug phase '${phaseName}', not the orchestrator. Do this phase's work yourself. Do NOT delegate, Do NOT call task/delegate, and Do NOT launch sub-agents. Read the phase contract at ${phasePath} and the role contract at ${rolePath} and follow them exactly.`;
 }
 
@@ -139,24 +155,28 @@ export function getGlobalSddAgentSpecs(options = {}) {
     }));
   }
 
-  // Debug SDD executors
-  const { preset: debugPreset } = getPreset(config, debugPresetName);
-  for (const phaseName of Object.keys(DEBUG_PHASE_ROLE_NAMES)) {
-    const lane = pickPrimaryLane(debugPreset.phases?.[phaseName] ?? []);
-    if (!lane?.target) continue;
+  // Debug SDD executors — decoupled: failure here does NOT block standard SDD agents
+  try {
+    const { preset: debugPreset } = getPreset(config, debugPresetName);
+    for (const phaseName of Object.keys(DEBUG_PHASE_ROLE_NAMES)) {
+      const lane = pickPrimaryLane(debugPreset.phases?.[phaseName] ?? []);
+      if (!lane?.target) continue;
 
-    specs.push(buildSpec({
-      name: `sdd-debug-${phaseName}`,
-      phase: phaseName,
-      target: lane.target,
-      prompt: debugPrompt(phaseName),
-      sdd: 'sdd-debug',
-      variant: debugPresetName,
-      permissions: baseTools(false),
-      hidden: true,
-      mode: 'subagent',
-      description: `gsr global sdd-debug ${phaseName} via ${debugPresetName}`,
-    }));
+      specs.push(buildSpec({
+        name: `sdd-debug-${phaseName}`,
+        phase: phaseName,
+        target: lane.target,
+        prompt: debugPrompt(phaseName),
+        sdd: 'sdd-debug',
+        variant: debugPresetName,
+        permissions: baseTools(false),
+        hidden: true,
+        mode: 'subagent',
+        description: `gsr global sdd-debug ${phaseName} via ${debugPresetName}`,
+      }));
+    }
+  } catch {
+    // Debug preset not found or malformed — standard SDD agents still work
   }
 
   return specs;

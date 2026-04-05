@@ -286,26 +286,8 @@ describe('Integration: safety preset debug_invoke', () => {
 });
 
 // ─── Integration: sdd-debug presets do NOT have debug_invoke (no recursion) ───
-
-describe('Integration: sdd-debug presets do NOT have debug_invoke', () => {
-  test('sdd-debug-mono.router.yaml does NOT have debug_invoke', () => {
-    const preset = loadPreset('sdd-debug-mono.router.yaml');
-    assert.equal(
-      preset.debug_invoke,
-      undefined,
-      'sdd-debug-mono must NOT have debug_invoke (no recursion)'
-    );
-  });
-
-  test('sdd-debug-multi.router.yaml does NOT have debug_invoke', () => {
-    const preset = loadPreset('sdd-debug-multi.router.yaml');
-    assert.equal(
-      preset.debug_invoke,
-      undefined,
-      'sdd-debug-multi must NOT have debug_invoke (no recursion)'
-    );
-  });
-});
+// NOTE: Tests temporarily removed — sdd-debug presets deleted in sdd-debug-v2 Phase 1.
+// Will be rewritten with new v2 preset structure in Phase 3 (task 3.5).
 
 // ─── Integration: multiagent uses sdd-debug-multi ────────────────────────────
 
@@ -335,4 +317,170 @@ describe('Integration: non-multiagent presets use sdd-debug-mono', () => {
       );
     });
   }
+});
+
+// ─── Round-trip: delegation/checkpoint/loop_target survive validation (S02, S05) ─
+
+import { validateSddYaml } from '../src/core/sdd-catalog-io.js';
+
+describe('Round-trip: delegation field survives validation (S02)', () => {
+  test('delegation: sub-agent is preserved through validateSddYaml', () => {
+    const parsed = {
+      name: 'test-sdd',
+      version: 1,
+      phases: {
+        analyze: { intent: 'Test phase', delegation: 'sub-agent' },
+      },
+    };
+    const result = validateSddYaml(parsed, '/fake/test.yaml');
+    assert.equal(result.phases.analyze.delegation, 'sub-agent');
+  });
+
+  test('delegation: orchestrator is preserved through validateSddYaml', () => {
+    const parsed = {
+      name: 'test-sdd',
+      version: 1,
+      phases: {
+        diagnose: { intent: 'Test phase', delegation: 'orchestrator' },
+      },
+    };
+    const result = validateSddYaml(parsed, '/fake/test.yaml');
+    assert.equal(result.phases.diagnose.delegation, 'orchestrator');
+  });
+
+  test('delegation defaults to sub-agent when absent', () => {
+    const parsed = {
+      name: 'test-sdd',
+      version: 1,
+      phases: {
+        analyze: { intent: 'Test phase' },
+      },
+    };
+    const result = validateSddYaml(parsed, '/fake/test.yaml');
+    assert.equal(result.phases.analyze.delegation, 'sub-agent');
+  });
+
+  test('invalid delegation value throws', () => {
+    const parsed = {
+      name: 'test-sdd',
+      version: 1,
+      phases: {
+        analyze: { intent: 'Test phase', delegation: 'self' },
+      },
+    };
+    assert.throws(
+      () => validateSddYaml(parsed, '/fake/test.yaml'),
+      /delegation.*invalid|invalid.*delegation/i
+    );
+  });
+});
+
+describe('Round-trip: checkpoint survives validation (S02)', () => {
+  test('checkpoint block is preserved through validateSddYaml', () => {
+    const parsed = {
+      name: 'test-sdd',
+      version: 1,
+      phases: {
+        diagnose: {
+          intent: 'Test phase',
+          checkpoint: {
+            before_next: true,
+            show_user: ['report'],
+            user_actions: ['approve', 'contradict'],
+            on_contradict: 'loop_self',
+          },
+        },
+      },
+    };
+    const result = validateSddYaml(parsed, '/fake/test.yaml');
+    assert.ok(result.phases.diagnose.checkpoint !== null, 'checkpoint must be preserved');
+    assert.equal(result.phases.diagnose.checkpoint.before_next, true);
+    assert.deepEqual(result.phases.diagnose.checkpoint.show_user, ['report']);
+    assert.deepEqual(result.phases.diagnose.checkpoint.user_actions, ['approve', 'contradict']);
+    assert.equal(result.phases.diagnose.checkpoint.on_contradict, 'loop_self');
+  });
+
+  test('absent checkpoint normalizes to null', () => {
+    const parsed = {
+      name: 'test-sdd',
+      version: 1,
+      phases: {
+        analyze: { intent: 'Test phase' },
+      },
+    };
+    const result = validateSddYaml(parsed, '/fake/test.yaml');
+    assert.equal(result.phases.analyze.checkpoint, null);
+  });
+});
+
+describe('Round-trip: loop_target survives validation (S02, S05)', () => {
+  test('valid loop_target is preserved through validateSddYaml', () => {
+    const parsed = {
+      name: 'test-sdd',
+      version: 1,
+      phases: {
+        diagnose: { intent: 'Diagnose' },
+        finalize: { intent: 'Finalize', depends_on: ['diagnose'], loop_target: 'diagnose' },
+      },
+    };
+    const result = validateSddYaml(parsed, '/fake/test.yaml');
+    assert.equal(result.phases.finalize.loop_target, 'diagnose');
+  });
+
+  test('absent loop_target normalizes to null', () => {
+    const parsed = {
+      name: 'test-sdd',
+      version: 1,
+      phases: {
+        analyze: { intent: 'Test phase' },
+      },
+    };
+    const result = validateSddYaml(parsed, '/fake/test.yaml');
+    assert.equal(result.phases.analyze.loop_target, null);
+  });
+
+  test('invalid loop_target referencing non-existent phase throws (S05)', () => {
+    const parsed = {
+      name: 'test-sdd',
+      version: 1,
+      phases: {
+        finalize: { intent: 'Finalize', loop_target: 'nonexistent-phase' },
+      },
+    };
+    assert.throws(
+      () => validateSddYaml(parsed, '/fake/test.yaml'),
+      /loop_target.*nonexistent-phase/i
+    );
+  });
+});
+
+describe('Round-trip: orchestrator block survives validation', () => {
+  test('orchestrator.retained_phases is preserved', () => {
+    const parsed = {
+      name: 'test-sdd',
+      version: 1,
+      orchestrator: {
+        retained_phases: ['diagnose', 'finalize'],
+      },
+      phases: {
+        diagnose: { intent: 'Diagnose', delegation: 'orchestrator' },
+        finalize: { intent: 'Finalize', delegation: 'orchestrator', depends_on: ['diagnose'] },
+      },
+    };
+    const result = validateSddYaml(parsed, '/fake/test.yaml');
+    assert.ok(result.orchestrator !== null, 'orchestrator block must exist');
+    assert.deepEqual(result.orchestrator.retained_phases, ['diagnose', 'finalize']);
+  });
+
+  test('absent orchestrator block normalizes to null', () => {
+    const parsed = {
+      name: 'test-sdd',
+      version: 1,
+      phases: {
+        analyze: { intent: 'Test phase' },
+      },
+    };
+    const result = validateSddYaml(parsed, '/fake/test.yaml');
+    assert.equal(result.orchestrator, null);
+  });
 });

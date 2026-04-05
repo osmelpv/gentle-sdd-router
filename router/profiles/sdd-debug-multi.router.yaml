@@ -1,92 +1,46 @@
 name: sdd-debug-multi
 sdd: sdd-debug
-catalog: sdd-debug
 availability: stable
-hidden: true
 identity:
   inherit_agents_md: true
   persona: gentleman
 phases:
-  explore-issues:
+  orchestrator:
     - target: openai/gpt-5.4
       kind: lane
-      phase: explore-issues
+      phase: orchestrator
       role: primary
-    - target: anthropic/claude-sonnet-4-6
+      fallbacks: anthropic/claude-opus-4-6
+    - target: anthropic/claude-sonnet-4
       kind: lane
-      phase: explore-issues
+      phase: orchestrator
       role: secondary
-    - target: google/gemini-3-pro-preview
-      kind: lane
-      phase: explore-issues
-      role: judge
-    - target: anthropic/claude-opus-4-6
-      kind: lane
-      phase: explore-issues
-      role: radar
-  triage:
+      fallbacks: google/gemini-2.5-pro
+  analyze-area:
     - target: openai/gpt-5.4
       kind: lane
-      phase: triage
+      phase: analyze-area
       role: primary
-    - target: anthropic/claude-sonnet-4-6
+      fallbacks: anthropic/claude-sonnet-4
+    - target: anthropic/claude-sonnet-4
       kind: lane
-      phase: triage
+      phase: analyze-area
       role: secondary
-    - target: google/gemini-3-pro-preview
+      fallbacks: google/gemini-2.5-pro
+  implant-logs:
+    - target: openai/gpt-5.4
       kind: lane
-      phase: triage
+      phase: implant-logs
+      role: primary
+      fallbacks: anthropic/claude-sonnet-4
+  apply-fixes:
+    - target: openai/gpt-5.4
+      kind: lane
+      phase: apply-fixes
+      role: primary
+      fallbacks: anthropic/claude-sonnet-4
+    - target: anthropic/claude-sonnet-4
+      kind: lane
+      phase: apply-fixes
       role: judge
-  diagnose:
-    - target: openai/gpt-5.4
-      kind: lane
-      phase: diagnose
-      role: primary
-    - target: anthropic/claude-sonnet-4-6
-      kind: lane
-      phase: diagnose
-      role: secondary
-    - target: google/gemini-3-pro-preview
-      kind: lane
-      phase: diagnose
-      role: judge
-  propose-fix:
-    - target: openai/gpt-5.4
-      kind: lane
-      phase: propose-fix
-      role: primary
-    - target: anthropic/claude-sonnet-4-6
-      kind: lane
-      phase: propose-fix
-      role: secondary
-    - target: google/gemini-3-pro-preview
-      kind: lane
-      phase: propose-fix
-      role: judge
-    - target: anthropic/claude-opus-4-6
-      kind: lane
-      phase: propose-fix
-      role: radar
-  apply-fix:
-    - target: openai/gpt-5.4
-      kind: lane
-      phase: apply-fix
-      role: primary
-  validate-fix:
-    - target: openai/gpt-5.4
-      kind: lane
-      phase: validate-fix
-      role: primary
-    - target: anthropic/claude-sonnet-4-6
-      kind: lane
-      phase: validate-fix
-      role: secondary
-    - target: google/gemini-3-pro-preview
-      kind: lane
-      phase: validate-fix
-      role: judge
-  archive-debug:
-    - target: openai/gpt-5.4
-      kind: lane
-      phase: archive-debug
-      role: primary
+      fallbacks: google/gemini-2.5-pro

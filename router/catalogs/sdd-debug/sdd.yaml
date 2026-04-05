@@ -1,79 +1,117 @@
 name: sdd-debug
-version: 1
-description: "Structured debug workflow for resolving issues found during verify. Invoked automatically when verify produces findings."
+version: 2
+description: "Unified debug workflow. Consolidates area analysis, log guard implantation, forensic evidence collection, fix application, and verification into 5 phases. Orchestrator retains strategic phases (crime scene investigation, loop control). Delegated phases handle mechanical work."
+
+orchestrator:
+  retained_phases:
+    - collect-and-diagnose
+    - finalize
 
 phases:
-  explore-issues:
-    intent: "Investigate ALL code related to reported issues. Map dependencies, call chains, test coverage, and side-effect risks. DO NOT propose solutions yet."
-    execution: parallel
+  analyze-area:
+    phase_order: 1
+    intent: "Map problem area (language, ecosystem, infrastructure), select optimal logging system, and assess which areas are TDD-testable vs require log guards. Produce Area Analysis Report."
+    execution: sequential
     agents: 1
     judge: false
     radar: false
-    input: "debug_request with issues list, affected_files, last_change_files, test_baseline"
-    output: "Impact map per issue: files, functions, tests, potential breakage points"
+    delegation: sub-agent
+    input: "debug_request with issue description, affected files, error messages, stack traces, environment info"
+    output: "Area Analysis Report: ecosystem map, dependency graph, testability assessment, logging system selection, TDD vs Guards classification"
+    context_return: "full_report"
 
-  triage:
-    intent: "Classify and prioritize issues by real severity, cascade risk, interdependencies, and safe resolution order."
+  implant-logs:
+    phase_order: 2
+    intent: "Plant log guards at EVERY execution step. Create TDD tests where testable. Build Guard Position Registry with unique SDD-DBG-GXXX markers for deterministic cleanup."
     execution: sequential
     agents: 1
     judge: false
     radar: false
     depends_on:
-      - explore-issues
-    input: "Impact map from explore-issues"
-    output: "Ordered issue list with blast radius, interdependencies, resolution order"
+      - analyze-area
+    delegation: sub-agent
+    input: "Area Analysis Report with logging selection and testability assessment"
+    output: "Implanted log guards, TDD tests, Guard Position Registry (file:line:marker:type:purpose)"
+    context_return: "guard_registry"
 
-  diagnose:
-    intent: "For each issue in triage order: find the ROOT CAUSE, not the symptom. Verify the diagnosis explains ALL symptoms."
+  collect-and-diagnose:
+    phase_order: 3
+    intent: "THE CRIME SCENE. Determine execution path (AI-first: tests/mocks/MCP/automation before asking user). Collect ALL logs — not just first error. Build complete forensic timeline. Propose solutions addressing root cause."
     execution: sequential
     agents: 1
     judge: false
     radar: false
     depends_on:
-      - triage
-    input: "Ordered issues with impact map"
-    output: "Per issue: root cause, hypothesis, evidence, exact code causing the problem"
+      - implant-logs
+    delegation: orchestrator
+    enriched_context:
+      - artifact: area-analysis
+        from: analyze-area
+        fields:
+          - testability_assessment
+          - risk_zones
+          - dependency_graph
+          - ecosystem_map
+      - artifact: guard-registry
+        from: implant-logs
+        fields:
+          - all_positions
+          - log_types
+          - tdd_tests
+    input: "Guard Position Registry + Area Analysis + testability assessment"
+    output: "Complete log dump, forensic timeline, error chain, TDD results, proposed solutions with root cause analysis"
+    checkpoint:
+      before_next: true
+      show_user:
+        - forensic_report
+        - proposed_changes
+        - files_to_touch
+        - root_cause_analysis
+      user_actions:
+        - approve
+        - question
+        - contradict
+      on_contradict: loop_self
 
-  propose-fix:
-    intent: "Propose the MOST CONSERVATIVE fix possible. Minimal change surface. Do NOT refactor working code. Do NOT change public APIs."
+  apply-fixes:
+    phase_order: 4
+    intent: "Implement the approved fix with minimal change surface. Run FULL regression check. Verify fix works AND no previously-passing test fails."
     execution: sequential
     agents: 1
     judge: false
     radar: false
     depends_on:
-      - diagnose
-    input: "Diagnosed issues with root causes"
-    output: "Per issue: proposed fix, files to touch, estimated lines, tests to add, residual risk"
+      - collect-and-diagnose
+    delegation: sub-agent
+    input: "Approved proposed solution with files to touch and impact analysis"
+    output: "Modified files, new tests, regression report (before/after, expected vs regression failures)"
+    context_return: "files_changed + regression_report"
 
-  apply-fix:
-    intent: "Implement fixes ONE AT A TIME in triage order. TDD strict: test that demonstrates the bug (RED) then fix (GREEN) then full suite must pass."
+  finalize:
+    phase_order: 5
+    intent: "Re-execute scenario to confirm fix. If NOT fixed: cycle back to collect-and-diagnose with new evidence. If FIXED: clean ALL guards, deliver final report, suggest tests, record lessons in Engram."
     execution: sequential
     agents: 1
     judge: false
     radar: false
     depends_on:
-      - propose-fix
-    input: "Proposed fixes in order"
-    output: "Modified files, added tests, full suite results per fix"
-
-  validate-fix:
-    intent: "Run FULL test suite. Compare with baseline. Verify: (a) issue tests now pass, (b) NO previously-passing test now fails, (c) no detectable side effects."
-    execution: sequential
-    agents: 1
-    judge: false
-    radar: false
-    depends_on:
-      - apply-fix
-    input: "Applied fixes, test baseline"
-    output: "Validation report: before/after tests, regressions, confidence level"
-
-  archive-debug:
-    intent: "Archive debug session to memory (Engram or file-based). Then generate the standardized debug_result output for the calling SDD."
-    execution: sequential
-    agents: 1
-    judge: false
-    radar: false
-    depends_on:
-      - validate-fix
-    input: "Validation report, all phase outputs"
-    output: "debug_result standardized output (status, summary, issues_resolved, regressions, requires_reverify)"
+      - apply-fixes
+    delegation: orchestrator
+    loop_target: collect-and-diagnose
+    enriched_context:
+      - artifact: regression-report
+        from: apply-fixes
+        fields:
+          - fix_status
+          - new_failures
+          - confidence
+      - artifact: guard-registry
+        from: implant-logs
+        fields:
+          - all_positions
+      - artifact: area-analysis
+        from: analyze-area
+        fields:
+          - full_report
+    input: "Regression report + fix status + Guard Position Registry"
+    output: "If cycling: recovered logs for next iteration. If fixed: final debug report, guards cleaned, Engram entries, test suggestions"
