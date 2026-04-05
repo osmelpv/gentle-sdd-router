@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, test, beforeEach, afterEach } from 'node:test';
-import { unifiedSync } from '../src/core/unified-sync.js';
+import { unifiedSync, ensurePluginDeps } from '../src/core/unified-sync.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -183,10 +183,16 @@ describe('unifiedSync — pipeline order (REQ-1)', () => {
     assert.equal(result.steps[0].name, 'contracts');
   });
 
-  test('validate step runs last', async () => {
+  test('tui-plugin step runs last', async () => {
     const result = await unifiedSync({ configPath, dryRun: true });
     const last = result.steps[result.steps.length - 1];
-    assert.equal(last.name, 'validate');
+    assert.equal(last.name, 'tui-plugin');
+  });
+
+  test('validate step runs second-to-last', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    const secondToLast = result.steps[result.steps.length - 2];
+    assert.equal(secondToLast.name, 'validate');
   });
 });
 
@@ -629,5 +635,247 @@ describe('unifiedSync — auto-wiring: enable/disable produces updated overlay',
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+});
+
+// ── ensurePluginDeps ──────────────────────────────────────────────────────────
+
+const EXPECTED_DEPS = [
+  '@opencode-ai/plugin',
+  '@opentui/core',
+  '@opentui/solid',
+  'solid-js',
+];
+
+describe('ensurePluginDeps — creates package.json when missing', () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-epd-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('creates package.json with all 4 peer deps when file does not exist', () => {
+    const { changed, pkgPath } = ensurePluginDeps(tmpDir);
+
+    assert.equal(changed, true, 'changed must be true when file was created');
+    assert.ok(fs.existsSync(pkgPath), 'package.json must be created');
+
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    for (const dep of EXPECTED_DEPS) {
+      assert.ok(pkg.dependencies[dep], `${dep} must be present in dependencies`);
+    }
+  });
+
+  test('all 4 peer deps are declared', () => {
+    ensurePluginDeps(tmpDir);
+    const pkg = JSON.parse(fs.readFileSync(path.join(tmpDir, 'package.json'), 'utf8'));
+    assert.equal(EXPECTED_DEPS.length, 4, 'must have exactly 4 expected peer deps');
+    for (const dep of EXPECTED_DEPS) {
+      assert.ok(
+        Object.prototype.hasOwnProperty.call(pkg.dependencies, dep),
+        `dependency "${dep}" must be declared`
+      );
+    }
+  });
+
+  test('pkgPath points inside the configDir passed', () => {
+    const { pkgPath } = ensurePluginDeps(tmpDir);
+    assert.ok(pkgPath.startsWith(tmpDir), 'pkgPath must be inside configDir');
+    assert.ok(pkgPath.endsWith('package.json'), 'pkgPath must end with package.json');
+  });
+});
+
+describe('ensurePluginDeps — merges into existing package.json', () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-epd-merge-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('does not overwrite user-defined deps already in package.json', () => {
+    const existing = {
+      name: 'my-opencode-config',
+      dependencies: {
+        'solid-js': '1.8.0',       // user-pinned version
+        'some-user-package': '^2.0.0',
+      },
+    };
+    fs.writeFileSync(
+      path.join(tmpDir, 'package.json'),
+      JSON.stringify(existing, null, 2) + '\n',
+      'utf8'
+    );
+
+    ensurePluginDeps(tmpDir);
+    const pkg = JSON.parse(fs.readFileSync(path.join(tmpDir, 'package.json'), 'utf8'));
+
+    // User-pinned version must be preserved
+    assert.equal(pkg.dependencies['solid-js'], '1.8.0', 'user-pinned solid-js must not be overwritten');
+    // User extra dep must be preserved
+    assert.ok(pkg.dependencies['some-user-package'], 'user package must be preserved');
+    // Missing gsr deps must be added
+    assert.ok(pkg.dependencies['@opencode-ai/plugin'], '@opencode-ai/plugin must be added');
+    assert.ok(pkg.dependencies['@opentui/core'], '@opentui/core must be added');
+    assert.ok(pkg.dependencies['@opentui/solid'], '@opentui/solid must be added');
+  });
+
+  test('changed is true when some deps were missing', () => {
+    const existing = {
+      dependencies: { 'solid-js': '*' },
+    };
+    fs.writeFileSync(
+      path.join(tmpDir, 'package.json'),
+      JSON.stringify(existing, null, 2) + '\n',
+      'utf8'
+    );
+
+    const { changed } = ensurePluginDeps(tmpDir);
+    assert.equal(changed, true, 'changed must be true when deps were added');
+  });
+
+  test('preserves non-dependencies fields in package.json', () => {
+    const existing = {
+      name: 'opencode-cfg',
+      version: '0.1.0',
+      private: true,
+      dependencies: {},
+    };
+    fs.writeFileSync(
+      path.join(tmpDir, 'package.json'),
+      JSON.stringify(existing, null, 2) + '\n',
+      'utf8'
+    );
+
+    ensurePluginDeps(tmpDir);
+    const pkg = JSON.parse(fs.readFileSync(path.join(tmpDir, 'package.json'), 'utf8'));
+
+    assert.equal(pkg.name, 'opencode-cfg', 'name must be preserved');
+    assert.equal(pkg.version, '0.1.0', 'version must be preserved');
+    assert.equal(pkg.private, true, 'private must be preserved');
+  });
+});
+
+describe('ensurePluginDeps — idempotency', () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-epd-idem-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('running twice produces same package.json content', () => {
+    ensurePluginDeps(tmpDir);
+    const first = fs.readFileSync(path.join(tmpDir, 'package.json'), 'utf8');
+
+    ensurePluginDeps(tmpDir);
+    const second = fs.readFileSync(path.join(tmpDir, 'package.json'), 'utf8');
+
+    assert.equal(first, second, 'package.json must be identical after second run');
+  });
+
+  test('changed is false on second run (no new deps to add)', () => {
+    ensurePluginDeps(tmpDir); // first run creates the file
+
+    const { changed } = ensurePluginDeps(tmpDir); // second run
+    assert.equal(changed, false, 'changed must be false when all deps already present');
+  });
+
+  test('running 3 times is stable', () => {
+    ensurePluginDeps(tmpDir);
+    ensurePluginDeps(tmpDir);
+    const { changed } = ensurePluginDeps(tmpDir);
+
+    assert.equal(changed, false, 'third run must also report changed = false');
+    const pkg = JSON.parse(fs.readFileSync(path.join(tmpDir, 'package.json'), 'utf8'));
+    for (const dep of EXPECTED_DEPS) {
+      assert.ok(pkg.dependencies[dep], `${dep} must still be present after 3 runs`);
+    }
+  });
+});
+
+// ── deployGsrPluginStep integration: package.json is written ─────────────────
+
+describe('unifiedSync — tui-plugin step writes package.json', () => {
+  let tmpDir;
+  let configPath;
+  let pluginsDir;
+  let opencodeConfigDir;
+
+  beforeEach(() => {
+    ({ tmpDir, configPath } = makeTempRouterDir());
+    opencodeConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-oc-cfg-'));
+    pluginsDir = path.join(opencodeConfigDir, 'plugins');
+    fs.mkdirSync(pluginsDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(opencodeConfigDir, { recursive: true, force: true });
+  });
+
+  test('tui-plugin step creates package.json with all 4 peer deps', async () => {
+    const result = await unifiedSync({
+      configPath,
+      pluginsDir,
+      opencodeConfigDir,
+    });
+
+    const tuiStep = result.steps.find(s => s.name === 'tui-plugin');
+    assert.ok(tuiStep, 'tui-plugin step must exist');
+    assert.equal(tuiStep.status, 'ok', 'tui-plugin step must succeed');
+
+    const pkgPath = path.join(opencodeConfigDir, 'package.json');
+    assert.ok(fs.existsSync(pkgPath), 'package.json must be created in opencodeConfigDir');
+
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    for (const dep of EXPECTED_DEPS) {
+      assert.ok(pkg.dependencies[dep], `${dep} must be in package.json after tui-plugin step`);
+    }
+  });
+
+  test('tui-plugin step includes installNote when package.json was updated', async () => {
+    const result = await unifiedSync({
+      configPath,
+      pluginsDir,
+      opencodeConfigDir,
+    });
+
+    const tuiStep = result.steps.find(s => s.name === 'tui-plugin');
+    assert.ok(tuiStep, 'tui-plugin step must exist');
+    // On first run deps are always added, so installNote must be present
+    assert.ok(
+      tuiStep.data.installNote,
+      'installNote must be set when package.json was modified'
+    );
+    assert.ok(
+      tuiStep.data.installNote.includes('bun install'),
+      'installNote must mention bun install'
+    );
+  });
+
+  test('tui-plugin step does not set installNote on second identical run', async () => {
+    // First run — populates package.json
+    await unifiedSync({ configPath, pluginsDir, opencodeConfigDir });
+
+    // Second run — no changes expected
+    const result = await unifiedSync({ configPath, pluginsDir, opencodeConfigDir });
+    const tuiStep = result.steps.find(s => s.name === 'tui-plugin');
+    assert.ok(tuiStep, 'tui-plugin step must exist');
+    assert.equal(
+      tuiStep.data.installNote,
+      undefined,
+      'installNote must NOT be set when package.json already has all deps'
+    );
   });
 });

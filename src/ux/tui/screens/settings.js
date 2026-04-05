@@ -6,6 +6,128 @@ import { PLATFORMS, detectInstalledPlatforms } from '../platform-detector.js';
 
 const h = React.createElement;
 
+// ─── AutoFallback toggle sub-view ─────────────────────────────────────────────
+
+/**
+ * Read the autoFallback setting from router.yaml.
+ * Returns false (default) if not found or on error.
+ *
+ * @param {string} configPath
+ * @returns {Promise<boolean>}
+ */
+async function readAutoFallbackSetting(configPath) {
+  try {
+    if (!configPath) return false;
+    const [fsMod, routerMod] = await Promise.all([
+      import('node:fs'),
+      import('../../../core/router.js'),
+    ]);
+    const fsSync = fsMod.default ?? fsMod;
+    const raw = fsSync.readFileSync(configPath, 'utf8');
+    const parsed = routerMod.parseYaml(raw);
+    return parsed?.settings?.autoFallback === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Persist the autoFallback setting to router.yaml under settings.autoFallback.
+ *
+ * @param {string} configPath
+ * @param {boolean} value
+ */
+async function saveAutoFallbackSetting(configPath, value) {
+  if (!configPath) return;
+
+  const fsMod = await import('node:fs');
+  const fsSync = fsMod.default ?? fsMod;
+  const raw = fsSync.readFileSync(configPath, 'utf8');
+  const lines = raw.split('\n');
+
+  const autoFallbackLine = `  autoFallback: ${value}`;
+
+  const settingsIdx = lines.findIndex(l => /^settings\s*:/.test(l));
+
+  if (settingsIdx >= 0) {
+    // Find existing autoFallback line under settings:
+    const autoFbIdx = lines.findIndex(
+      (l, i) => i > settingsIdx && /^\s+autoFallback\s*:/.test(l)
+    );
+    if (autoFbIdx >= 0) {
+      lines[autoFbIdx] = autoFallbackLine;
+    } else {
+      lines.splice(settingsIdx + 1, 0, autoFallbackLine);
+    }
+  } else {
+    // Append settings block
+    while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+      lines.pop();
+    }
+    lines.push('settings:');
+    lines.push(autoFallbackLine);
+    lines.push('');
+  }
+
+  fsSync.writeFileSync(configPath, lines.join('\n'), 'utf8');
+}
+
+/**
+ * AutoFallback toggle view.
+ */
+function AutoFallbackView({ configPath, showResult, onBack }) {
+  const [autoFallback, setAutoFallback] = useState(null); // null = loading
+
+  useEffect(() => {
+    readAutoFallbackSetting(configPath).then(val => setAutoFallback(val));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useInput((input, key) => {
+    if (autoFallback === null) return;
+
+    if (key.escape) {
+      onBack();
+      return;
+    }
+
+    if (input === ' ' || key.return) {
+      const newValue = !autoFallback;
+      setAutoFallback(newValue);
+      saveAutoFallbackSetting(configPath, newValue)
+        .then(() => showResult(`Auto-fallback ${newValue ? 'enabled' : 'disabled'}.`))
+        .catch(err => showResult(`Error saving auto-fallback: ${err.message}`));
+      onBack();
+      return;
+    }
+  });
+
+  if (autoFallback === null) {
+    return h(Box, { flexDirection: 'column' },
+      h(Text, { color: colors.subtext0 }, 'Loading…')
+    );
+  }
+
+  const checkbox = autoFallback ? '[✓]' : '[ ]';
+
+  return h(Box, { flexDirection: 'column' },
+    h(Text, { bold: true, color: colors.lavender }, 'Auto-fallback Setting'),
+    h(Text, null, ''),
+    h(Box, null,
+      h(Text, { color: autoFallback ? colors.green : colors.text }, checkbox + ' '),
+      h(Text, { bold: true }, 'Auto-fallback (skip dialog on model failure)'),
+    ),
+    h(Text, null, ''),
+    h(Text, { color: colors.subtext0 },
+      autoFallback
+        ? 'When on, gsr switches to the next fallback silently.'
+        : 'When off, a dialog appears to let you choose which fallback to promote.'
+    ),
+    h(Text, null, ''),
+    h(Text, { color: colors.subtext0 }, 'Space/Enter: toggle  Esc: cancel'),
+  );
+}
+
 // ─── Platforms sub-view ───────────────────────────────────────────────────────
 
 function PlatformsView({ configPath, showResult, onBack }) {
@@ -186,6 +308,7 @@ export function SettingsScreen({ config, configPath, router, setDescription, sho
   const [confirmUninstall, setConfirmUninstall] = useState(false);
   const [overlayPreview, setOverlayPreview] = useState(null); // { lines, report }
   const [showPlatforms, setShowPlatforms] = useState(false);
+  const [showAutoFallback, setShowAutoFallback] = useState(false);
 
   useInput((input, key) => {
     if (!key.escape) return;
@@ -202,6 +325,10 @@ export function SettingsScreen({ config, configPath, router, setDescription, sho
       setShowPlatforms(false);
       return;
     }
+    if (showAutoFallback) {
+      setShowAutoFallback(false);
+      return;
+    }
     router.pop();
   });
 
@@ -211,6 +338,15 @@ export function SettingsScreen({ config, configPath, router, setDescription, sho
       configPath,
       showResult,
       onBack: () => setShowPlatforms(false),
+    });
+  }
+
+  // Sub-view: auto-fallback toggle
+  if (showAutoFallback) {
+    return h(AutoFallbackView, {
+      configPath,
+      showResult,
+      onBack: () => setShowAutoFallback(false),
     });
   }
 
@@ -296,6 +432,7 @@ export function SettingsScreen({ config, configPath, router, setDescription, sho
 
   const items = [
     { label: 'Manage platforms', value: 'platforms', description: 'Toggle active AI coding platforms and their provider mappings.' },
+    { label: 'Auto-fallback', value: 'auto-fallback', description: 'When on, gsr switches to the next fallback silently. When off, a dialog appears.' },
     { label: 'Apply OpenCode overlay', value: 'apply', description: 'Preview the OpenCode overlay agents that would be generated.' },
     { label: 'Uninstall gsr', value: 'uninstall', description: 'Remove gsr from this project (overlay + router/ with backup).' },
   ];
@@ -310,6 +447,11 @@ export function SettingsScreen({ config, configPath, router, setDescription, sho
 
         if (value === 'platforms') {
           setShowPlatforms(true);
+          return;
+        }
+
+        if (value === 'auto-fallback') {
+          setShowAutoFallback(true);
           return;
         }
 

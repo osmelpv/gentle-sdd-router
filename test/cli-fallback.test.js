@@ -15,6 +15,7 @@ import {
   runFallbackRemove,
   runFallbackMove,
   runFallbackSet,
+  runFallbackPromote,
 } from '../src/cli.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -87,6 +88,7 @@ function readProfile(routerDir, presetName) {
 import {
   readFallbackChain,
   writeFallbackChain,
+  promoteFallback,
   formatFallbackList,
   validateModelId,
   getPresetPhases,
@@ -501,6 +503,197 @@ describe('runFallbackSet', () => {
     await assert.rejects(
       () => runFallbackSet(['test-preset']),
       /requires/,
+    );
+  });
+});
+
+// ─── promoteFallback unit tests ───────────────────────────────────────────────
+
+describe('promoteFallback', () => {
+  test('correct swap: selected fallback → target, old target → fallback[0]', async () => {
+    const tmp = makeTempDir();
+    try {
+      const { configPath } = makeProjectDir(tmp, {
+        fallbacks: 'mistral/mistral-large-3, opencode/qwen3.6-plus-free, opencode-go/glm-5',
+      });
+      // promote fallback #2 (opencode/qwen3.6-plus-free)
+      const result = await promoteFallback(configPath, 'test-preset', 'orchestrator', 0, 2);
+      assert.equal(result.promoted, 'opencode/qwen3.6-plus-free');
+      assert.equal(result.demoted, 'anthropic/claude-sonnet-4-6');
+      assert.deepEqual(result.newFallbacks, [
+        'anthropic/claude-sonnet-4-6',
+        'mistral/mistral-large-3',
+        'opencode-go/glm-5',
+      ]);
+
+      // Verify disk state
+      const chain = readFallbackChain(configPath, 'test-preset', 'orchestrator', 0);
+      assert.deepEqual(chain, [
+        'anthropic/claude-sonnet-4-6',
+        'mistral/mistral-large-3',
+        'opencode-go/glm-5',
+      ]);
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('out of range index → throws clear error', async () => {
+    const tmp = makeTempDir();
+    try {
+      const { configPath } = makeProjectDir(tmp, {
+        fallbacks: 'mistral/mistral-large-3, opencode/qwen3.6-plus-free',
+      });
+      await assert.rejects(
+        () => promoteFallback(configPath, 'test-preset', 'orchestrator', 0, 99),
+        /out of range/,
+      );
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('single fallback → promotes correctly', async () => {
+    const tmp = makeTempDir();
+    try {
+      const { configPath } = makeProjectDir(tmp, {
+        fallbacks: 'mistral/mistral-large-3',
+      });
+      const result = await promoteFallback(configPath, 'test-preset', 'orchestrator', 0, 1);
+      assert.equal(result.promoted, 'mistral/mistral-large-3');
+      assert.equal(result.demoted, 'anthropic/claude-sonnet-4-6');
+      assert.deepEqual(result.newFallbacks, ['anthropic/claude-sonnet-4-6']);
+
+      // New primary should be the promoted model
+      const routerDir = tmp + '/router';
+      const profile = fs.readFileSync(
+        path.join(routerDir, 'profiles', 'test-preset.router.yaml'), 'utf8'
+      );
+      assert.ok(profile.includes('target: mistral/mistral-large-3'), 'promoted model must be new target');
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('index 1 (first fallback) → correct', async () => {
+    const tmp = makeTempDir();
+    try {
+      const { configPath } = makeProjectDir(tmp, {
+        fallbacks: 'mistral/mistral-large-3, opencode/qwen3.6-plus-free, opencode-go/glm-5',
+      });
+      const result = await promoteFallback(configPath, 'test-preset', 'orchestrator', 0, 1);
+      assert.equal(result.promoted, 'mistral/mistral-large-3');
+      assert.equal(result.demoted, 'anthropic/claude-sonnet-4-6');
+      assert.deepEqual(result.newFallbacks, [
+        'anthropic/claude-sonnet-4-6',
+        'opencode/qwen3.6-plus-free',
+        'opencode-go/glm-5',
+      ]);
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('index N (last fallback) → correct', async () => {
+    const tmp = makeTempDir();
+    try {
+      const { configPath } = makeProjectDir(tmp, {
+        fallbacks: 'mistral/mistral-large-3, opencode/qwen3.6-plus-free, opencode-go/glm-5',
+      });
+      const result = await promoteFallback(configPath, 'test-preset', 'orchestrator', 0, 3);
+      assert.equal(result.promoted, 'opencode-go/glm-5');
+      assert.equal(result.demoted, 'anthropic/claude-sonnet-4-6');
+      assert.deepEqual(result.newFallbacks, [
+        'anthropic/claude-sonnet-4-6',
+        'mistral/mistral-large-3',
+        'opencode/qwen3.6-plus-free',
+      ]);
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('no fallbacks → throws clear error', async () => {
+    const tmp = makeTempDir();
+    try {
+      const routerDir = path.join(tmp, 'router');
+      fs.mkdirSync(path.join(routerDir, 'profiles'), { recursive: true });
+      fs.writeFileSync(path.join(routerDir, 'router.yaml'),
+        'version: 5\nactive_preset: test-preset\n', 'utf8');
+      fs.writeFileSync(path.join(routerDir, 'profiles', 'test-preset.router.yaml'),
+        `name: test-preset\nsdd: agent-orchestrator\nphases:\n  orchestrator:\n    - target: anthropic/claude-sonnet-4-6\n      kind: lane\n      phase: orchestrator\n      role: primary\n`,
+        'utf8');
+      const configPath = path.join(routerDir, 'router.yaml');
+      await assert.rejects(
+        () => promoteFallback(configPath, 'test-preset', 'orchestrator', 0, 1),
+        /no fallbacks/,
+      );
+    } finally {
+      cleanup(tmp);
+    }
+  });
+});
+
+// ─── CLI runFallbackPromote tests ─────────────────────────────────────────────
+
+describe('runFallbackPromote', () => {
+  test('promotes fallback and prints correct output', async () => {
+    const tmp = makeTempDir();
+    try {
+      const { configPath } = makeProjectDir(tmp, {
+        fallbacks: 'mistral/mistral-large-3, opencode/qwen3.6-plus-free',
+      });
+      const origCwd = process.cwd();
+      process.chdir(tmp);
+      try {
+        const out = await captureStdout(() =>
+          runFallbackPromote(['test-preset', 'orchestrator', '1'])
+        );
+        assert.ok(out.includes('Promoted'), 'must print Promoted message');
+        assert.ok(out.includes('Demoted'), 'must print Demoted message');
+        assert.ok(out.includes('mistral/mistral-large-3'), 'must mention promoted model');
+
+        // Verify disk change
+        const chain = readFallbackChain(configPath, 'test-preset', 'orchestrator', 0);
+        assert.equal(chain[0], 'anthropic/claude-sonnet-4-6', 'old primary must be first fallback');
+      } finally {
+        process.chdir(origCwd);
+      }
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('shows error for out of range index', async () => {
+    const tmp = makeTempDir();
+    try {
+      makeProjectDir(tmp, { fallbacks: 'mistral/mistral-large-3' });
+      const origCwd = process.cwd();
+      process.chdir(tmp);
+      try {
+        const out = await captureStdout(() =>
+          runFallbackPromote(['test-preset', 'orchestrator', '99'])
+        );
+        assert.ok(out.includes('Error'), 'must print error for out-of-range index');
+      } finally {
+        process.chdir(origCwd);
+      }
+    } finally {
+      cleanup(tmp);
+    }
+  });
+
+  test('throws if missing required arguments', async () => {
+    await assert.rejects(
+      () => runFallbackPromote(['test-preset']),
+      /requires/,
+    );
+  });
+
+  test('throws if index is not a number', async () => {
+    await assert.rejects(
+      () => runFallbackPromote(['test-preset', 'orchestrator', 'abc']),
+      /positive integer/,
     );
   });
 });

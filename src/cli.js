@@ -73,6 +73,7 @@ import { getSimpleStatus, getVerboseStatus } from './core/status-reporter.js';
 import {
   readFallbackChain,
   writeFallbackChain,
+  promoteFallback,
   formatFallbackList,
   validateModelId,
   getPresetPhases,
@@ -1592,6 +1593,7 @@ function renderGeneralHelp() {
     '    remove <preset> <phase> <index>  Remove by 1-based index.',
     '    move <preset> <phase> <from> <to>  Reorder entries (1-based).',
     '    set <preset> <phase> <model,model,...>  Replace entire chain.',
+    '    promote <preset> <phase> <index>  Promote fallback to primary.',
     '',
     '  catalog                   Legacy/advanced compatibility commands (scheduled for removal).',
     '',
@@ -1954,6 +1956,7 @@ function renderCommandHelp(topic, subtopic) {
         '  remove <preset> <phase> <index>    Remove entry by 1-based index.',
         '  move <preset> <phase> <from> <to>  Reorder entries (both 1-based).',
         '  set <preset> <phase> <models>      Replace entire chain (comma-separated).',
+        '  promote <preset> <phase> <index>   Promote fallback to primary; old primary → fallback #1.',
         '',
         'Options:',
         '  --lane N   Target lane index (0-based, default: 0)',
@@ -1965,6 +1968,7 @@ function renderCommandHelp(topic, subtopic) {
         '  gsr fallback remove premium orchestrator 2',
         '  gsr fallback move premium orchestrator 3 1',
         '  gsr fallback set premium orchestrator "mistral/mistral-large-3,openai/gpt-5.3-instant"',
+        '  gsr fallback promote premium orchestrator 2',
         '  gsr fallback add premium apply openai/gpt-5.4 --lane 0',
       ].join('\n') + '\n';
     }
@@ -2032,6 +2036,19 @@ function renderCommandHelp(topic, subtopic) {
         '',
         'Example:',
         '  gsr fallback set premium orchestrator "mistral/mistral-large-3,openai/gpt-5.3-instant"',
+      ].join('\n') + '\n';
+    }
+    if (sub === 'promote') {
+      return [
+        'Usage: gsr fallback promote <preset> <phase> <index> [--lane N]',
+        'Promote a fallback to primary. Old primary becomes fallback #1.',
+        '  <preset>   Preset name.',
+        '  <phase>    Phase name.',
+        '  <index>    1-based position of the fallback to promote.',
+        '  --lane N   Lane index (0-based, default: 0).',
+        '',
+        'Example:',
+        '  gsr fallback promote premium orchestrator 2',
       ].join('\n') + '\n';
     }
     return null;
@@ -3565,11 +3582,12 @@ export async function runFallbackCommand(args) {
   }
 
   switch (sub) {
-    case 'list':   return runFallbackList(rest);
-    case 'add':    return runFallbackAdd(rest);
-    case 'remove': return runFallbackRemove(rest);
-    case 'move':   return runFallbackMove(rest);
-    case 'set':    return runFallbackSet(rest);
+    case 'list':    return runFallbackList(rest);
+    case 'add':     return runFallbackAdd(rest);
+    case 'remove':  return runFallbackRemove(rest);
+    case 'move':    return runFallbackMove(rest);
+    case 'set':     return runFallbackSet(rest);
+    case 'promote': return runFallbackPromote(rest);
     default:
       printUsage();
       throw new Error(`Unknown fallback command: ${sub}`);
@@ -3847,6 +3865,50 @@ export async function runFallbackSet(args) {
 
   process.stdout.write(`Fallback chain for ${presetName}/${phaseName} (lane ${laneIndex}) set to:\n`);
   process.stdout.write(formatFallbackList(newChain) + '\n');
+}
+
+/**
+ * gsr fallback promote <preset> <phase> <index> [--lane N]
+ * Promotes the fallback at 1-based <index> to primary.
+ * Old primary becomes fallback #1.
+ * @param {string[]} args
+ */
+export async function runFallbackPromote(args) {
+  const configPath = discoverConfigPath();
+  if (!configPath) {
+    process.stdout.write('No router config found. Run `gsr install` first.\n');
+    return;
+  }
+
+  const positionals = args.filter((a, i) => !a.startsWith('--') && (i === 0 || !args[i - 1].startsWith('--')));
+  const presetName = positionals[0];
+  const phaseName = positionals[1];
+  const indexStr = positionals[2];
+  const laneIndex = parseLaneFlag(args);
+
+  if (!presetName || !phaseName || !indexStr) {
+    throw new Error('gsr fallback promote requires: <preset> <phase> <index>');
+  }
+
+  const fallbackIndex = parseInt(indexStr, 10);
+  if (!Number.isFinite(fallbackIndex) || fallbackIndex < 1) {
+    throw new Error(`Index must be a positive integer (got: "${indexStr}").`);
+  }
+
+  let result;
+  try {
+    result = await promoteFallback(configPath, presetName, phaseName, laneIndex, fallbackIndex);
+  } catch (err) {
+    process.stdout.write(`Error: ${err.message}\n`);
+    return;
+  }
+
+  const { promoted, demoted, newFallbacks } = result;
+
+  process.stdout.write(`✓ Promoted: ${promoted} → primary (${phaseName}, lane ${laneIndex})\n`);
+  process.stdout.write(`✓ Demoted:  ${demoted} → fallback #1\n`);
+  process.stdout.write('New chain:\n');
+  process.stdout.write(formatFallbackList(newFallbacks) + '\n');
 }
 
 export { resetIdentityCache };

@@ -213,3 +213,93 @@ export function getPresetPhases(configPath, presetName) {
   }
   return Object.keys(result.content.phases || {});
 }
+
+/**
+ * Promotes fallback at fallbackIndex (1-based) to primary model.
+ * Old primary moves to position 0 of fallback chain.
+ * Chain order: [oldPrimary, ...others] where others = original chain minus promoted.
+ *
+ * Example:
+ *   Before: target=A, fallbacks=[B, C, D]
+ *   promote(2) → target=C, fallbacks=[A, B, D]
+ *
+ * @param {string} configPath - path to router/router.yaml
+ * @param {string} presetName - name of the preset (e.g. "local-hybrid")
+ * @param {string} phaseName - phase name (e.g. "orchestrator")
+ * @param {number} laneIndex - 0-based lane index
+ * @param {number} fallbackIndex - 1-based index of fallback to promote
+ * @returns {Promise<{ promoted: string, demoted: string, newFallbacks: string[] }>}
+ */
+export async function promoteFallback(configPath, presetName, phaseName, laneIndex, fallbackIndex) {
+  // 1. Read profile file for the preset
+  const routerDir = path.dirname(configPath);
+  const result = findProfileFile(routerDir, presetName);
+  if (!result) {
+    throw new Error(`Preset '${presetName}' not found in ${path.join(routerDir, 'profiles')}.`);
+  }
+
+  const { filePath, content } = result;
+
+  // 2. Find the lane (phaseName + laneIndex)
+  const lanes = content.phases?.[phaseName];
+  if (!lanes) {
+    throw new Error(`Phase '${phaseName}' not found in preset '${presetName}'.`);
+  }
+  if (!Array.isArray(lanes)) {
+    throw new Error(`Phase '${phaseName}' in preset '${presetName}' is not a lane array.`);
+  }
+
+  const lane = resolveLane(lanes, laneIndex, phaseName);
+
+  // 3. Get current target + normalized fallbacks array (model strings)
+  const currentTarget = lane.target;
+  if (!currentTarget) {
+    throw new Error(`Lane ${laneIndex} of phase '${phaseName}' has no target defined.`);
+  }
+
+  const normalized = normalizeFallbacks(lane.fallbacks ?? []);
+  const fallbacks = normalized.map((item) => item.model);
+
+  // 4. Validate fallbackIndex is in range (1-based)
+  if (fallbacks.length === 0) {
+    throw new Error(`Phase '${phaseName}' (lane ${laneIndex}) has no fallbacks to promote.`);
+  }
+  if (!Number.isFinite(fallbackIndex) || fallbackIndex < 1 || fallbackIndex > fallbacks.length) {
+    throw new Error(
+      `Fallback index ${fallbackIndex} is out of range for phase '${phaseName}' ` +
+      `(${fallbacks.length} fallback(s) available, 1-based).`
+    );
+  }
+
+  // 5. selectedModel = fallbacks[fallbackIndex - 1]
+  const selectedModel = fallbacks[fallbackIndex - 1];
+
+  // 6. newFallbacks = [currentTarget, ...fallbacks.filter((_, i) => i !== fallbackIndex - 1)]
+  const newFallbacks = [currentTarget, ...fallbacks.filter((_, i) => i !== fallbackIndex - 1)];
+
+  // 7. Write back: lane.target = selectedModel, lane.fallbacks = newFallbacks.join(', ')
+  //    (serialize back to CSV string for YAML compatibility)
+  const newLanes = lanes.map((l, idx) => {
+    if (idx !== laneIndex) return l;
+    const updated = { ...l };
+    updated.target = selectedModel;
+    updated.fallbacks = newFallbacks.join(', ');
+    return updated;
+  });
+
+  const newContent = { ...content, phases: { ...content.phases, [phaseName]: newLanes } };
+
+  // 8. Save profile file
+  writeProfileFile(filePath, newContent);
+
+  // 9. Call unifiedSync({ configPath })
+  try {
+    const { unifiedSync } = await import('./unified-sync.js');
+    await unifiedSync({ configPath });
+  } catch (err) {
+    process.stdout.write(`Note: sync after fallback promote failed: ${err.message}\n`);
+  }
+
+  // 10. Return { promoted: selectedModel, demoted: currentTarget, newFallbacks }
+  return { promoted: selectedModel, demoted: currentTarget, newFallbacks };
+}
