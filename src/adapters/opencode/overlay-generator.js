@@ -31,6 +31,28 @@ function loadFallbackProtocolText() {
 
 /** Fallback protocol text loaded once at module init. */
 const FALLBACK_PROTOCOL_TEXT = loadFallbackProtocolText();
+
+/**
+ * Load the heartbeat protocol text from router/contracts/heartbeat-protocol.md.
+ * Returns empty string if the file is not found (graceful degradation).
+ */
+function loadHeartbeatProtocolText() {
+  try {
+    const moduleDir = dirname(fileURLToPath(import.meta.url));
+    const contractPath = resolve(moduleDir, '..', '..', '..', 'router', 'contracts', 'heartbeat-protocol.md');
+    if (existsSync(contractPath)) {
+      return readFileSync(contractPath, 'utf8').trim();
+    }
+    console.warn('[gsr] heartbeat-protocol.md not found at expected path:', contractPath);
+    return '';
+  } catch (err) {
+    console.warn('[gsr] Failed to load heartbeat-protocol.md:', err.message);
+    return '';
+  }
+}
+
+/** Heartbeat protocol text loaded once at module init. */
+const HEARTBEAT_PROTOCOL_TEXT = loadHeartbeatProtocolText();
 const GSR_AGENT_PREFIX = 'gsr-';
 
 /**
@@ -156,8 +178,16 @@ export function generateOpenCodeOverlay(config, options = {}) {
         resolvedPrompt = resolvedPrompt + '\n\n' + FALLBACK_PROTOCOL_TEXT;
       }
 
-      // Task 4: Build _gsr_fallbacks map keyed by phase name
-      // Each entry: { [phaseName]: [model1, model2, ...] }
+      // Inject heartbeat protocol into prompt for long-running agents (any agent with phases)
+      const hasPhases = Object.keys(preset.phases ?? {}).length > 0;
+      if (HEARTBEAT_PROTOCOL_TEXT && hasPhases && !resolvedPrompt.includes('GSR Watchdog Heartbeat Protocol')) {
+        resolvedPrompt = resolvedPrompt + '\n\n' + HEARTBEAT_PROTOCOL_TEXT;
+      }
+
+      // Build _gsr_fallbacks map keyed by phase name.
+      // Each entry is Array<{model: string, on: string[]}> — preserves on-conditions
+      // for error-type-aware fallback selection by the orchestrator.
+      // Backward compat: CSV string → {model, on: ["any"]} via normalizeFallbacks().
       const gsrFallbacks = {};
       const phases = preset.phases ?? {};
       for (const [phaseName, lanes] of Object.entries(phases)) {
@@ -167,13 +197,12 @@ export function generateOpenCodeOverlay(config, options = {}) {
 
         const rawFallbacks = primaryLane.fallbacks;
         if (rawFallbacks !== undefined) {
-          // Already normalized by validateProfileFile, but handle both forms defensively
-          const normalized = Array.isArray(rawFallbacks)
-            ? rawFallbacks
-            : normalizeFallbacks(rawFallbacks);
-          gsrFallbacks[phaseName] = normalized.map((fb) =>
-            typeof fb === 'string' ? fb : fb.model
-          );
+          // normalizeFallbacks always returns Array<{model, on}> — use it as the source of truth
+          const normalized = normalizeFallbacks(rawFallbacks);
+          gsrFallbacks[phaseName] = normalized.map((fb) => ({
+            model: typeof fb === 'string' ? fb : fb.model,
+            on: (typeof fb === 'object' && Array.isArray(fb.on)) ? fb.on : ['any'],
+          }));
         } else {
           gsrFallbacks[phaseName] = [];
         }

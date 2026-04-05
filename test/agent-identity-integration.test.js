@@ -253,9 +253,8 @@ describe('T10: identity.overrides in router config applied during overlay genera
       const { agent } = generateOpenCodeOverlay(config, { cwd: dir });
 
       assert.ok(agent['gsr-special'], 'gsr-special must be generated');
-      assert.equal(
-        agent['gsr-special'].prompt,
-        'Override wins here',
+      assert.ok(
+        agent['gsr-special'].prompt.startsWith('Override wins here'),
         'router-level override must win over profile identity context'
       );
       assert.equal(agent['gsr-special']._gsr_generated, true, 'entry still has GSR marker');
@@ -292,8 +291,8 @@ describe('T10: identity.overrides in router config applied during overlay genera
       const first = generateOpenCodeOverlay(config, { cwd: dir });
       const second = generateOpenCodeOverlay(config, { cwd: dir });
 
-      assert.equal(first.agent['gsr-stable'].prompt, 'Persistent declarative override', 'first call uses override');
-      assert.equal(second.agent['gsr-stable'].prompt, 'Persistent declarative override', 'second call (regen) still uses override');
+      assert.ok(first.agent['gsr-stable'].prompt.startsWith('Persistent declarative override'), 'first call uses override');
+      assert.ok(second.agent['gsr-stable'].prompt.startsWith('Persistent declarative override'), 'second call (regen) still uses override');
     } finally {
       cleanup(dir);
     }
@@ -370,10 +369,9 @@ describe('Full flow: profile identity → overlay → merge', () => {
 
       const { agent } = generateOpenCodeOverlay(config, { cwd: dir });
 
-      assert.equal(
-        agent['gsr-override'].prompt,
-        'Verbatim explicit prompt.',
-        'explicit prompt must be used verbatim'
+      assert.ok(
+        agent['gsr-override'].prompt.startsWith('Verbatim explicit prompt.'),
+        'explicit prompt must be used verbatim (may have protocol text appended)'
       );
       assert.ok(
         !agent['gsr-override'].prompt.includes('This should NOT appear'),

@@ -87,20 +87,26 @@ describe('generateOpenCodeOverlay — fallback emission', () => {
     assert.ok('explore' in fallbacks, '_gsr_fallbacks must have explore key');
   });
 
-  test('_gsr_fallbacks orchestrator entry contains ordered model string array', () => {
+  test('_gsr_fallbacks orchestrator entry is Array<{model,on}> with on:["any"] for CSV', () => {
     const config = makeConfig({ 'test-preset': CSV_FALLBACK_PRESET });
     const { agent } = generateOpenCodeOverlay(config);
 
     const fallbacks = agent['gsr-test-preset']._gsr_fallbacks;
-    assert.deepEqual(fallbacks.orchestrator, ['modelA', 'modelB']);
+    assert.deepEqual(fallbacks.orchestrator, [
+      { model: 'modelA', on: ['any'] },
+      { model: 'modelB', on: ['any'] },
+    ]);
   });
 
-  test('_gsr_fallbacks explore entry contains ordered model string array', () => {
+  test('_gsr_fallbacks explore entry is Array<{model,on}> with on:["any"] for CSV', () => {
     const config = makeConfig({ 'test-preset': CSV_FALLBACK_PRESET });
     const { agent } = generateOpenCodeOverlay(config);
 
     const fallbacks = agent['gsr-test-preset']._gsr_fallbacks;
-    assert.deepEqual(fallbacks.explore, ['openai/gpt', 'anthropic/claude-haiku']);
+    assert.deepEqual(fallbacks.explore, [
+      { model: 'openai/gpt', on: ['any'] },
+      { model: 'anthropic/claude-haiku', on: ['any'] },
+    ]);
   });
 
   test('preset without fallbacks produces empty _gsr_fallbacks map', () => {
@@ -126,7 +132,10 @@ describe('generateOpenCodeOverlay — fallback emission', () => {
     );
     assert.deepEqual(
       agent['gsr-test-preset']._gsr_orchestrator_fallbacks,
-      ['modelA', 'modelB'],
+      [
+        { model: 'modelA', on: ['any'] },
+        { model: 'modelB', on: ['any'] },
+      ],
       '_gsr_orchestrator_fallbacks must match orchestrator fallbacks'
     );
   });
@@ -186,5 +195,83 @@ describe('generateOpenCodeOverlay — fallback emission', () => {
       agent['gsr-no-fallbacks']._gsr_fallbacks,
       'fallback maps must be independent objects'
     );
+  });
+
+  // ── Heartbeat Protocol injection ──────────────────────────────────────────
+
+  test('agent prompt includes GSR Watchdog Heartbeat Protocol text for preset with phases', () => {
+    const config = makeConfig({ 'test-preset': CSV_FALLBACK_PRESET });
+    const { agent } = generateOpenCodeOverlay(config);
+
+    assert.ok(
+      agent['gsr-test-preset'].prompt.includes('GSR Watchdog Heartbeat Protocol'),
+      'agent prompt must include GSR Watchdog Heartbeat Protocol'
+    );
+  });
+
+  test('heartbeat protocol appears exactly once (idempotent)', () => {
+    const config = makeConfig({ 'test-preset': CSV_FALLBACK_PRESET });
+    const first = generateOpenCodeOverlay(config);
+    const second = generateOpenCodeOverlay(config);
+
+    const occurrences1 = (first.agent['gsr-test-preset'].prompt.match(/GSR Watchdog Heartbeat Protocol/g) || []).length;
+    const occurrences2 = (second.agent['gsr-test-preset'].prompt.match(/GSR Watchdog Heartbeat Protocol/g) || []).length;
+    assert.equal(occurrences1, 1, 'must appear exactly once on first generation');
+    assert.equal(occurrences2, 1, 'must appear exactly once on second generation');
+  });
+
+  test('preset without phases does NOT inject heartbeat protocol', () => {
+    const noPhasePreset = { availability: 'stable', phases: {} };
+    const config = makeConfig({ 'no-phases': noPhasePreset });
+    const { agent } = generateOpenCodeOverlay(config);
+    if (agent['gsr-no-phases']) {
+      assert.ok(
+        !agent['gsr-no-phases'].prompt.includes('GSR Watchdog Heartbeat Protocol'),
+        'preset without phases must NOT have heartbeat protocol'
+      );
+    }
+    // If no agent entry generated — that's also acceptable
+  });
+
+  // ── Structured on-conditions ──────────────────────────────────────────────
+
+  test('structured fallbacks with on-conditions preserve on field in _gsr_fallbacks', () => {
+    const structuredPreset = {
+      availability: 'stable',
+      phases: {
+        orchestrator: [{
+          target: 'anthropic/claude-sonnet',
+          kind: 'lane',
+          phase: 'orchestrator',
+          role: 'primary',
+          fallbacks: [
+            { model: 'mistral/large', on: ['quota_exceeded', 'rate_limited'] },
+            { model: 'openai/gpt-4o', on: ['any'] },
+          ],
+        }],
+      },
+    };
+    const config = makeConfig({ 'structured': structuredPreset });
+    const { agent } = generateOpenCodeOverlay(config);
+
+    const fallbacks = agent['gsr-structured']._gsr_fallbacks;
+    assert.ok(Array.isArray(fallbacks.orchestrator));
+    assert.deepEqual(fallbacks.orchestrator[0], { model: 'mistral/large', on: ['quota_exceeded', 'rate_limited'] });
+    assert.deepEqual(fallbacks.orchestrator[1], { model: 'openai/gpt-4o', on: ['any'] });
+  });
+
+  test('CSV fallbacks normalize to on:["any"] — backward compatible', () => {
+    const config = makeConfig({ 'csv': CSV_FALLBACK_PRESET });
+    const { agent } = generateOpenCodeOverlay(config);
+
+    const fallbacks = agent['gsr-csv']._gsr_fallbacks;
+    for (const phaseFallbacks of Object.values(fallbacks)) {
+      for (const fb of phaseFallbacks) {
+        assert.ok(typeof fb === 'object' && fb !== null, 'each entry must be an object');
+        assert.ok(typeof fb.model === 'string', 'each entry must have model string');
+        assert.ok(Array.isArray(fb.on), 'each entry must have on array');
+        assert.deepEqual(fb.on, ['any'], 'CSV fallbacks must have on:["any"]');
+      }
+    }
   });
 });

@@ -747,9 +747,8 @@ describe('identity.overrides — router-level overrides win over resolved identi
     const { agent, warnings } = generateOpenCodeOverlay(config, { cwd: os.tmpdir() });
 
     assert.ok(agent['gsr-multivendor'], 'gsr-multivendor entry must be generated');
-    assert.equal(
-      agent['gsr-multivendor'].prompt,
-      'Router-level override prompt',
+    assert.ok(
+      agent['gsr-multivendor'].prompt.startsWith('Router-level override prompt'),
       'router override prompt must win over resolved identity'
     );
     assert.equal(agent['gsr-multivendor']._gsr_generated, true, 'entry must still have _gsr_generated marker');
@@ -779,7 +778,7 @@ describe('identity.overrides — router-level overrides win over resolved identi
     // safety catalog is enabled by default in makeConfig (single default catalog)
     const { agent } = generateOpenCodeOverlay(config, { cwd: os.tmpdir() });
 
-    assert.equal(agent['gsr-multivendor'].prompt, 'Only multivendor override', 'multivendor has override');
+    assert.ok(agent['gsr-multivendor'].prompt.startsWith('Only multivendor override'), 'multivendor has override');
     // gsr-safety must have its own resolved identity (not the override)
     assert.ok(agent['gsr-safety'], 'gsr-safety entry must be generated');
     assert.notEqual(
@@ -845,8 +844,8 @@ describe('identity.overrides — router-level overrides win over resolved identi
     const first = generateOpenCodeOverlay(config, { cwd: os.tmpdir() });
     const second = generateOpenCodeOverlay(config, { cwd: os.tmpdir() });
 
-    assert.equal(first.agent['gsr-multivendor'].prompt, 'Persistent override', 'first generation uses override');
-    assert.equal(second.agent['gsr-multivendor'].prompt, 'Persistent override', 'second generation still uses override');
+    assert.ok(first.agent['gsr-multivendor'].prompt.startsWith('Persistent override'), 'first generation uses override');
+    assert.ok(second.agent['gsr-multivendor'].prompt.startsWith('Persistent override'), 'second generation still uses override');
     assert.equal(first.agent['gsr-multivendor']._gsr_generated, true, '_gsr_generated stays true');
     assert.equal(second.agent['gsr-multivendor']._gsr_generated, true, '_gsr_generated stays true on regen');
   });

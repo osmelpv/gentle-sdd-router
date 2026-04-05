@@ -48,3 +48,6 @@ tareas/
 # Build artifacts
 dist/
 *.tgz
+
+# GSR Watchdog heartbeat files (runtime state, not committed)
+.gsr/watchdog/

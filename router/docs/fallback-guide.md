@@ -300,3 +300,70 @@ ollama/qwen2.5-coder
 
 Model IDs must always be in `provider/model` format. The CLI will warn (but not
 block) if a model's provider is not in the connected providers list.
+
+---
+
+## Watchdog Protocol
+
+The fallback protocol handles failures that the model **can report**. The watchdog
+handles failures where the model **cannot report anything** — silent crashes,
+provider outages, network failures, or empty responses.
+
+### How It Works
+
+```
+Orchestrator
+  │
+  ├─ mcp_delegate("sdd-apply", prompt_with_task_id)  ← async, non-blocking
+  │       └─ returns delegate_id immediately
+  │
+  └─ POLLING LOOP every 30s:
+        ├─ read heartbeat from Engram OR .gsr/watchdog/{task_id}.json
+        │     ├─ heartbeat.ts < 90s ago  → alive, keep waiting
+        │     ├─ heartbeat.ts > 90s ago  → TIMEOUT → trigger fallback
+        │     └─ no heartbeat + 45s elapsed → TIMEOUT (never started)
+        └─ mcp_delegation_read(delegate_id)
+              ├─ pending  → continue loop
+              └─ result   → success, exit loop
+```
+
+### Error Scenarios Covered
+
+| Scenario | Detection | Recovery |
+|----------|-----------|----------|
+| Model emits 429, can respond | `GSR_FALLBACK_REQUEST` in output | Existing fallback protocol |
+| Model crashes silently | Heartbeat stops updating (90s) | Orchestrator retries with fallback |
+| Sub-agent never starts | No heartbeat #0 within 45s | Orchestrator retries with fallback |
+| Empty response (model glitch) | `status: done` in HB but no result | Orchestrator retries from checkpoint |
+| Provider fully down | Heartbeat #0 never written | `no_heartbeat` timeout after 45s |
+
+### Dual Backend
+
+The watchdog works regardless of whether the gentle-ai ecosystem is installed:
+
+| Backend | When used | Where heartbeats live |
+|---------|-----------|----------------------|
+| **Engram** | gentle-ai installed | Engram topic `gsr/watchdog/{task_id}` |
+| **Filesystem** | Engram not available | `.gsr/watchdog/{task_id}.json` |
+
+The orchestrator detects which backend is available at runtime and passes
+`watchdog_backend: "engram"` or `watchdog_backend: "filesystem"` in the
+sub-agent's prompt. The sub-agent writes to the appropriate backend.
+
+### Fallback Selection with `on` Conditions
+
+The `_gsr_fallbacks` map in `opencode.json` now uses structured format:
+
+```json
+"_gsr_fallbacks": {
+  "orchestrator": [
+    { "model": "mistral/large", "on": ["any"] },
+    { "model": "openai/gpt-4o", "on": ["quota_exceeded", "rate_limited"] }
+  ]
+}
+```
+
+Selection priority given an `error_type`:
+1. First fallback with `on` containing exactly `error_type`
+2. First fallback with `on: ["any"]`
+3. First fallback in the list (backward compat)

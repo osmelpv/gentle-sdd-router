@@ -84,3 +84,9 @@ Model failure recovery commands.
   reads connected providers from `config.providers()` to annotate each fallback with
   connection status badges, then presents the ordered fallback chain for selection.
   SDK usage is a progressive enhancement — degrades gracefully if unavailable.
+
+- `/gsr-watchdog` — Check the watchdog status of active delegated tasks.
+  Reads heartbeat data from Engram (if available) or `.gsr/watchdog/` (filesystem fallback).
+  Shows: last heartbeat timestamp, elapsed time, alive/timeout status, last completed task,
+  and the next fallback model if a timeout is detected. Use this when a sub-agent appears
+  stuck and you want to diagnose whether it is still running or needs manual recovery.
