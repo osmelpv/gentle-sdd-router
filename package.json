@@ -36,13 +36,30 @@
     "docs/presets-guide.md",
     "docs/release-checklist.md",
     "src/",
-    "router/"
+    "router/",
+    "tui.tsx"
   ],
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*",
+    "@opentui/core": "*",
+    "@opentui/solid": "*",
+    "solid-js": "*"
+  },
   "engines": {
     "node": ">=20"
   },
   "bin": {
     "gsr": "./bin/gsr.js"
+  },
+  "exports": {
+    ".": "./src/cli.js",
+    "./tui": {
+      "import": "./tui.tsx",
+      "config": {
+        "enabled": true,
+        "theme": "gentle-sdd"
+      }
+    }
   },
   "scripts": {
     "test": "node --test"
