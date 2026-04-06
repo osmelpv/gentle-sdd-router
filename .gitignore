@@ -51,3 +51,8 @@ dist/
 
 # GSR Watchdog heartbeat files (runtime state, not committed)
 .gsr/watchdog/
+
+# Pre-compiled TUI plugin (generated from tui.tsx via npm run build:tui)
+# Not committed — regenerate with: npm run build:tui
+tui.js
+tui.compiled.js

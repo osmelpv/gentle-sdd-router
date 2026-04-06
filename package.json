@@ -54,7 +54,7 @@
   "exports": {
     ".": "./src/cli.js",
     "./tui": {
-      "import": "./tui.tsx",
+      "import": "./tui.js",
       "config": {
         "enabled": true,
         "theme": "gentle-sdd"
@@ -62,7 +62,8 @@
     }
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "build:tui": "npx esbuild tui.tsx --bundle=false --platform=browser --jsx=automatic --jsx-import-source=@opentui/solid --outfile=tui.js --format=esm"
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",
