@@ -94,22 +94,67 @@ const tui: TuiPlugin = async (api, options) => {
 
   // ── Add a fallback to a phase ─────────────────────────────────────────────
 
-  const showAddFallback = (preset: string, phaseName: string) => {
+  // ── Add fallback: provider picker → model picker ────────────────────────
+
+  const showModelPicker = (preset: string, phaseName: string, providerId: string) => {
+    const providers: any[] = api.state?.provider ?? [];
+    const provider = providers.find((p: any) => p.id === providerId);
+    const models = provider?.models ?? {};
+    const modelEntries = Object.entries(models);
+
+    if (modelEntries.length === 0) {
+      api.ui.toast({ message: `No models found for provider "${providerId}".`, variant: "info" });
+      showProviderPicker(preset, phaseName);
+      return;
+    }
+
     api.ui.dialog.replace(() => (
-      <api.ui.DialogPrompt
-        title={`Add fallback to ${preset} / ${phaseName}`}
-        placeholder="provider/model-name (e.g. openai/gpt-5)"
-        onConfirm={(modelId: string) => {
-          const trimmed = (modelId || "").trim();
-          if (!trimmed || !trimmed.includes("/")) {
-            api.ui.toast({ title: "Invalid", message: "Model ID must be provider/model (e.g. openai/gpt-5)", variant: "error" });
-            showPhaseDetail(preset, phaseName);
-            return;
-          }
-          runSafe(`gsr fallback add ${preset} ${phaseName} ${trimmed}`);
+      <api.ui.DialogSelect
+        title={`Add fallback — select model from ${providerId}`}
+        options={[
+          ...modelEntries.map(([modelKey, model]: [string, any]) => ({
+            title: model.name || modelKey,
+            value: `${providerId}/${model.id || modelKey}`,
+            description: model.family ? `Family: ${model.family}` : providerId,
+          })),
+          { title: "← Back to providers", value: "__back__" },
+        ]}
+        onSelect={(opt: any) => {
+          if (opt.value === "__back__") { showProviderPicker(preset, phaseName); return; }
+          const modelId = opt.value;
+          runSafe(`gsr fallback add ${preset} ${phaseName} ${modelId}`);
           runSafe("gsr sync");
-          api.ui.toast({ title: "Added", message: `${trimmed} added to ${phaseName} fallbacks`, variant: "success" });
+          api.ui.toast({ title: "Added", message: `${modelId} added to ${phaseName} fallbacks`, variant: "success" });
           showPhaseDetail(preset, phaseName);
+        }}
+        onCancel={() => showProviderPicker(preset, phaseName)}
+      />
+    ));
+  };
+
+  const showProviderPicker = (preset: string, phaseName: string) => {
+    const providers: any[] = api.state?.provider ?? [];
+
+    if (providers.length === 0) {
+      api.ui.toast({ message: "No providers connected. Configure providers in OpenCode settings.", variant: "error" });
+      showPhaseDetail(preset, phaseName);
+      return;
+    }
+
+    api.ui.dialog.replace(() => (
+      <api.ui.DialogSelect
+        title={`Add fallback to ${preset} / ${phaseName} — select provider`}
+        options={[
+          ...providers.map((p: any) => ({
+            title: p.name || p.id,
+            value: p.id,
+            description: `${Object.keys(p.models || {}).length} model(s) available`,
+          })),
+          { title: "← Back", value: "__back__" },
+        ]}
+        onSelect={(opt: any) => {
+          if (opt.value === "__back__") { showPhaseDetail(preset, phaseName); return; }
+          showModelPicker(preset, phaseName, opt.value);
         }}
         onCancel={() => showPhaseDetail(preset, phaseName)}
       />
@@ -159,7 +204,7 @@ const tui: TuiPlugin = async (api, options) => {
         onSelect={(opt: any) => {
           if (opt.value === "__primary__") return; // no-op
           if (opt.value === "__back__") { showPhasePicker(preset); return; }
-          if (opt.value === "__add__") { showAddFallback(preset, phaseName); return; }
+          if (opt.value === "__add__") { showProviderPicker(preset, phaseName); return; }
 
           // Selected a specific fallback → show promote/remove options
           const { index, model } = opt.value;
