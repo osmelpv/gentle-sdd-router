@@ -63,7 +63,8 @@
   },
   "scripts": {
     "test": "node --test",
-    "build:tui": "npx esbuild tui.tsx --bundle=false --platform=browser --jsx=automatic --jsx-import-source=@opentui/solid --outfile=tui.js --format=esm"
+    "build:tui": "npx esbuild tui.tsx --bundle=false --platform=browser --jsx=automatic --jsx-import-source=@opentui/solid --outfile=tui.js --format=esm",
+    "setup:tui": "mkdir -p node_modules/@opentui && ln -sf ~/.config/opencode/node_modules/@opentui/solid node_modules/@opentui/solid && npm run build:tui"
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",
