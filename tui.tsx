@@ -2,6 +2,13 @@
 /** @jsxImportSource @opentui/solid */
 import type { TuiPlugin, TuiPluginModule } from "@opencode-ai/plugin/tui";
 
+// ── GUARD: Module loaded ──────────────────────────────────────────────────────
+// Written to disk immediately at module evaluation time
+const { writeFileSync: _gw, appendFileSync: _ga } = require("fs");
+const _glog = (msg) => { try { _ga(".gsr/debug.log", `[${Date.now()}] ${msg}\n`); } catch {} };
+try { require("fs").mkdirSync(".gsr", { recursive: true }); } catch {}
+_gw(".gsr/debug.log", `[${Date.now()}] GUARD-0: module loaded (tui.tsx evaluated by Bun)\n`);
+
 const id = "gentle-sdd-router";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -16,21 +23,9 @@ function runSafe(cmd: string, fallback = ""): string {
   } catch { return fallback; }
 }
 
-/**
- * Detect the active preset from OpenCode's current agent context.
- *
- * Priority:
- *   1. options.agent  — e.g. "gsr-local-hybrid" → "local-hybrid"
- *      This is the agent OpenCode is currently running, so it reflects
- *      exactly what the user has loaded (TAB selection, not just router.yaml).
- *   2. gsr status     — fallback when not running inside an agent context
- */
 function detectActivePreset(options: any): string {
   const agentName: string = options?.agent ?? "";
-  if (agentName.startsWith("gsr-")) {
-    return agentName.replace(/^gsr-/, "");
-  }
-  // Fallback: parse unified status output
+  if (agentName.startsWith("gsr-")) return agentName.replace(/^gsr-/, "");
   const out = runSafe("gsr status");
   return out.match(/Active\s+(\S+)/i)?.[1] || "default";
 }
@@ -38,7 +33,6 @@ function detectActivePreset(options: any): string {
 function parseGsrFallbackList(output: string) {
   const phases: { name: string; primary: string; fallbacks: string[] }[] = [];
   let current: typeof phases[0] | null = null;
-
   for (const raw of output.split("\n")) {
     const line = raw.trimEnd();
     const phaseMatch = line.match(/^(\S[^:]+)\s*\(lane\s*\d+\)\s*:$/);
@@ -57,9 +51,15 @@ function parseGsrFallbackList(output: string) {
   return { phases };
 }
 
+// ── GUARD: Before tui function definition ────────────────────────────────────
+_glog("GUARD-1: before tui function definition");
+
 // ── TUI Plugin ────────────────────────────────────────────────────────────────
 
 const tui: TuiPlugin = async (api, options) => {
+
+  // ── GUARD: tui() called by OpenCode ────────────────────────────────────────
+  _glog("GUARD-2: tui() async function entered — OpenCode called the plugin");
 
   // ── Fallback flow ─────────────────────────────────────────────────────────
 
@@ -100,19 +100,16 @@ const tui: TuiPlugin = async (api, options) => {
   };
 
   const showFallbackFlow = () => {
-    // Detect which preset is active RIGHT NOW in this OpenCode session
     const preset = detectActivePreset(options);
     const raw = runSafe(`gsr fallback list ${preset}`);
     const { phases } = parseGsrFallbackList(raw);
-
     if (phases.length === 0) {
       api.ui.toast({
-        message: `No fallbacks configured for preset "${preset}". Add with: gsr fallback add ${preset} <phase> <model>`,
+        message: `No fallbacks configured for preset "${preset}".`,
         variant: "info",
       });
       return;
     }
-
     api.ui.dialog.replace(() => (
       <api.ui.DialogSelect
         title={`GSR Fallbacks — preset: ${preset}`}
@@ -133,7 +130,8 @@ const tui: TuiPlugin = async (api, options) => {
     ));
   };
 
-  // ── Command registration ──────────────────────────────────────────────────
+  // ── GUARD: Before command registration ───────────────────────────────────
+  _glog("GUARD-3: before api.command.register()");
 
   api.command.register(() => [
     {
@@ -146,7 +144,8 @@ const tui: TuiPlugin = async (api, options) => {
     },
   ]);
 
-  // ── Auto-trigger on model failure ─────────────────────────────────────────
+  // ── GUARD: Before event registration ─────────────────────────────────────
+  _glog("GUARD-4: before api.event.on(session.error)");
 
   api.event.on("session.error", async () => {
     setTimeout(() => {
@@ -156,27 +155,27 @@ const tui: TuiPlugin = async (api, options) => {
         const { phases } = parseGsrFallbackList(raw);
         const phase = phases.find((p: any) => p.fallbacks.length > 0);
         const autoFallback = api.kv.get("gsr.autoFallback", false);
-
         if (autoFallback && phase) {
           executePromote(preset, phase, 1);
         } else {
-          api.ui.toast({
-            title: "GSR: Model failed",
-            message: "Run /gsr-fallback to switch to a backup model",
-            variant: "warning",
-          });
+          api.ui.toast({ title: "GSR: Model failed", message: "Run /gsr-fallback to switch model", variant: "warning" });
           if (phase) showFallbackFlow();
         }
       } catch {
-        api.ui.toast({
-          title: "GSR: Model failed",
-          message: "Run /gsr-fallback to manage fallbacks",
-          variant: "warning",
-        });
+        api.ui.toast({ title: "GSR: Model failed", message: "Run /gsr-fallback to manage fallbacks", variant: "warning" });
       }
     }, 50);
   });
+
+  // ── GUARD: tui() completed ────────────────────────────────────────────────
+  _glog("GUARD-5: tui() completed successfully");
 };
 
+// ── GUARD: After tui function definition ─────────────────────────────────────
+_glog("GUARD-6: after tui function definition — plugin object about to be created");
+
 const plugin: TuiPluginModule & { id: string } = { id, tui };
+
+_glog("GUARD-7: export default plugin — module evaluation complete");
+
 export default plugin;
