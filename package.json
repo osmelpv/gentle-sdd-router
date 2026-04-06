@@ -39,9 +39,7 @@
     "router/",
     "tui.tsx"
   ],
-  "peerDependencies": {
-    "@opencode-ai/plugin": "*"
-  },
+  "peerDependencies": {},
   "engines": {
     "node": ">=20"
   },
