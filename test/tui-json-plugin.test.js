@@ -263,3 +263,72 @@ describe('unifiedSync — tui-plugin step registers plugin in tui.json', () => {
     assert.equal(typeof tuiStep.data.registered, 'boolean', 'registered must be a boolean');
   });
 });
+
+// ── Regression: /tmp dirs must NEVER pollute the global tui.json ─────────────
+// Root cause of the Bun 1.3.11 segfault (920 /tmp plugin entries in tui.json).
+
+describe('REGRESSION — temp project dirs must not contaminate global tui.json', () => {
+  let globalTuiJsonPath;
+  let globalTuiJsonBackup;
+
+  beforeEach(() => {
+    globalTuiJsonPath = path.join(os.homedir(), '.config', 'opencode', 'tui.json');
+    try {
+      globalTuiJsonBackup = fs.readFileSync(globalTuiJsonPath, 'utf8');
+    } catch {
+      globalTuiJsonBackup = null;
+    }
+  });
+
+  afterEach(() => {
+    // Restore global tui.json exactly as it was
+    if (globalTuiJsonBackup !== null) {
+      fs.writeFileSync(globalTuiJsonPath, globalTuiJsonBackup, 'utf8');
+    }
+  });
+
+  test('unifiedSync with /tmp projectDir does NOT add entry to global tui.json', async () => {
+    // Parse global tui.json plugin count BEFORE
+    let pluginsBefore = 0;
+    try {
+      const cfg = JSON.parse(fs.readFileSync(globalTuiJsonPath, 'utf8'));
+      pluginsBefore = (cfg.plugin || []).length;
+    } catch { /* file may not exist */ }
+
+    // Create a temp project with valid router config
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-tui-regression-'));
+    const routerDir = path.join(tmpDir, 'router');
+    fs.mkdirSync(routerDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(routerDir, 'router.yaml'),
+      'schema_version: 4\nactive_preset: test\n',
+      'utf8',
+    );
+    // Write a fake tui.tsx so the plugin step has something to register
+    fs.writeFileSync(path.join(tmpDir, 'tui.tsx'), '// fake', 'utf8');
+
+    try {
+      // Run sync WITHOUT passing opencodeConfigDir — the safety guard must catch /tmp
+      await unifiedSync({
+        configPath: path.join(routerDir, 'router.yaml'),
+        projectDir: tmpDir,
+        // NO opencodeConfigDir — tests the safety guard in deployGsrPluginStep
+      });
+
+      // Parse global tui.json plugin count AFTER
+      let pluginsAfter = 0;
+      try {
+        const cfg = JSON.parse(fs.readFileSync(globalTuiJsonPath, 'utf8'));
+        pluginsAfter = (cfg.plugin || []).length;
+      } catch { /* file may not exist */ }
+
+      assert.equal(
+        pluginsAfter,
+        pluginsBefore,
+        `Global tui.json must NOT gain entries from /tmp project (before: ${pluginsBefore}, after: ${pluginsAfter})`
+      );
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
