@@ -96,13 +96,14 @@ const tui: TuiPlugin = async (api, options) => {
 
   const showAddFallback = (preset: string, phaseName: string) => {
     api.ui.dialog.replace(() => (
-      <api.ui.DialogInput
+      <api.ui.DialogPrompt
         title={`Add fallback to ${preset} / ${phaseName}`}
-        description="Enter model ID (e.g. openai/gpt-5, anthropic/claude-sonnet)"
+        placeholder="provider/model-name (e.g. openai/gpt-5)"
         onConfirm={(modelId: string) => {
           const trimmed = (modelId || "").trim();
           if (!trimmed || !trimmed.includes("/")) {
             api.ui.toast({ title: "Invalid", message: "Model ID must be provider/model (e.g. openai/gpt-5)", variant: "error" });
+            showPhaseDetail(preset, phaseName);
             return;
           }
           runSafe(`gsr fallback add ${preset} ${phaseName} ${trimmed}`);
