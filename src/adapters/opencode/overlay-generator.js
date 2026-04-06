@@ -178,11 +178,12 @@ export function generateOpenCodeOverlay(config, options = {}) {
         resolvedPrompt = resolvedPrompt + '\n\n' + FALLBACK_PROTOCOL_TEXT;
       }
 
-      // Inject heartbeat protocol into prompt for long-running agents (any agent with phases)
-      const hasPhases = Object.keys(preset.phases ?? {}).length > 0;
-      if (HEARTBEAT_PROTOCOL_TEXT && hasPhases && !resolvedPrompt.includes('GSR Watchdog Heartbeat Protocol')) {
-        resolvedPrompt = resolvedPrompt + '\n\n' + HEARTBEAT_PROTOCOL_TEXT;
-      }
+      // NOTE: Heartbeat protocol is intentionally NOT injected into orchestrator agents.
+      // Orchestrators READ heartbeats — they don't write them.
+      // Sub-agents (sdd-apply, sdd-verify) receive the heartbeat instructions via
+      // their own skill files, NOT through opencode.json prompts.
+      // Injecting 3KB of heartbeat text into every agent was causing opencode.json
+      // to grow to 192KB+, triggering a Bun 1.3.11 memory explosion on startup.
 
       // Build _gsr_fallbacks map keyed by phase name.
       // Each entry is Array<{model: string, on: string[]}> — preserves on-conditions

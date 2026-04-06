@@ -197,40 +197,20 @@ describe('generateOpenCodeOverlay — fallback emission', () => {
     );
   });
 
-  // ── Heartbeat Protocol injection ──────────────────────────────────────────
+  // ── Heartbeat Protocol — NOT injected into orchestrator agents ───────────
+  // Heartbeat protocol is intentionally excluded from opencode.json agent prompts.
+  // Injecting 3KB into every agent was causing opencode.json to grow to 192KB+,
+  // triggering a Bun 1.3.11 memory explosion (4.34GB RSS → segfault) on startup.
+  // Sub-agents receive heartbeat instructions via their own skill files instead.
 
-  test('agent prompt includes GSR Watchdog Heartbeat Protocol text for preset with phases', () => {
+  test('agent prompt does NOT include GSR Watchdog Heartbeat Protocol (prevents Bun OOM)', () => {
     const config = makeConfig({ 'test-preset': CSV_FALLBACK_PRESET });
     const { agent } = generateOpenCodeOverlay(config);
 
     assert.ok(
-      agent['gsr-test-preset'].prompt.includes('GSR Watchdog Heartbeat Protocol'),
-      'agent prompt must include GSR Watchdog Heartbeat Protocol'
+      !agent['gsr-test-preset'].prompt.includes('GSR Watchdog Heartbeat Protocol'),
+      'agent prompt must NOT include heartbeat protocol (causes Bun 1.3.11 OOM crash)'
     );
-  });
-
-  test('heartbeat protocol appears exactly once (idempotent)', () => {
-    const config = makeConfig({ 'test-preset': CSV_FALLBACK_PRESET });
-    const first = generateOpenCodeOverlay(config);
-    const second = generateOpenCodeOverlay(config);
-
-    const occurrences1 = (first.agent['gsr-test-preset'].prompt.match(/GSR Watchdog Heartbeat Protocol/g) || []).length;
-    const occurrences2 = (second.agent['gsr-test-preset'].prompt.match(/GSR Watchdog Heartbeat Protocol/g) || []).length;
-    assert.equal(occurrences1, 1, 'must appear exactly once on first generation');
-    assert.equal(occurrences2, 1, 'must appear exactly once on second generation');
-  });
-
-  test('preset without phases does NOT inject heartbeat protocol', () => {
-    const noPhasePreset = { availability: 'stable', phases: {} };
-    const config = makeConfig({ 'no-phases': noPhasePreset });
-    const { agent } = generateOpenCodeOverlay(config);
-    if (agent['gsr-no-phases']) {
-      assert.ok(
-        !agent['gsr-no-phases'].prompt.includes('GSR Watchdog Heartbeat Protocol'),
-        'preset without phases must NOT have heartbeat protocol'
-      );
-    }
-    // If no agent entry generated — that's also acceptable
   });
 
   // ── Structured on-conditions ──────────────────────────────────────────────
