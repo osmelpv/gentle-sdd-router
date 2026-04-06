@@ -101,18 +101,11 @@ Debug       sdd-debug-mono → on_issues
 SDDs        2 visible: agent-orchestrator, sdd-debug
 Connections SDD-Orchestrator/verify → sdd-debug-mono (on_issues)
 
-  gsr status --verbose   full routes, pricing & SDD graph
   gsr route use <name>   switch preset
   gsr sync               re-sync everything
 ```
 
-For full details including routes, pricing, all presets, and the SDD connections graph:
-
-```bash
-gsr status --verbose
-```
-
-**Expected output** includes: configuration (schema, controller, manifest), active preset with identity and debug wiring, resolved routes per phase with pricing and context window, all SDDs and presets, and an ASCII **SDD CONNECTIONS** graph showing how SDDs invoke each other (e.g., verify → sdd-debug).
+The unified status output includes: configuration (schema, controller, environment, OS), active preset with identity and debug wiring, preset counts, custom SDD counts, and resolved routes.
 
 ### Step 5 — Create a preset (optional)
 
@@ -281,7 +274,7 @@ cd your-project
 gsr setup install
 ```
 
-> **Note**: The old `gsr install` command still works as a backward-compat alias.
+> **Note**: Use `gsr setup install` for new installations.
 
 This creates the v4 multi-file layout:
 
@@ -302,10 +295,10 @@ your-project/
 gsr status
 
 # Full details (routes, pricing, activation)
-gsr status --verbose
+gsr status
 
 # List available presets
-gsr profile list
+gsr preset list
 
 # Switch to a different preset
 gsr route use claude
@@ -317,11 +310,11 @@ gsr route show
 gsr sync
 
 # Import or export presets
-gsr profile export multivendor --compact
-gsr profile import ./shared.router.yaml
+gsr preset export multivendor --compact
+gsr preset import ./shared.router.yaml
 ```
 
-> **Backward-compat aliases**: The old commands `gsr list`, `gsr use claude`, `gsr reload`, and `gsr install` still work. The new tree (`gsr preset list`, `gsr route use`, etc.) is the recommended form going forward.
+> **Note**: Legacy alias commands (`gsr list`, `gsr use`, `gsr reload`, `gsr profile`, `gsr catalog`) have been removed. Use the canonical commands: `gsr preset list`, `gsr route use`, etc.
 
 ---
 
@@ -365,10 +358,10 @@ gsr identity show --preset multivendor
 gsr status
 
 # Verbose: full routes, pricing, activation state
-gsr status --verbose
+gsr status
 ```
 
-The simple status shows: status indicator, active preset, activation state, and a hint for `--verbose`.
+The unified status shows: configuration, environment, OS, active preset, preset counts, and custom SDD counts.
 
 ---
 
@@ -377,7 +370,7 @@ The simple status shows: status indicator, active preset, activation state, and 
 ### Top-level
 
 ```
-gsr status [--verbose] [--debug]   Current state, routes, pricing
+gsr status                         Current state, presets, environment, routes
 gsr version                         Installed version
 gsr help [command]                  Help for any command
 gsr sync [--dry-run] [--force]      Full sync: contracts + overlay + commands + validate
@@ -507,8 +500,7 @@ gsr sdd invocations --status pending       # filter by status
 ```
 --dry-run     Preview changes without writing files (sync, setup)
 --force       Overwrite existing files (import, sync)
---verbose     Show full internal details (status)
---debug       Alias for --verbose (status)
+--debug       Show debug diagnostics
 --confirm     Required for destructive operations (uninstall)
 --compact     Use compact gsr:// encoding (export, import)
 ```

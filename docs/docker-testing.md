@@ -46,7 +46,7 @@ gsr help               # Should list all available commands
 
 ```bash
 gsr status             # Should show v4, multivendor active
-gsr list               # Should show at least 1 preset
+gsr preset list        # Should show at least 1 preset
 ```
 
 ### Step 3: Switch presets
@@ -61,9 +61,9 @@ gsr status             # Should show multivendor active again
 ### Step 4: Export presets
 
 ```bash
-gsr profile export multivendor                               # Print YAML to stdout
-gsr profile export multivendor --compact                     # Print gsr:// compact string
-gsr profile export multivendor --out /tmp/my-preset.yaml     # Save to file
+gsr preset export multivendor                               # Print YAML to stdout
+gsr preset export multivendor --compact                     # Print gsr:// compact string
+gsr preset export multivendor --out /tmp/my-preset.yaml     # Save to file
 ls /tmp/my-preset.yaml                               # Should exist
 cat /tmp/my-preset.yaml                              # Inspect the content
 ```
@@ -152,5 +152,5 @@ docker compose down --rmi local
 2. **gentle-ai present** — controller/persona integration
 3. **OpenCode overlay applied** — `gsr setup apply opencode --apply`
 4. **Preset switching** — `gsr route use multivendor`, `claude`, `ollama`, `safety`
-5. **Import/export** — `gsr profile import`/`gsr profile export`, local file, compact string, URL
+5. **Import/export** — `gsr preset import`/`gsr preset export`, local file, compact string, URL
 6. **Migration path** — seed v3 project, run `gsr setup update --apply`

@@ -89,7 +89,7 @@ gsr sync                                   # Full sync (idempotent, always safe)
 - `gsr sync` does EVERYTHING — contracts, overlay, commands, validation, and SDD agent reconciliation. Run it freely when YAML was edited manually or something drifted.
 - `gsr sdd global-sync` patches the global inherited `sdd-*` agents (the ones in `~/.config/opencode/opencode.json`) so they also route through GSR presets like `local-hybrid`.
 - Creating presets auto-triggers sync. You don't need to call it manually after that.
-- `gsr status` tells you if everything is OK. `gsr status --verbose` gives full route details for debugging.
+- `gsr status` tells you if everything is OK — shows full state, presets, environment, and routes in one call.
 - Identity inherits from `AGENTS.md` automatically — no manual configuration needed.
 - **GSR NEVER executes** — it writes config and records that the host reads and acts on.
 - Invocation IDs use the `inv-` prefix: `inv-{uuid}` (e.g., `inv-550e8400-e29b-41d4-a716-446655440000`).
@@ -102,7 +102,7 @@ gsr sync                                   # Full sync (idempotent, always safe)
 | User wants a different model | `gsr route use <preset>` |
 | User needs a custom workflow | `gsr sdd create <name>` |
 | User needs department collaboration | Set up `invoke` in `sdd.yaml`, then `gsr sdd invoke` |
-| Something seems wrong | `gsr status --verbose` |
+| Something seems wrong | `gsr status` |
 | User modified agents manually | `gsr sync` (or `gsr sync --force` to overwrite) |
 | No router config found | `gsr setup install` |
 
@@ -177,7 +177,7 @@ The **gentle** pillar manages agent identity and context. It:
 - Inherits `AGENTS.md` context through directory trees (project → global → user)
 - Defines per-preset persona overrides (Gentleman style, neutral, custom)
 - Ships 9 role contracts + 10 phase compositions as skills
-- Publishes `/gsr` session-sync metadata for the host TUI
+- Publishes `/gsr-fallback` slash command for managing fallback models in the host TUI
 
 ```bash
 gsr identity show [--preset <name>]   # Resolve layered AGENTS.md context
@@ -537,7 +537,7 @@ Start here if you want **multi-model routing** with **fallbacks and judge/radar 
 ## Commands
 
 ```
-gsr status [--verbose]              Current state, routes, pricing
+gsr status                          Current state, presets, environment, routes
 gsr version                         Installed version
 gsr help [command]                  Help for any command
 gsr sync [--dry-run] [--force]      Full sync: contracts + overlay + commands
@@ -556,9 +556,11 @@ gsr preset copy <src> <dest>        Clone preset
 gsr preset export <name>            Export for sharing (--compact)
 gsr preset import <source>          Import from file/URL/gsr://
 
-gsr inspect browse [selector]       Multimodel metadata
-gsr inspect compare <a> <b>         Compare two presets
-gsr inspect render <target>         Host boundary preview
+gsr fallback list <preset>           Show fallback chains for a preset
+gsr fallback add <preset> <phase> <model>   Add fallback model
+gsr fallback remove <preset> <phase> <idx>  Remove fallback by index
+gsr fallback promote <preset> <phase> <idx> Promote fallback to primary
+gsr fallback set <preset> <phase> <models>  Replace entire chain
 
 gsr setup install                   Install router config
 gsr setup uninstall [--confirm]     Remove gsr overlay + router/ (with backup)
@@ -757,7 +759,7 @@ These phrases form the contractual boundary of `gsr` and are referenced by coher
 
 **Core boundary**: external router boundary, non-executing. `router/router.yaml` is the source of truth. `gsr` does not execute models, providers, or agent orchestration.
 
-**Session sync**: `gsr` exposes `/gsr` session-sync metadata for the active host TUI, but slash-command registration stays host-owned and non-executing. Host sync: /gsr session metadata is published for host-local slash-command registration; the router stays external and non-executing.
+**Session sync**: `gsr` exposes `/gsr-fallback` as a slash command in the host TUI for managing fallback models (preset picker → phase → promote/add/remove). The router stays external and non-executing.
 
 **Visibility and metadata**: browse/compare visibility flags are explicit for availability, pricing, labels, and guidance; hidden metadata stays redacted. Multimodel browse/compare expose shareable schema v3 metadata only. Inspect shareable multimodel metadata projected from schema v3 without recommending or executing anything. Compare two shareable multimodel projections without recommending or executing anything.
 
@@ -785,7 +787,7 @@ profiles:
         - openai/gpt-4o-mini
 ```
 
-- `gsr render opencode`
+- `gsr sync` generates the overlay automatically
 
 ---
 
