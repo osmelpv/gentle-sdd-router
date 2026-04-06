@@ -9,7 +9,7 @@
  *   5. claude-code   — deploy gsr-*.md slash commands to Claude Code (~/.claude/commands/)
  *   6. validate      — readback opencode.json and verify expected agents
  *   7. tui-plugin    — register project directory in ~/.config/opencode/tui.json
- *   8. tui-build     — pre-compile tui.tsx → tui.js (avoids Bun 1.3.x segfault on TSX transpilation)
+ *   8. tui-build     — no-op (tui.tsx loaded directly by OpenCode's Bun runtime)
  *
  * All steps return structured results; the caller decides what to print.
  * No step throws — failures are captured in the step result.
@@ -17,11 +17,10 @@
  * @module unified-sync
  */
 
-import fs, { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, symlinkSync, lstatSync } from 'node:fs';
+import fs, { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import path, { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
 
 // Lazy imports — avoids circular deps, allows test mocking
 async function getSyncContracts() {
@@ -572,106 +571,16 @@ async function deployGsrPluginStep(opts) {
 // ── Step 8: TUI pre-build ─────────────────────────────────────────────────
 
 /**
- * Ensure tui.js (pre-compiled plugin) is up to date.
+ * tui-build step — no-op.
  *
- * Why: Bun 1.3.x crashes (segfault) when transpiling large TSX files at
- * startup. Pre-compiling tui.tsx → tui.js avoids the transpilation entirely.
+ * tui.tsx is loaded directly by OpenCode's Bun runtime which handles JSX
+ * transpilation internally. Pre-compilation via esbuild + @opentui/solid symlink
+ * was causing Bun to resolve Babel and 265MB of transitive deps (→ 4.34GB RAM crash).
  *
- * Steps:
- *   1. Ensure node_modules/@opentui/solid symlink points to OpenCode's copy
- *   2. If tui.js is missing OR tui.tsx is newer → run esbuild
- *   3. Never fails the pipeline — failures are captured as warnings
- *
- * @param {object} opts
- * @param {boolean} opts.dryRun
- * @param {string} [opts.projectDir]
- * @param {string} [opts.opencodeConfigDir]
+ * The small tui.tsx (182 lines) is transpiled by Bun at startup without issue.
  */
 export async function buildTuiPluginStep(opts) {
-  const { dryRun, projectDir, opencodeConfigDir } = opts;
-
-  const pluginDir  = projectDir ?? process.cwd();
-  const tsxPath    = join(pluginDir, 'tui.tsx');
-  const jsPath     = join(pluginDir, 'tui.js');
-
-  // Skip if there is no tui.tsx in this project — not a TUI plugin project
-  if (!existsSync(tsxPath)) {
-    return stepSkipped('tui-build', 'No tui.tsx found — skipping TUI pre-build');
-  }
-
-  if (dryRun) {
-    return stepOk('tui-build', { dryRun: true, rebuilt: false, skipped: true });
-  }
-
-  try {
-    // ── 1. Ensure @opentui/solid symlink ─────────────────────────────────
-    const configDir        = opencodeConfigDir ?? join(homedir(), '.config', 'opencode');
-    const optuiSource      = join(configDir, 'node_modules', '@opentui', 'solid');
-    const optuiTarget      = join(pluginDir, 'node_modules', '@opentui', 'solid');
-    const optuiParent      = join(pluginDir, 'node_modules', '@opentui');
-
-    let symlinkOk = false;
-    if (existsSync(optuiSource)) {
-      try {
-        // Check if symlink already points to the right place
-        let needsSymlink = true;
-        if (existsSync(optuiTarget)) {
-          try {
-            const stat = lstatSync(optuiTarget);
-            needsSymlink = !stat.isSymbolicLink();
-          } catch { /* relink */ }
-        }
-        if (needsSymlink) {
-          mkdirSync(optuiParent, { recursive: true });
-          // Remove stale entry if it exists
-          try { fs.rmSync(optuiTarget, { recursive: true, force: true }); } catch { /* ignore */ }
-          symlinkSync(optuiSource, optuiTarget);
-        }
-        symlinkOk = true;
-      } catch (symlinkErr) {
-        // Non-fatal — esbuild may still work if @opentui/solid is resolvable
-        console.warn(`[gsr] Warning: could not create @opentui/solid symlink: ${symlinkErr.message}`);
-      }
-    }
-
-    // ── 2. Check if rebuild is needed ────────────────────────────────────
-    let needsBuild = !existsSync(jsPath);
-    if (!needsBuild) {
-      try {
-        const tsxMtime = lstatSync(tsxPath).mtimeMs;
-        const jsMtime  = lstatSync(jsPath).mtimeMs;
-        needsBuild = tsxMtime > jsMtime;
-      } catch { needsBuild = true; }
-    }
-
-    if (!needsBuild) {
-      return stepOk('tui-build', { rebuilt: false, skipped: true, reason: 'tui.js is up to date' });
-    }
-
-    // ── 3. Run esbuild ───────────────────────────────────────────────────
-    const esbuildResult = spawnSync(
-      'npx',
-      [
-        '--yes', 'esbuild', 'tui.tsx',
-        '--bundle=false',
-        '--platform=browser',
-        '--jsx=automatic',
-        '--jsx-import-source=@opentui/solid',
-        `--outfile=${jsPath}`,
-        '--format=esm',
-      ],
-      { encoding: 'utf8', timeout: 30_000, cwd: pluginDir },
-    );
-
-    if (esbuildResult.status !== 0) {
-      const errMsg = (esbuildResult.stderr || esbuildResult.stdout || 'unknown error').slice(0, 300);
-      return stepSkipped('tui-build', `esbuild failed: ${errMsg}`);
-    }
-
-    return stepOk('tui-build', { rebuilt: true, symlinkOk, jsPath });
-  } catch (err) {
-    return stepSkipped('tui-build', `TUI pre-build skipped: ${err.message}`);
-  }
+  return stepSkipped('tui-build', 'tui.tsx loaded directly by OpenCode — no pre-compilation needed');
 }
 
 // ── Main pipeline ─────────────────────────────────────────────────────────

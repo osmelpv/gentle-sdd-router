@@ -40,10 +40,7 @@
     "tui.tsx"
   ],
   "peerDependencies": {
-    "@opencode-ai/plugin": "*",
-    "@opentui/core": "*",
-    "@opentui/solid": "*",
-    "solid-js": "*"
+    "@opencode-ai/plugin": "*"
   },
   "engines": {
     "node": ">=20"
@@ -54,7 +51,7 @@
   "exports": {
     ".": "./src/cli.js",
     "./tui": {
-      "import": "./tui.js",
+      "import": "./tui.tsx",
       "config": {
         "enabled": true,
         "theme": "gentle-sdd"
@@ -63,8 +60,7 @@
   },
   "scripts": {
     "test": "node --test",
-    "build:tui": "npx esbuild tui.tsx --bundle=false --platform=browser --jsx=automatic --jsx-import-source=@opentui/solid --outfile=tui.js --format=esm",
-    "setup:tui": "mkdir -p node_modules/@opentui && ln -sf ~/.config/opencode/node_modules/@opentui/solid node_modules/@opentui/solid && npm run build:tui"
+    "build:tui": "echo 'tui.tsx is loaded directly by OpenCode — no build needed'"
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",
