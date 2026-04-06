@@ -15,8 +15,13 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseYaml, stringifyYaml } from './router.js';
 import { normalizeFallbacks } from './router-v4-io.js';
+
+const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
+const __pluginRoot = path.resolve(__moduleDir, '..', '..');
+const __globalProfilesDir = path.join(__pluginRoot, 'router', 'profiles');
 
 // ─── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -29,29 +34,38 @@ import { normalizeFallbacks } from './router-v4-io.js';
  * @returns {{ filePath: string, content: object } | null}
  */
 function findProfileFile(routerDir, presetName) {
-  const profilesDir = path.join(routerDir, 'profiles');
-  if (!fs.existsSync(profilesDir)) return null;
+  // Search project profiles first, then plugin global profiles.
+  // This mirrors the lookup order in preset-io.js findProfilePath().
+  const searchDirs = [path.join(routerDir, 'profiles')];
 
-  const entries = fs.readdirSync(profilesDir);
-  for (const entry of entries) {
-    const entryPath = path.join(profilesDir, entry);
-    const stat = fs.statSync(entryPath);
+  // Add global profiles dir if different from project (avoids double-scan)
+  if (__globalProfilesDir !== searchDirs[0] && fs.existsSync(__globalProfilesDir)) {
+    searchDirs.push(__globalProfilesDir);
+  }
 
-    if (stat.isDirectory()) {
-      // One level of subdirectories (catalog subdirs)
-      const subEntries = fs.readdirSync(entryPath);
-      for (const sub of subEntries) {
-        if (!sub.endsWith('.router.yaml')) continue;
-        const filePath = path.join(entryPath, sub);
+  for (const profilesDir of searchDirs) {
+    if (!fs.existsSync(profilesDir)) continue;
+
+    const entries = fs.readdirSync(profilesDir);
+    for (const entry of entries) {
+      const entryPath = path.join(profilesDir, entry);
+      const stat = fs.statSync(entryPath);
+
+      if (stat.isDirectory()) {
+        const subEntries = fs.readdirSync(entryPath);
+        for (const sub of subEntries) {
+          if (!sub.endsWith('.router.yaml')) continue;
+          const filePath = path.join(entryPath, sub);
+          const raw = fs.readFileSync(filePath, 'utf8');
+          const content = parseYaml(raw);
+          if (content.name === presetName) return { filePath, content };
+        }
+      } else if (entry.endsWith('.router.yaml')) {
+        const filePath = entryPath;
         const raw = fs.readFileSync(filePath, 'utf8');
         const content = parseYaml(raw);
         if (content.name === presetName) return { filePath, content };
       }
-    } else if (entry.endsWith('.router.yaml')) {
-      const filePath = entryPath;
-      const raw = fs.readFileSync(filePath, 'utf8');
-      const content = parseYaml(raw);
-      if (content.name === presetName) return { filePath, content };
     }
   }
 
