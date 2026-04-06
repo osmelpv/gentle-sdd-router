@@ -24,10 +24,17 @@ function runSafe(cmd: string, fallback = ""): string {
  *   2. gsr status — fallback when not running inside an agent context
  */
 function detectActivePreset(options: any): string {
+  // Try options.agent first (e.g. "gsr-local-hybrid" → "local-hybrid")
   const agentName: string = options?.agent ?? "";
   if (agentName.startsWith("gsr-")) return agentName.replace(/^gsr-/, "");
+
+  // Fallback: parse "Active preset <name>" from gsr status output
+  // Must match the exact line format to avoid cross-line regex traps
+  // (e.g. "Activation    active\n  Environment" was incorrectly matching "Environment")
   const out = runSafe("gsr status");
-  return out.match(/Active\s+(\S+)/i)?.[1] || "default";
+  const match = out.match(/Active preset\s+(\S+)/i)
+    ?? out.match(/^  Active\s+(\S+)/m);
+  return match?.[1] || "default";
 }
 
 function parseGsrFallbackList(output: string) {
