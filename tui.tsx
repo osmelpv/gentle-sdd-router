@@ -2,13 +2,6 @@
 /** @jsxImportSource @opentui/solid */
 import type { TuiPlugin, TuiPluginModule } from "@opencode-ai/plugin/tui";
 
-// ── GUARD: Module loaded ──────────────────────────────────────────────────────
-// Written to disk immediately at module evaluation time
-const { writeFileSync: _gw, appendFileSync: _ga } = require("fs");
-const _glog = (msg) => { try { _ga(".gsr/debug.log", `[${Date.now()}] ${msg}\n`); } catch {} };
-try { require("fs").mkdirSync(".gsr", { recursive: true }); } catch {}
-_gw(".gsr/debug.log", `[${Date.now()}] GUARD-0: module loaded (tui.tsx evaluated by Bun)\n`);
-
 const id = "gentle-sdd-router";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -23,6 +16,13 @@ function runSafe(cmd: string, fallback = ""): string {
   } catch { return fallback; }
 }
 
+/**
+ * Detect the active preset from OpenCode's current agent context.
+ * Priority:
+ *   1. options.agent — e.g. "gsr-local-hybrid" → "local-hybrid"
+ *      Reflects exactly what the user has loaded in OpenCode (TAB selection).
+ *   2. gsr status — fallback when not running inside an agent context
+ */
 function detectActivePreset(options: any): string {
   const agentName: string = options?.agent ?? "";
   if (agentName.startsWith("gsr-")) return agentName.replace(/^gsr-/, "");
@@ -51,17 +51,9 @@ function parseGsrFallbackList(output: string) {
   return { phases };
 }
 
-// ── GUARD: Before tui function definition ────────────────────────────────────
-_glog("GUARD-1: before tui function definition");
-
 // ── TUI Plugin ────────────────────────────────────────────────────────────────
 
 const tui: TuiPlugin = async (api, options) => {
-
-  // ── GUARD: tui() called by OpenCode ────────────────────────────────────────
-  _glog("GUARD-2: tui() async function entered — OpenCode called the plugin");
-
-  // ── Fallback flow ─────────────────────────────────────────────────────────
 
   const executePromote = (preset: string, phase: any, index: number) => {
     try {
@@ -105,7 +97,7 @@ const tui: TuiPlugin = async (api, options) => {
     const { phases } = parseGsrFallbackList(raw);
     if (phases.length === 0) {
       api.ui.toast({
-        message: `No fallbacks configured for preset "${preset}".`,
+        message: `No fallbacks configured for preset "${preset}". Add with: gsr fallback add ${preset} <phase> <model>`,
         variant: "info",
       });
       return;
@@ -130,8 +122,7 @@ const tui: TuiPlugin = async (api, options) => {
     ));
   };
 
-  // ── GUARD: Before command registration ───────────────────────────────────
-  _glog("GUARD-3: before api.command.register()");
+  // ── Command registration ──────────────────────────────────────────────────
 
   api.command.register(() => [
     {
@@ -144,8 +135,7 @@ const tui: TuiPlugin = async (api, options) => {
     },
   ]);
 
-  // ── GUARD: Before event registration ─────────────────────────────────────
-  _glog("GUARD-4: before api.event.on(session.error)");
+  // ── Auto-trigger on model failure ─────────────────────────────────────────
 
   api.event.on("session.error", async () => {
     setTimeout(() => {
@@ -158,24 +148,23 @@ const tui: TuiPlugin = async (api, options) => {
         if (autoFallback && phase) {
           executePromote(preset, phase, 1);
         } else {
-          api.ui.toast({ title: "GSR: Model failed", message: "Run /gsr-fallback to switch model", variant: "warning" });
+          api.ui.toast({
+            title: "GSR: Model failed",
+            message: "Run /gsr-fallback to switch to a backup model",
+            variant: "warning",
+          });
           if (phase) showFallbackFlow();
         }
       } catch {
-        api.ui.toast({ title: "GSR: Model failed", message: "Run /gsr-fallback to manage fallbacks", variant: "warning" });
+        api.ui.toast({
+          title: "GSR: Model failed",
+          message: "Run /gsr-fallback to manage fallbacks",
+          variant: "warning",
+        });
       }
     }, 50);
   });
-
-  // ── GUARD: tui() completed ────────────────────────────────────────────────
-  _glog("GUARD-5: tui() completed successfully");
 };
 
-// ── GUARD: After tui function definition ─────────────────────────────────────
-_glog("GUARD-6: after tui function definition — plugin object about to be created");
-
 const plugin: TuiPluginModule & { id: string } = { id, tui };
-
-_glog("GUARD-7: export default plugin — module evaluation complete");
-
 export default plugin;

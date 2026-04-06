@@ -548,10 +548,14 @@ async function deployGsrPluginStep(opts) {
   }
 
   try {
-    const configDir = opencodeConfigDir ?? join(homedir(), '.config', 'opencode');
-
     // The project directory — tui.tsx lives at its root
     const pluginDir = projectDir ?? process.cwd();
+
+    // Safety guard: never write to the real ~/.config/opencode/tui.json
+    // when the project is a temp directory (e.g. during tests).
+    // Use the temp dir itself as the config dir so tui.json stays isolated.
+    const isTempDir = pluginDir.startsWith('/tmp') || pluginDir.startsWith(join(homedir(), 'AppData'));
+    const configDir = opencodeConfigDir ?? (isTempDir ? pluginDir : join(homedir(), '.config', 'opencode'));
 
     // Register project dir in tui.json
     let registered = false;
