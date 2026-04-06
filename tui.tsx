@@ -17,34 +17,32 @@ function runSafe(cmd: string, fallback = ""): string {
 }
 
 /**
- * Detect the active preset from OpenCode's current agent context.
- * Priority:
- *   1. options.agent — e.g. "gsr-local-hybrid" → "local-hybrid"
- *      Reflects exactly what the user has loaded in OpenCode (TAB selection).
- *   2. gsr status — fallback when not running inside an agent context
+ * Parse `gsr preset list` output into preset names and active indicator.
+ * Format: "Active preset: X\nPresets:\n  name1 (N phases) ...\n  name2 ..."
  */
-function detectActivePreset(options: any): string {
-  // Try options.agent first (e.g. "gsr-local-hybrid" → "local-hybrid")
-  const agentName: string = options?.agent ?? "";
-  if (agentName.startsWith("gsr-")) return agentName.replace(/^gsr-/, "");
-
-  // Fallback: parse "Active preset <name>" from gsr status output
-  // Must match the exact line format to avoid cross-line regex traps
-  // (e.g. "Activation    active\n  Environment" was incorrectly matching "Environment")
-  const out = runSafe("gsr status");
-  const match = out.match(/Active preset\s+(\S+)/i)
-    ?? out.match(/^  Active\s+(\S+)/m);
-  return match?.[1] || "default";
+function parsePresetList(): { presets: string[]; active: string } {
+  const out = runSafe("gsr preset list");
+  const activeMatch = out.match(/Active preset:\s*(\S+)/i);
+  const active = activeMatch?.[1] || "default";
+  const presets: string[] = [];
+  for (const line of out.split("\n")) {
+    const trimmed = line.trim();
+    // Skip headers/labels — preset lines start with a name followed by (N phases)
+    const m = trimmed.match(/^(\S+)\s+\(\d+ phases?\)/);
+    if (m) presets.push(m[1]);
+  }
+  return { presets, active };
 }
 
 function parseGsrFallbackList(output: string) {
+  // Also captures phases with 0 fallbacks (for display — show primary even without fallbacks)
   const phases: { name: string; primary: string; fallbacks: string[] }[] = [];
   let current: typeof phases[0] | null = null;
   for (const raw of output.split("\n")) {
     const line = raw.trimEnd();
     const phaseMatch = line.match(/^(\S[^:]+)\s*\(lane\s*\d+\)\s*:$/);
     if (phaseMatch) {
-      if (current && current.fallbacks.length > 0) phases.push(current);
+      if (current) phases.push(current);
       current = { name: phaseMatch[1].trim(), primary: "", fallbacks: [] };
       continue;
     }
@@ -54,13 +52,15 @@ function parseGsrFallbackList(output: string) {
     const fallbackMatch = line.match(/^\s+\d+\.\s+(.+)$/);
     if (fallbackMatch) current.fallbacks.push(fallbackMatch[1].trim());
   }
-  if (current && current.fallbacks.length > 0) phases.push(current);
+  if (current) phases.push(current);
   return { phases };
 }
 
 // ── TUI Plugin ────────────────────────────────────────────────────────────────
 
 const tui: TuiPlugin = async (api, options) => {
+
+  // ── Promote a fallback to primary ─────────────────────────────────────────
 
   const executePromote = (preset: string, phase: any, index: number) => {
     try {
@@ -76,53 +76,178 @@ const tui: TuiPlugin = async (api, options) => {
     }
   };
 
-  const showFallbackSelector = (preset: string, phase: any) => {
+  // ── Remove a fallback from the chain ──────────────────────────────────────
+
+  const executeRemove = (preset: string, phase: any, index: number) => {
+    try {
+      runSafe(`gsr fallback remove ${preset} ${phase.name} ${index}`);
+      runSafe("gsr sync");
+      api.ui.toast({
+        title: "Removed",
+        message: `Removed fallback #${index} from ${phase.name}`,
+        variant: "success",
+      });
+    } catch {
+      api.ui.toast({ title: "Error", message: "Could not remove fallback.", variant: "error" });
+    }
+  };
+
+  // ── Add a fallback to a phase ─────────────────────────────────────────────
+
+  const showAddFallback = (preset: string, phaseName: string) => {
     api.ui.dialog.replace(() => (
-      <api.ui.DialogSelect
-        title={`GSR Fallbacks — ${preset} / ${phase.name}`}
-        options={[
-          ...phase.fallbacks.map((fb: string, i: number) => ({
-            title: fb,
-            value: i + 1,
-            description: `→ becomes primary · current primary: ${phase.primary}`,
-          })),
-          { title: "← Back", value: "__back__" },
-        ]}
-        onSelect={(opt: any) => {
-          if (opt.value === "__back__") { showFallbackFlow(); return; }
-          api.ui.dialog.clear();
-          executePromote(preset, phase, opt.value);
+      <api.ui.DialogInput
+        title={`Add fallback to ${preset} / ${phaseName}`}
+        description="Enter model ID (e.g. openai/gpt-5, anthropic/claude-sonnet)"
+        onConfirm={(modelId: string) => {
+          const trimmed = (modelId || "").trim();
+          if (!trimmed || !trimmed.includes("/")) {
+            api.ui.toast({ title: "Invalid", message: "Model ID must be provider/model (e.g. openai/gpt-5)", variant: "error" });
+            return;
+          }
+          runSafe(`gsr fallback add ${preset} ${phaseName} ${trimmed}`);
+          runSafe("gsr sync");
+          api.ui.toast({ title: "Added", message: `${trimmed} added to ${phaseName} fallbacks`, variant: "success" });
+          showPhaseDetail(preset, phaseName);
         }}
-        onCancel={() => showFallbackFlow()}
+        onCancel={() => showPhaseDetail(preset, phaseName)}
       />
     ));
   };
 
-  const showFallbackFlow = () => {
-    const preset = detectActivePreset(options);
-    const raw = runSafe(`gsr fallback list ${preset}`);
+  // ── Phase detail: show primary + fallbacks with actions ───────────────────
+
+  const showPhaseDetail = (preset: string, phaseName: string) => {
+    const raw = runSafe(`gsr fallback list ${preset} ${phaseName}`);
     const { phases } = parseGsrFallbackList(raw);
-    if (phases.length === 0) {
-      api.ui.toast({
-        message: `No fallbacks configured for preset "${preset}". Add with: gsr fallback add ${preset} <phase> <model>`,
-        variant: "info",
-      });
+    const phase = phases.find((p: any) => p.name === phaseName);
+
+    if (!phase) {
+      api.ui.toast({ message: `Could not read phase "${phaseName}" for preset "${preset}".`, variant: "error" });
+      showPhasePicker(preset);
       return;
     }
+
+    const options: any[] = [];
+
+    // Show primary model as info (not actionable)
+    if (phase.primary) {
+      options.push({
+        title: `★ ${phase.primary}`,
+        value: "__primary__",
+        description: "Current primary model",
+      });
+    }
+
+    // Show each fallback with promote/remove actions
+    phase.fallbacks.forEach((fb: string, i: number) => {
+      options.push({
+        title: `  ${i + 1}. ${fb}`,
+        value: { action: "select-fallback", index: i + 1, model: fb },
+        description: "Select to promote or remove",
+      });
+    });
+
+    options.push({ title: "+ Add fallback", value: "__add__", description: "Add a new model to the fallback chain" });
+    options.push({ title: "← Back", value: "__back__" });
+
     api.ui.dialog.replace(() => (
       <api.ui.DialogSelect
-        title={`GSR Fallbacks — preset: ${preset}`}
+        title={`${preset} / ${phaseName} — Primary: ${phase.primary || "(none)"}`}
+        options={options}
+        onSelect={(opt: any) => {
+          if (opt.value === "__primary__") return; // no-op
+          if (opt.value === "__back__") { showPhasePicker(preset); return; }
+          if (opt.value === "__add__") { showAddFallback(preset, phaseName); return; }
+
+          // Selected a specific fallback → show promote/remove options
+          const { index, model } = opt.value;
+          api.ui.dialog.replace(() => (
+            <api.ui.DialogSelect
+              title={`${model} — fallback #${index}`}
+              options={[
+                { title: "⬆ Promote to primary", value: "promote", description: `Swap ${model} with ${phase.primary}` },
+                { title: "✕ Remove", value: "remove", description: `Remove ${model} from fallback chain` },
+                { title: "← Back", value: "back" },
+              ]}
+              onSelect={(action: any) => {
+                if (action.value === "back") { showPhaseDetail(preset, phaseName); return; }
+                if (action.value === "promote") {
+                  executePromote(preset, phase, index);
+                  showPhaseDetail(preset, phaseName);
+                  return;
+                }
+                if (action.value === "remove") {
+                  executeRemove(preset, phase, index);
+                  showPhaseDetail(preset, phaseName);
+                  return;
+                }
+              }}
+              onCancel={() => showPhaseDetail(preset, phaseName)}
+            />
+          ));
+        }}
+        onCancel={() => showPhasePicker(preset)}
+      />
+    ));
+  };
+
+  // ── Phase picker: list all phases for a preset ────────────────────────────
+
+  const showPhasePicker = (preset: string) => {
+    const raw = runSafe(`gsr fallback list ${preset}`);
+    const { phases } = parseGsrFallbackList(raw);
+
+    if (phases.length === 0) {
+      api.ui.toast({ message: `No phases found for preset "${preset}".`, variant: "info" });
+      showPresetPicker();
+      return;
+    }
+
+    api.ui.dialog.replace(() => (
+      <api.ui.DialogSelect
+        title={`GSR Fallbacks — ${preset}`}
         options={[
           ...phases.map((p: any) => ({
             title: p.name,
-            value: p,
-            description: `Primary: ${p.primary} · ${p.fallbacks.length} fallback(s)`,
+            value: p.name,
+            description: `Primary: ${p.primary}${p.fallbacks.length > 0 ? ` · ${p.fallbacks.length} fallback(s)` : " · no fallbacks"}`,
+          })),
+          { title: "← Back to presets", value: "__back__" },
+        ]}
+        onSelect={(opt: any) => {
+          if (opt.value === "__back__") { showPresetPicker(); return; }
+          showPhaseDetail(preset, opt.value);
+        }}
+        onCancel={() => showPresetPicker()}
+      />
+    ));
+  };
+
+  // ── Preset picker: first step — choose which preset to manage ─────────────
+
+  const showPresetPicker = () => {
+    const { presets, active } = parsePresetList();
+
+    if (presets.length === 0) {
+      api.ui.toast({ message: "No presets found. Run `gsr install` first.", variant: "error" });
+      return;
+    }
+
+    api.ui.dialog.replace(() => (
+      <api.ui.DialogSelect
+        title="GSR — Select preset to manage fallbacks"
+        options={[
+          ...presets.map((name: string) => ({
+            title: name === active ? `${name} (active)` : name,
+            value: name,
+            description: name === active ? "Currently active preset" : "Select to manage fallbacks",
           })),
           { title: "✕ Close", value: "__close__" },
         ]}
         onSelect={(opt: any) => {
           if (opt.value === "__close__") { api.ui.dialog.clear(); return; }
-          showFallbackSelector(preset, opt.value);
+          showPhasePicker(opt.value);
         }}
         onCancel={() => api.ui.dialog.clear()}
       />
@@ -135,10 +260,10 @@ const tui: TuiPlugin = async (api, options) => {
     {
       title: "GSR — Manage fallbacks",
       value: "gsr-fallback",
-      description: "Promote a fallback model to primary for the active preset",
+      description: "View and manage fallback models for any preset",
       category: "GSR",
       slash: { name: "gsr-fallback" },
-      onSelect: () => showFallbackFlow(),
+      onSelect: () => showPresetPicker(),
     },
   ]);
 
@@ -147,20 +272,21 @@ const tui: TuiPlugin = async (api, options) => {
   api.event.on("session.error", async () => {
     setTimeout(() => {
       try {
-        const preset = detectActivePreset(options);
-        const raw = runSafe(`gsr fallback list ${preset}`);
-        const { phases } = parseGsrFallbackList(raw);
-        const phase = phases.find((p: any) => p.fallbacks.length > 0);
-        const autoFallback = api.kv.get("gsr.autoFallback", false);
-        if (autoFallback && phase) {
-          executePromote(preset, phase, 1);
-        } else {
+        // On error, go straight to preset picker — user decides which preset to fix
+        const { presets } = parsePresetList();
+        if (presets.length > 0) {
           api.ui.toast({
             title: "GSR: Model failed",
             message: "Run /gsr-fallback to switch to a backup model",
             variant: "warning",
           });
-          if (phase) showFallbackFlow();
+          showPresetPicker();
+        } else {
+          api.ui.toast({
+            title: "GSR: Model failed",
+            message: "No presets found. Run gsr install to set up.",
+            variant: "warning",
+          });
         }
       } catch {
         api.ui.toast({

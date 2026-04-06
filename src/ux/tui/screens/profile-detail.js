@@ -6,6 +6,10 @@ import { colors } from '../theme.js';
 import { getActivePresetOwner } from '../../../core/public-preset-metadata.js';
 import { appendTuiDebug } from '../../../debug/tui-debug-log.js';
 import { unifiedSync } from '../../../core/unified-sync.js';
+import {
+  readFallbackChain, readLanePrimary, getPresetPhases,
+  promoteFallback, writeFallbackChain, validateModelId,
+} from '../../../core/fallback-io.js';
 
 const h = React.createElement;
 
@@ -102,6 +106,7 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
   const isVisible = preset?.hidden !== true && catalog?.enabled !== false;
 
   const actions = [
+    { label: 'Manage fallbacks', value: 'fallbacks', description: 'View, add, remove, or promote fallback models per phase.' },
     { label: 'Edit phases', value: 'edit', description: 'Open the phase/lane editor to modify models, roles, and fallbacks.' },
     { label: 'Edit Identity', value: 'edit-identity', description: 'Configure agent context, prompt, and AGENTS.md inheritance for this preset.' },
     { label: isVisible ? 'Hide from OpenCode TAB' : 'Show in OpenCode TAB', value: 'toggle-visibility', description: isVisible ? 'Hide this preset from TAB cycling in OpenCode.' : 'Make this preset visible in TAB cycling.' },
@@ -163,6 +168,162 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
     );
   }
 
+  // Sub-view: Fallback phase picker
+  if (subView === 'fallbacks') {
+    let phases = [];
+    try { phases = getPresetPhases(localConfigPath, activePresetName); } catch { /* empty */ }
+    if (phases.length === 0) {
+      return h(Box, { flexDirection: 'column' },
+        h(Text, { color: colors.red }, `No phases found for preset '${activePresetName}'.`),
+        h(Text, { color: colors.subtext }, 'Press ESC to go back.'),
+      );
+    }
+    const phaseItems = phases.map(p => {
+      let primary = '';
+      let fbCount = 0;
+      try {
+        primary = readLanePrimary(localConfigPath, activePresetName, p, 0);
+        fbCount = readFallbackChain(localConfigPath, activePresetName, p, 0).length;
+      } catch { /* ignore */ }
+      return {
+        label: p,
+        description: `Primary: ${primary || '(none)'}${fbCount > 0 ? ` · ${fbCount} fallback(s)` : ' · no fallbacks'}`,
+      };
+    });
+    return h(Box, { flexDirection: 'column' },
+      h(Text, { bold: true, color: colors.lavender }, `Fallbacks — ${activePresetName}`),
+      h(Text, { color: colors.subtext }, 'Select a phase to manage its fallback chain.'),
+      h(Text, null, ''),
+      h(Menu, {
+        items: phaseItems,
+        onSelect: (value) => {
+          if (value === '__back__') { setSubView('menu'); return; }
+          setSubView(`fb-detail:${value}`);
+        },
+        setDescription,
+        showBack: true,
+      }),
+    );
+  }
+
+  // Sub-view: Fallback detail for a specific phase
+  if (subView?.startsWith('fb-detail:')) {
+    const phaseName = subView.split(':')[1];
+    let primary = '';
+    let chain = [];
+    try {
+      primary = readLanePrimary(localConfigPath, activePresetName, phaseName, 0);
+      chain = readFallbackChain(localConfigPath, activePresetName, phaseName, 0);
+    } catch { /* empty */ }
+
+    const fbItems = [
+      { label: `★ ${primary || '(none)'}`, value: '__primary__', description: 'Current primary model' },
+      ...chain.map((fb, i) => ({
+        label: `  ${i + 1}. ${typeof fb === 'string' ? fb : fb.model}`,
+        value: `fb-action:${i}`,
+        description: 'Select to promote or remove',
+      })),
+      { label: '+ Add fallback', value: '__add__', description: 'Add a new model to the chain' },
+    ];
+
+    return h(Box, { flexDirection: 'column' },
+      h(Text, { bold: true, color: colors.lavender }, `${activePresetName} / ${phaseName}`),
+      h(Text, { color: colors.subtext }, `Primary: ${primary || '(none)'} · ${chain.length} fallback(s)`),
+      h(Text, null, ''),
+      h(Menu, {
+        items: fbItems,
+        onSelect: async (value) => {
+          if (value === '__back__') { setSubView('fallbacks'); return; }
+          if (value === '__primary__') return; // no-op
+          if (value === '__add__') { setSubView(`fb-add:${phaseName}`); return; }
+
+          // Fallback action: promote or remove
+          const fbIdx = parseInt(value.split(':')[1], 10);
+          setSubView(`fb-action:${phaseName}:${fbIdx}`);
+        },
+        setDescription,
+        showBack: true,
+      }),
+    );
+  }
+
+  // Sub-view: Action on a specific fallback (promote/remove)
+  if (subView?.startsWith('fb-action:')) {
+    const parts = subView.split(':');
+    const phaseName = parts[1];
+    const fbIdx = parseInt(parts[2], 10);
+    let chain = [];
+    try { chain = readFallbackChain(localConfigPath, activePresetName, phaseName, 0); } catch { /* */ }
+    const modelName = typeof chain[fbIdx] === 'string' ? chain[fbIdx] : chain[fbIdx]?.model ?? '(unknown)';
+
+    const actionItems = [
+      { label: '⬆ Promote to primary', value: 'promote', description: `Swap ${modelName} with current primary` },
+      { label: '✕ Remove from chain', value: 'remove', description: `Remove ${modelName} from fallback chain` },
+    ];
+
+    return h(Box, { flexDirection: 'column' },
+      h(Text, { bold: true, color: colors.lavender }, `${activePresetName} / ${phaseName} — ${modelName}`),
+      h(Text, null, ''),
+      h(Menu, {
+        items: actionItems,
+        onSelect: async (value) => {
+          if (value === '__back__') { setSubView(`fb-detail:${phaseName}`); return; }
+          try {
+            if (value === 'promote') {
+              await promoteFallback(localConfigPath, activePresetName, phaseName, 0, fbIdx + 1);
+              showResult(`Promoted ${modelName} to primary for ${phaseName}.`);
+            }
+            if (value === 'remove') {
+              const newChain = chain.filter((_, i) => i !== fbIdx);
+              await writeFallbackChain(localConfigPath, activePresetName, phaseName, 0, newChain);
+              showResult(`Removed ${modelName} from ${phaseName} fallbacks.`);
+            }
+            await reloadConfig();
+            await unifiedSync({ configPath: localConfigPath });
+          } catch (err) {
+            showResult(`Error: ${err.message}`);
+          }
+          setSubView(`fb-detail:${phaseName}`);
+        },
+        setDescription,
+        showBack: true,
+      }),
+    );
+  }
+
+  // Sub-view: Add a fallback to a phase
+  if (subView?.startsWith('fb-add:')) {
+    const phaseName = subView.split(':')[1];
+    return h(Box, { flexDirection: 'column' },
+      h(Text, { bold: true, color: colors.lavender }, `Add fallback — ${activePresetName} / ${phaseName}`),
+      h(Text, { color: colors.subtext }, 'Enter model ID (e.g. openai/gpt-5, anthropic/claude-sonnet):'),
+      h(Text, null, ''),
+      h(TextInput, {
+        placeholder: 'provider/model-name',
+        onSubmit: async (modelId) => {
+          const trimmed = (modelId || '').trim();
+          if (!trimmed) { setSubView(`fb-detail:${phaseName}`); return; }
+          if (!validateModelId(trimmed)) {
+            showResult(`Invalid model ID "${trimmed}". Must be provider/model format.`);
+            setSubView(`fb-detail:${phaseName}`);
+            return;
+          }
+          try {
+            const chain = readFallbackChain(localConfigPath, activePresetName, phaseName, 0);
+            chain.push(trimmed);
+            await writeFallbackChain(localConfigPath, activePresetName, phaseName, 0, chain);
+            await reloadConfig();
+            await unifiedSync({ configPath: localConfigPath });
+            showResult(`Added ${trimmed} to ${phaseName} fallbacks.`);
+          } catch (err) {
+            showResult(`Error: ${err.message}`);
+          }
+          setSubView(`fb-detail:${phaseName}`);
+        },
+      }),
+    );
+  }
+
   return h(Box, { flexDirection: 'column' },
     h(Box, { flexDirection: 'row' },
       h(Text, { bold: true, color: colors.lavender }, `${activePresetName}`),
@@ -185,6 +346,11 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
 
         const mod = await import('../../../router-config.js');
         const routerDir = localConfigPath ? localConfigPath.replace(/\/router\.yaml$/, '') : null;
+
+        if (value === 'fallbacks') {
+          setSubView('fallbacks');
+          return;
+        }
 
         if (value === 'edit') {
           router.push('edit-profile');

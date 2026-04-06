@@ -4,6 +4,7 @@ import { Menu } from '../components/menu.js';
 import { colors, cursor as cursorChar } from '../theme.js';
 import { appendTuiDebug } from '../../../debug/tui-debug-log.js';
 import { unifiedSync } from '../../../core/unified-sync.js';
+import { getPublicPresetMetadata } from '../../../core/public-preset-metadata.js';
 
 const h = React.createElement;
 
@@ -16,6 +17,10 @@ export function PresetsScreen({ config, configPath, router, setDescription, show
 
   const presets = [];
 
+  // Get scope (global/project) per preset from public metadata
+  const metadataRows = getPublicPresetMetadata(config);
+  const scopeMap = new Map(metadataRows.map(r => [r.name, r.scope]));
+
   for (const [catalogName, catalog] of Object.entries(catalogs)) {
     const catalogPresets = catalog?.presets ?? {};
     
@@ -23,12 +28,14 @@ export function PresetsScreen({ config, configPath, router, setDescription, show
       const phaseCount = Object.keys(preset.phases ?? {}).length;
       const isActive = presetName === activePreset;
       const isVisible = preset.hidden !== true && catalog.enabled !== false;
+      const scope = scopeMap.get(presetName) ?? 'project';
       
       presets.push({
         label: presetName,
         displayLabel: `${presetName}${isActive ? ' [active]' : ''} — ${phaseCount} phase(s)`,
         tag: isVisible ? 'visible' : 'hidden',
-        description: `${isActive ? '(currently active)' : 'Select to view details'}. ${phaseCount} phases. ${isVisible ? 'Visible in TAB cycling.' : 'Hidden from TAB cycling.'}`,
+        scope,
+        description: `${isActive ? '(currently active)' : 'Select to view details'}. ${phaseCount} phases. ${scope}. ${isVisible ? 'Visible in TAB cycling.' : 'Hidden from TAB cycling.'}`,
         catalogName,
         isActive,
         isVisible,
