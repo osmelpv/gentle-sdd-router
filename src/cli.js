@@ -729,6 +729,14 @@ function printSyncSummary(result, dryRun = false) {
     process.stdout.write(`${prefix}Commands: ${written} written, ${skipped} already up to date.\n`);
   }
 
+  // TUI build step
+  const tuiBuildStep = result.steps.find(s => s.name === 'tui-build');
+  if (tuiBuildStep?.status === 'ok' && tuiBuildStep.data?.rebuilt === true) {
+    process.stdout.write(`${prefix}TUI plugin compiled (tui.tsx → tui.js).\n`);
+  } else if (tuiBuildStep?.status === 'skipped' && tuiBuildStep.data?.reason !== 'No tui.tsx found — skipping TUI pre-build') {
+    process.stdout.write(`${prefix}Warning: TUI build skipped — ${tuiBuildStep.data?.reason ?? 'unknown'}\n`);
+  }
+
   // Warnings (non-preserve warnings only; preserved count is reported above)
   for (const warn of result.warnings ?? []) {
     if (!warn.includes('user prompt detected')) {
