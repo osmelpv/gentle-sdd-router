@@ -503,6 +503,12 @@ async function runUpdate(args) {
   }
 
   process.stdout.write('Config migration complete.\n');
+
+  // After migration, rebuild tui.js silently so OpenCode loads updated code
+  try {
+    const { buildTuiPluginStep } = await import('./core/unified-sync.js');
+    await buildTuiPluginStep({ dryRun: false });
+  } catch { /* non-fatal */ }
 }
 
 async function runApply(args) {

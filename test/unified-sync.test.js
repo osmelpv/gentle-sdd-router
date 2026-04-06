@@ -183,16 +183,22 @@ describe('unifiedSync — pipeline order (REQ-1)', () => {
     assert.equal(result.steps[0].name, 'contracts');
   });
 
-  test('tui-plugin step runs last', async () => {
+  test('tui-build step runs last', async () => {
     const result = await unifiedSync({ configPath, dryRun: true });
     const last = result.steps[result.steps.length - 1];
-    assert.equal(last.name, 'tui-plugin');
+    assert.equal(last.name, 'tui-build');
   });
 
-  test('validate step runs second-to-last', async () => {
+  test('tui-plugin step runs second-to-last', async () => {
     const result = await unifiedSync({ configPath, dryRun: true });
     const secondToLast = result.steps[result.steps.length - 2];
-    assert.equal(secondToLast.name, 'validate');
+    assert.equal(secondToLast.name, 'tui-plugin');
+  });
+
+  test('validate step runs third-to-last', async () => {
+    const result = await unifiedSync({ configPath, dryRun: true });
+    const thirdToLast = result.steps[result.steps.length - 3];
+    assert.equal(thirdToLast.name, 'validate');
   });
 });
 
