@@ -39,13 +39,12 @@ export function buildInvokeFromInputs({
   input_from,
   required_fields,
 }) {
-  const trimmedCatalog = (catalog ?? '').trim();
-  if (!trimmedCatalog) return null;
-  const trimmedSdd = (sdd ?? '').trim();
+  // Resolve target: sdd wins over catalog (deprecated alias)
+  const resolvedTarget = (sdd ?? '').trim() || (catalog ?? '').trim();
+  if (!resolvedTarget) return null;
 
   const result = {
-    catalog: trimmedCatalog,
-    sdd: trimmedSdd || trimmedCatalog,
+    sdd: resolvedTarget,
     payload_from: payload_from ?? 'output',
     await: typeof awaitValue === 'boolean' ? awaitValue : true,
     result_field: (result_field ?? '').trim() || null,
@@ -103,7 +102,7 @@ export function SddPhaseEditor({
     try {
       const pathMod = await import('node:path');
       const catalogsDir = pathMod.join(pathMod.dirname(configPath), 'catalogs');
-      const { loadCustomSdd } = await import('../../../core/sdd-catalog-io.js');
+      const { loadCustomSdd } = await import('../../../core/sdd-profile-io.js');
       const loaded = loadCustomSdd(catalogsDir, selectedSdd);
       setSdd(loaded);
     } catch (err) {
@@ -120,7 +119,7 @@ export function SddPhaseEditor({
       const pathMod = await import('node:path');
       const fsMod = await import('node:fs');
       const { stringifyYaml } = await import('../../../core/router.js');
-      const { scaffoldPhaseContract } = await import('../../../core/sdd-catalog-io.js');
+      const { scaffoldPhaseContract } = await import('../../../core/sdd-profile-io.js');
       const { materializeProjectSddAgents } = await import('../../../adapters/opencode/project-sdd-agent-materializer.js');
       const catalogsDir = pathMod.join(pathMod.dirname(configPath), 'catalogs');
       const sddYamlPath = pathMod.join(catalogsDir, selectedSdd, 'sdd.yaml');

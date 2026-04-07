@@ -10,7 +10,7 @@ import {
   addPhaseInvoke,
   validateSddFull,
   listDeclaredInvocations,
-} from './core/sdd-catalog-io.js';
+} from './core/sdd-profile-io.js';
 import {
   createInvocation,
   readInvocation,
@@ -393,7 +393,7 @@ function runCompare(args) {
 
   if (!leftSelector || !rightSelector || rest.length > 0) {
     printUsage();
-    throw new Error('gsr compare requires two selectors in the form <catalog/preset> <catalog/preset>.');
+    throw new Error('gsr compare requires two selectors in the form <sdd/preset> <sdd/preset>.');
   }
 
   const config = loadRouterConfig(getConfigPath());
@@ -709,7 +709,7 @@ function printSyncSummary(result, dryRun = false) {
     } else if (gsrCount > 0) {
       process.stdout.write(`${prefix}${gsrCount} agent(s) synced to opencode.json.\n`);
     } else {
-      process.stdout.write(`${prefix}No agents generated — all catalogs disabled or no presets.\n`);
+      process.stdout.write(`${prefix}No agents generated — all SDDs disabled or no presets.\n`);
     }
     if (applyStep.data.writtenPath) {
       process.stdout.write(`${prefix}Written: ${applyStep.data.writtenPath}\n`);
@@ -764,10 +764,17 @@ async function runImport(args) {
   }
 
   const force = args.includes('--force');
-  const catalogIndex = args.indexOf('--catalog');
-  const catalog = catalogIndex !== -1 ? args[catalogIndex + 1] : undefined;
+  const sddFlagIndex = args.indexOf('--catalog');
+  const sddIndex = args.indexOf('--sdd');
+  let sdd;
+  if (sddFlagIndex !== -1) {
+    process.stdout.write('Deprecation warning: --catalog is deprecated, use --sdd instead.\n');
+    sdd = args[sddFlagIndex + 1];
+  } else if (sddIndex !== -1) {
+    sdd = args[sddIndex + 1];
+  }
 
-  const options = { force, catalog };
+  const options = { force, catalog: sdd };
 
   // Find the config path to get routerDir
   const configPath = discoverConfigPath();
@@ -792,7 +799,7 @@ async function runImport(args) {
     result = importPresetFromCompact(compactStr, routerDir, options);
   } else {
     // First non-flag argument is the source
-    const source = args.find((arg) => !arg.startsWith('--') && arg !== catalog);
+    const source = args.find((arg) => !arg.startsWith('--') && arg !== sdd);
 
     if (!source) {
       printUsage();
@@ -812,8 +819,8 @@ async function runImport(args) {
     }
   }
 
-  const catalogLabel = result.catalog !== 'default' ? ` (catalog: ${result.catalog})` : '';
-  process.stdout.write(`Imported preset '${result.presetName}'${catalogLabel} → ${result.path}\n`);
+  const sddLabel = result.catalog !== 'default' ? ` (sdd: ${result.catalog})` : '';
+  process.stdout.write(`Imported preset '${result.presetName}'${sddLabel} → ${result.path}\n`);
 }
 
 /**
@@ -825,9 +832,9 @@ function buildProfileTags(config, profileName) {
 
   // In v3/v4-assembled configs, look up the preset by name.
   if (config?.version === 3 && config.catalogs) {
-    for (const [, catalog] of Object.entries(config.catalogs)) {
+    for (const [, sddEntry] of Object.entries(config.catalogs)) {
       const presetName = profileName.includes('/') ? profileName.split('/')[1] : profileName;
-      const preset = catalog.presets?.[presetName];
+      const preset = sddEntry.presets?.[presetName];
       if (!preset) continue;
 
       // Explicit labels array
@@ -865,13 +872,13 @@ function buildProfileTags(config, profileName) {
  * from the raw assembled config (v3/v4 assembled).
  * Returns null if no contextWindow data is available.
  */
-function lookupLaneContextWindow(config, activeCatalogName, activePresetName, phaseName) {
+function lookupLaneContextWindow(config, activeSddName, activePresetName, phaseName) {
   if (!config?.catalogs) return null;
 
-  const catalog = config.catalogs[activeCatalogName];
-  if (!catalog) return null;
+  const sddEntry = config.catalogs[activeSddName];
+  if (!sddEntry) return null;
 
-  const preset = catalog.presets?.[activePresetName];
+  const preset = sddEntry.presets?.[activePresetName];
   if (!preset) return null;
 
   const lanes = preset.phases?.[phaseName];
@@ -906,13 +913,13 @@ function formatContextWindow(contextWindow) {
  * from the raw assembled config (v3/v4 assembled).
  * Returns null if no pricing data is available.
  */
-function lookupLanePricing(config, activeCatalogName, activePresetName, phaseName) {
+function lookupLanePricing(config, activeSddName, activePresetName, phaseName) {
   if (!config?.catalogs) return null;
 
-  const catalog = config.catalogs[activeCatalogName];
-  if (!catalog) return null;
+  const sddEntry = config.catalogs[activeSddName];
+  if (!sddEntry) return null;
 
-  const preset = catalog.presets?.[activePresetName];
+  const preset = sddEntry.presets?.[activePresetName];
   if (!preset) return null;
 
   const lanes = preset.phases?.[phaseName];
@@ -972,7 +979,7 @@ function renderStatus(state, configPath, config = null) {
   ];
 
   if (state.selectedCatalogName) {
-    lines.push(`Selected catalog: ${state.selectedCatalogName}`);
+    lines.push(`Selected SDD: ${state.selectedCatalogName}`);
   }
 
   if (state.selectedPresetName) {
@@ -1000,12 +1007,12 @@ function renderStatus(state, configPath, config = null) {
   }
 
   // Resolved routes with optional pricing
-  const activeCatalogName = state.selectedCatalogName ?? null;
+  const activeSddName = state.selectedCatalogName ?? null;
   const activePresetName = state.selectedPresetName ?? state.activeProfileName ?? null;
 
   for (const [phaseName, route] of Object.entries(state.resolvedPhases)) {
-    const pricing = lookupLanePricing(config, activeCatalogName, activePresetName, phaseName);
-    const contextWindow = lookupLaneContextWindow(config, activeCatalogName, activePresetName, phaseName);
+    const pricing = lookupLanePricing(config, activeSddName, activePresetName, phaseName);
+    const contextWindow = lookupLaneContextWindow(config, activeSddName, activePresetName, phaseName);
     const pricingStr = pricing ? ` (${formatPricing(pricing)})` : '';
     const ctxStr = contextWindow ? ` [${formatContextWindow(contextWindow)} ctx]` : '';
     lines.push(`- ${phaseName}: ${formatRoute(route.active)}${pricingStr}${ctxStr}`);
@@ -1109,20 +1116,28 @@ async function runProfile(args) {
 
 async function runCatalog(args) {
   const [subcommand, ...rest] = args;
+  // Emit deprecation notice for all catalog subcommands
   switch (subcommand) {
     case 'list':
+      process.stdout.write('Deprecation warning: `gsr catalog list` is deprecated, use `gsr profile list` instead.\n');
       return runCatalogList(rest);
     case 'create':
+      process.stdout.write('Deprecation warning: `gsr catalog create` is deprecated, use `gsr sdd create` instead.\n');
       return await runCatalogCreate(rest);
     case 'delete':
+      process.stdout.write('Deprecation warning: `gsr catalog delete` is deprecated, use `gsr sdd delete` instead.\n');
       return runCatalogDelete(rest);
     case 'enable':
+      process.stdout.write('Deprecation warning: `gsr catalog enable` is deprecated. Use `gsr sdd` commands to manage SDDs.\n');
       return await runCatalogEnable(rest);
     case 'disable':
+      process.stdout.write('Deprecation warning: `gsr catalog disable` is deprecated. Use `gsr sdd` commands to manage SDDs.\n');
       return await runCatalogDisable(rest);
     case 'move':
+      process.stdout.write('Deprecation warning: `gsr catalog move` is deprecated, use `gsr profile move` instead.\n');
       return runCatalogMove(rest);
     case 'use':
+      process.stdout.write('Deprecation warning: `gsr catalog use` is deprecated. Use `gsr route use` to switch presets.\n');
       return runCatalogUse(rest);
     default:
       if (subcommand === 'help' || subcommand === '--help' || !subcommand) {
@@ -1141,8 +1156,15 @@ async function runProfileCreate(args) {
     throw new Error('gsr preset create requires a preset name.');
   }
 
-  const catalogIndex = args.indexOf('--catalog');
-  const catalog = catalogIndex !== -1 ? args[catalogIndex + 1] : undefined;
+  const sddFlagDeprecatedIndex = args.indexOf('--catalog');
+  const sddFlagIndex = args.indexOf('--sdd');
+  let sdd;
+  if (sddFlagDeprecatedIndex !== -1) {
+    process.stdout.write('Deprecation warning: --catalog is deprecated, use --sdd instead.\n');
+    sdd = args[sddFlagDeprecatedIndex + 1];
+  } else if (sddFlagIndex !== -1) {
+    sdd = args[sddFlagIndex + 1];
+  }
   const targetIndex = args.indexOf('--target');
   const target = targetIndex !== -1 ? args[targetIndex + 1] : undefined;
 
@@ -1153,9 +1175,9 @@ async function runProfileCreate(args) {
   }
 
   const routerDir = path.dirname(configPath);
-  const result = createProfile(name, routerDir, { catalog, target });
-  const catalogLabel = result.catalog !== 'default' ? ` (catalog: ${result.catalog})` : '';
-  process.stdout.write(`Created preset '${result.presetName}'${catalogLabel} → ${result.path}\n`);
+  const result = createProfile(name, routerDir, { catalog: sdd, target });
+  const sddLabel = result.catalog !== 'default' ? ` (sdd: ${result.catalog})` : '';
+  process.stdout.write(`Created preset '${result.presetName}'${sddLabel} → ${result.path}\n`);
 
   // Auto-trigger unified sync after successful profile creation (REQ-7)
   try {
@@ -1178,8 +1200,15 @@ function runProfileDelete(args) {
     throw new Error('gsr preset delete requires a preset name.');
   }
 
-  const catalogIndex = args.indexOf('--catalog');
-  const catalog = catalogIndex !== -1 ? args[catalogIndex + 1] : undefined;
+  const sddFlagDeprecatedIndex = args.indexOf('--catalog');
+  const sddFlagIndex = args.indexOf('--sdd');
+  let sdd;
+  if (sddFlagDeprecatedIndex !== -1) {
+    process.stdout.write('Deprecation warning: --catalog is deprecated, use --sdd instead.\n');
+    sdd = args[sddFlagDeprecatedIndex + 1];
+  } else if (sddFlagIndex !== -1) {
+    sdd = args[sddFlagIndex + 1];
+  }
 
   const configPath = discoverConfigPath();
   if (!configPath) {
@@ -1188,7 +1217,7 @@ function runProfileDelete(args) {
   }
 
   const routerDir = path.dirname(configPath);
-  const result = deleteProfile(name, routerDir, { catalog });
+  const result = deleteProfile(name, routerDir, { catalog: sdd });
   process.stdout.write(`Deleted preset '${result.presetName}' from ${result.path}\n`);
 }
 
@@ -1202,8 +1231,15 @@ function runProfileRename(args) {
     throw new Error('gsr preset rename requires <old-name> <new-name>.');
   }
 
-  const catalogIndex = args.indexOf('--catalog');
-  const catalog = catalogIndex !== -1 ? args[catalogIndex + 1] : undefined;
+  const sddFlagDeprecatedIndex = args.indexOf('--catalog');
+  const sddFlagIndex = args.indexOf('--sdd');
+  let sdd;
+  if (sddFlagDeprecatedIndex !== -1) {
+    process.stdout.write('Deprecation warning: --catalog is deprecated, use --sdd instead.\n');
+    sdd = args[sddFlagDeprecatedIndex + 1];
+  } else if (sddFlagIndex !== -1) {
+    sdd = args[sddFlagIndex + 1];
+  }
 
   const configPath = discoverConfigPath();
   if (!configPath) {
@@ -1212,7 +1248,7 @@ function runProfileRename(args) {
   }
 
   const routerDir = path.dirname(configPath);
-  const result = renameProfile(oldName, newName, routerDir, { catalog });
+  const result = renameProfile(oldName, newName, routerDir, { catalog: sdd });
   process.stdout.write(`Renamed preset '${result.oldName}' → '${result.newName}' (${result.path})\n`);
 }
 
@@ -1226,8 +1262,15 @@ function runProfileCopy(args) {
     throw new Error('gsr preset copy requires <source> <dest>.');
   }
 
-  const catalogIndex = args.indexOf('--catalog');
-  const catalog = catalogIndex !== -1 ? args[catalogIndex + 1] : undefined;
+  const sddFlagDeprecatedIndex = args.indexOf('--catalog');
+  const sddFlagIndex = args.indexOf('--sdd');
+  let sdd;
+  if (sddFlagDeprecatedIndex !== -1) {
+    process.stdout.write('Deprecation warning: --catalog is deprecated, use --sdd instead.\n');
+    sdd = args[sddFlagDeprecatedIndex + 1];
+  } else if (sddFlagIndex !== -1) {
+    sdd = args[sddFlagIndex + 1];
+  }
 
   const configPath = discoverConfigPath();
   if (!configPath) {
@@ -1236,7 +1279,7 @@ function runProfileCopy(args) {
   }
 
   const routerDir = path.dirname(configPath);
-  const result = copyProfile(sourceName, destName, routerDir, { catalog });
+  const result = copyProfile(sourceName, destName, routerDir, { catalog: sdd });
   process.stdout.write(`Copied preset '${result.sourceName}' → '${result.destName}' (${result.path})\n`);
 }
 
@@ -1264,7 +1307,7 @@ async function runCatalogCreate(args) {
   const name = args.find((a) => !a.startsWith('--'));
   if (!name) {
     printUsage();
-    throw new Error('gsr catalog create requires a catalog name.');
+    throw new Error('gsr catalog create requires a name.');
   }
 
   const configPath = discoverConfigPath();
@@ -1284,11 +1327,11 @@ async function runCatalogCreate(args) {
     const syncResult = await unifiedSync({ configPath });
     printSyncSummary(syncResult);
     if (syncResult.status === 'failed') {
-      process.stdout.write('Note: Sync after catalog create failed — add profiles to make agents available.\n');
+      process.stdout.write('Note: Sync after preset source create failed — add profiles to make agents available.\n');
     }
   } catch (err) {
-    // Non-blocking: catalog create succeeded; sync failure is a soft warning
-    process.stdout.write(`Note: Sync after catalog create failed: ${err.message}\n`);
+    // Non-blocking: preset source create succeeded; sync failure is a soft warning
+    process.stdout.write(`Note: Sync after preset source create failed: ${err.message}\n`);
   }
 }
 
@@ -1296,7 +1339,7 @@ function runCatalogDelete(args) {
   const name = args.find((a) => !a.startsWith('--'));
   if (!name) {
     printUsage();
-    throw new Error('gsr catalog delete requires a catalog name.');
+    throw new Error('gsr catalog delete requires a name.');
   }
 
   const configPath = discoverConfigPath();
@@ -1314,7 +1357,7 @@ async function runCatalogEnable(args) {
   const name = args.find((a) => !a.startsWith('--'));
   if (!name) {
     printUsage();
-    throw new Error('gsr catalog enable requires a catalog name.');
+    throw new Error('gsr catalog enable requires a name.');
   }
   const configPath = discoverConfigPath();
   if (!configPath) {
@@ -1331,7 +1374,7 @@ async function runCatalogEnable(args) {
     const syncResult = await unifiedSync({ configPath });
     printSyncSummary(syncResult);
   } catch (err) {
-    process.stdout.write(`Note: Sync after catalog enable failed: ${err.message}\n`);
+    process.stdout.write(`Note: Sync after preset source enable failed: ${err.message}\n`);
   }
 }
 
@@ -1339,7 +1382,7 @@ async function runCatalogDisable(args) {
   const name = args.find((a) => !a.startsWith('--'));
   if (!name) {
     printUsage();
-    throw new Error('gsr catalog disable requires a catalog name.');
+    throw new Error('gsr catalog disable requires a name.');
   }
   const configPath = discoverConfigPath();
   if (!configPath) {
@@ -1356,7 +1399,7 @@ async function runCatalogDisable(args) {
     const syncResult = await unifiedSync({ configPath });
     printSyncSummary(syncResult);
   } catch (err) {
-    process.stdout.write(`Note: Sync after catalog disable failed: ${err.message}\n`);
+    process.stdout.write(`Note: Sync after preset source disable failed: ${err.message}\n`);
   }
 }
 
@@ -1367,7 +1410,7 @@ function runCatalogMove(args) {
 
   if (!name || !targetCatalog) {
     printUsage();
-    throw new Error('gsr catalog move requires: gsr catalog move <preset> <target-source>');
+    throw new Error('gsr profile move requires: gsr profile move <preset> <target-source>');
   }
 
   const fromIndex = args.indexOf('--from');
@@ -1384,9 +1427,9 @@ function runCatalogMove(args) {
 }
 
 function runCatalogUse(args) {
-  const catalogName = args[0];
+  const sddName = args[0];
   const presetOverride = args[1]; // optional
-  if (!catalogName) {
+  if (!sddName) {
     printUsage();
     throw new Error('gsr catalog use requires a source name.');
   }
@@ -1398,32 +1441,32 @@ function runCatalogUse(args) {
 
   const config = loadRouterConfig(configPath);
 
-  // Verify catalog exists
-  if (!config.catalogs?.[catalogName]) {
-    throw new Error(`Source '${catalogName}' not found.`);
+  // Verify SDD source exists
+  if (!config.catalogs?.[sddName]) {
+    throw new Error(`Source '${sddName}' not found.`);
   }
 
   // Determine which preset to activate
   const preset = presetOverride
-    ?? config.catalogs[catalogName]?.active_preset
-    ?? Object.keys(config.catalogs[catalogName]?.presets ?? {})[0]
+    ?? config.catalogs[sddName]?.active_preset
+    ?? Object.keys(config.catalogs[sddName]?.presets ?? {})[0]
     ?? null;
 
   if (!preset) {
-    throw new Error(`Source '${catalogName}' has no presets.`);
+    throw new Error(`Source '${sddName}' has no presets.`);
   }
 
   // Update router.yaml
   const raw = fs.readFileSync(configPath, 'utf8');
   const parsed = parseYaml(raw);
-  parsed.active_catalog = catalogName;
+  parsed.active_catalog = sddName;
   parsed.active_preset = preset;
   const yaml = stringifyYaml(parsed);
   const tempPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(tempPath, yaml, 'utf8');
   fs.renameSync(tempPath, configPath);
 
-  process.stdout.write(`Active SDD source: ${catalogName}\nActive preset: ${preset}\n`);
+  process.stdout.write(`Active SDD source: ${sddName}\nActive preset: ${preset}\n`);
 }
 
 // === CATEGORY DISPATCHERS ===
@@ -1575,7 +1618,7 @@ function renderGeneralHelp() {
     '    set <preset> <phase> <model,model,...>  Replace entire chain.',
     '    promote <preset> <phase> <index>  Promote fallback to primary.',
     '',
-    '  catalog                   Legacy/advanced compatibility commands (scheduled for removal).',
+    '  catalog                   DEPRECATED: use `gsr profile`, `gsr sdd`, or `gsr route` instead.',
     '',
     '  inspect                   Read-only views of metadata and boundaries.',
     '    browse [selector]       Inspect shareable multimodel metadata projected from schema v3 without recommending or executing anything.',
@@ -1722,12 +1765,13 @@ function renderCommandHelp(topic, subtopic) {
 
   if (normalized === 'import') {
     return [
-      'Usage: gsr import <source> [--catalog <name>] [--force]',
-      '       gsr import --compact <string> [--catalog <name>] [--force]',
+      'Usage: gsr import <source> [--sdd <name>] [--force]',
+      '       gsr import --compact <string> [--sdd <name>] [--force]',
       'Import a preset from a file, HTTPS URL, or compact gsr:// string.',
       '  <source>         File path, https:// URL, or gsr:// compact string.',
       '  --compact <str>  Import from a compact gsr:// string.',
-      '  --catalog <name> Place the imported preset in a named catalog subdirectory.',
+      '  --sdd <name>     Place the imported preset in a named SDD subdirectory.',
+      '  --catalog <name> Deprecated alias for --sdd.',
       '  --force          Overwrite an existing preset with the same name.',
     ].join('\n') + '\n';
   }
@@ -1745,35 +1789,35 @@ function renderCommandHelp(topic, subtopic) {
         '  rename <old> <new>      Rename a preset.',
         '  copy <src> <dst>        Copy/clone a preset.',
         '  export <name> [--compact] [--out <path>]  Export a preset for sharing.',
-        '  import <source> [--catalog <name>] [--force]  Import a preset.',
+        '  import <source> [--sdd <name>] [--force]  Import a preset.',
       ].join('\n') + '\n';
     }
     if (sub === 'create') {
       return [
-        'Usage: gsr preset create <name> [--catalog <catalog>] [--target <model>]',
+        'Usage: gsr preset create <name> [--sdd <sdd-name>] [--target <model>]',
         'Create a new empty preset with a single orchestrator phase.',
-        '  <name>           Preset name.',
-        '  --catalog <name> Place in a named catalog subdirectory.',
-        '  --target <model> Model target (default: anthropic/claude-sonnet).',
+        '  <name>            Preset name.',
+        '  --sdd <sdd-name>  Place in a named SDD subdirectory (--catalog is deprecated alias).',
+        '  --target <model>  Model target (default: anthropic/claude-sonnet).',
       ].join('\n') + '\n';
     }
     if (sub === 'delete') {
       return [
-        'Usage: gsr preset delete <name> [--catalog <catalog>]',
+        'Usage: gsr preset delete <name> [--sdd <sdd-name>]',
         'Delete a preset file.',
-        '  <name>           Preset name.',
-        '  --catalog <name> Look in a specific catalog.',
+        '  <name>            Preset name.',
+        '  --sdd <sdd-name>  Look in a specific SDD (--catalog is deprecated alias).',
       ].join('\n') + '\n';
     }
     if (sub === 'rename') {
       return [
-        'Usage: gsr preset rename <old> <new> [--catalog <catalog>]',
+        'Usage: gsr preset rename <old> <new> [--sdd <sdd-name>]',
         'Rename a preset (updates the file and the name field).',
       ].join('\n') + '\n';
     }
     if (sub === 'copy') {
       return [
-        'Usage: gsr preset copy <source> <dest> [--catalog <catalog>]',
+        'Usage: gsr preset copy <source> <dest> [--sdd <sdd-name>]',
         'Copy/clone a preset to a new name.',
       ].join('\n') + '\n';
     }
@@ -1803,50 +1847,55 @@ function renderCommandHelp(topic, subtopic) {
     if (!sub) {
       return [
         'Usage: gsr catalog <subcommand> [args]',
-        'Legacy/advanced compatibility commands for internal preset sources.',
+        'DEPRECATED: These commands are kept for backward compatibility only.',
+        'Prefer: `gsr profile`, `gsr sdd`, or `gsr route` instead.',
         '',
-        '  list               List internal preset sources and host visibility.',
-        '  create <name>      Create an internal preset source (legacy).',
-        '  delete <name>      Delete an empty preset source.',
-        '  enable <name>      Make a source visible in the host.',
-        '  disable <name>     Hide a source from the host.',
-        '  move <name> <catalog>  Move a preset to another source.',
-        '  use <name> [preset]  Set active source (and optionally preset).',
+        '  list               → gsr profile list',
+        '  create <name>      → gsr sdd create <name>',
+        '  delete <name>      → gsr sdd delete <name>',
+        '  enable <name>      → gsr sdd commands',
+        '  disable <name>     → gsr sdd commands',
+        '  move <name> <sdd>  → gsr profile move <name> <sdd>',
+        '  use <name> [preset]  → gsr route use <preset>',
         '',
-        'Note: Presets are the canonical public concept. `catalog` remains temporarily for compatibility only.',
+        'Note: `catalog` is a deleted concept. These aliases will be removed in a future version.',
       ].join('\n') + '\n';
     }
     if (sub === 'list') {
       return [
         'Usage: gsr catalog list',
+        'DEPRECATED: use `gsr profile list` instead.',
         'List internal preset sources (legacy compatibility view).',
       ].join('\n') + '\n';
     }
     if (sub === 'create') {
       return [
         'Usage: gsr catalog create <name>',
-        'Create a new internal preset source directory (legacy).',
+        'DEPRECATED: use `gsr sdd create <name>` instead.',
+        'Create a new internal SDD source directory.',
       ].join('\n') + '\n';
     }
     if (sub === 'delete') {
       return [
         'Usage: gsr catalog delete <name>',
-        'Delete an empty internal preset source. Fails if it contains presets.',
+        'DEPRECATED: use `gsr sdd delete <name>` instead.',
+        'Delete an empty internal SDD source. Fails if it contains presets.',
       ].join('\n') + '\n';
     }
     if (sub === 'enable') {
-      return 'Usage: gsr catalog enable <name>\nMake an internal preset source visible in the host.\n';
+      return 'Usage: gsr catalog enable <name>\nDEPRECATED: use `gsr sdd` commands instead.\nMake an internal preset source visible in the host.\n';
     }
     if (sub === 'disable') {
-      return 'Usage: gsr catalog disable <name>\nHide an internal preset source from the host.\n';
+      return 'Usage: gsr catalog disable <name>\nDEPRECATED: use `gsr sdd` commands instead.\nHide an internal preset source from the host.\n';
     }
     if (sub === 'move') {
       return [
-        'Usage: gsr catalog move <preset> <target-source> [--from <source-catalog>]',
-        'Move a preset to another internal source.',
+        'Usage: gsr catalog move <preset> <target-sdd> [--from <source-sdd>]',
+        'DEPRECATED: use `gsr profile move <preset> <target-sdd>` instead.',
+        'Move a preset to another internal SDD source.',
         '  <preset>          Preset name.',
-        '  <target-source>   Destination source name.',
-        '  --from <catalog>  Specify the source explicitly (optional).',
+        '  <target-sdd>      Destination SDD source name.',
+        '  --from <sdd>      Specify the source SDD explicitly (optional).',
       ].join('\n') + '\n';
     }
     return null;
@@ -2047,7 +2096,7 @@ function renderCommandHelp(topic, subtopic) {
     if (sub === 'create') {
       return [
         'Usage: gsr sdd create <name> [--description <desc>]',
-        'Create a new custom SDD catalog in router/catalogs/<name>/.',
+        'Create a new custom SDD in router/catalogs/<name>/.',
         '  <name>               SDD name (slug: lowercase letters, digits, hyphens).',
         '  --description <desc> Optional human-readable description.',
       ].join('\n') + '\n';
@@ -2055,7 +2104,7 @@ function renderCommandHelp(topic, subtopic) {
     if (sub === 'list') {
       return [
         'Usage: gsr sdd list',
-        'List all custom SDDs in router/catalogs/.',
+        'List all custom SDDs in the router/catalogs/ directory.',
       ].join('\n') + '\n';
     }
     if (sub === 'show') {
@@ -2067,7 +2116,7 @@ function renderCommandHelp(topic, subtopic) {
     if (sub === 'delete') {
       return [
         'Usage: gsr sdd delete <name> [--yes]',
-        'Delete a custom SDD catalog and all its files.',
+        'Delete a custom SDD and all its files.',
         '  <name>  SDD name to delete.',
         '  --yes   Skip confirmation prompt.',
       ].join('\n') + '\n';
@@ -2088,7 +2137,7 @@ function renderCommandHelp(topic, subtopic) {
     if (!sub) {
       return [
         'Usage: gsr role <subcommand> [args]',
-        'Manage catalog-scoped role contracts for a custom SDD.',
+        'Manage SDD-scoped role contracts for a custom SDD.',
         '',
         '  create <name> --sdd <sdd-name>  Create a new role contract .md file.',
         '',
@@ -2099,9 +2148,9 @@ function renderCommandHelp(topic, subtopic) {
     if (sub === 'create') {
       return [
         'Usage: gsr role create <name> --sdd <sdd-name>',
-        'Create a new catalog-scoped role contract in router/catalogs/<sdd>/contracts/roles/.',
+        'Create a new SDD-scoped role contract in router/catalogs/<sdd>/contracts/roles/.',
         '  <name>           Role name (slug: lowercase letters, digits, hyphens).',
-        '  --sdd <sdd-name> The SDD catalog to add the role to (required).',
+        '  --sdd <sdd-name> The SDD to add the role to (required).',
       ].join('\n') + '\n';
     }
     return null;
@@ -2112,10 +2161,10 @@ function renderCommandHelp(topic, subtopic) {
     if (!sub) {
       return [
         'Usage: gsr phase <subcommand> [args]',
-        'Manage catalog-scoped phase contracts for a custom SDD.',
+        'Manage SDD-scoped phase contracts for a custom SDD.',
         '',
         '  create <name> --sdd <sdd-name>  Create a new phase contract .md file.',
-        '  invoke <name> --sdd <sdd-name> --target <catalog>/<sdd> --trigger <trigger>',
+        '  invoke <name> --sdd <sdd-name> --target <sdd>/<sub-sdd> --trigger <trigger>',
         '                                   Add/update invoke declaration on a phase.',
         '',
         'Examples:',
@@ -2126,19 +2175,19 @@ function renderCommandHelp(topic, subtopic) {
     if (sub === 'create') {
       return [
         'Usage: gsr phase create <name> --sdd <sdd-name>',
-        'Create a new catalog-scoped phase contract in router/catalogs/<sdd>/contracts/phases/.',
+        'Create a new SDD-scoped phase contract in router/catalogs/<sdd>/contracts/phases/.',
         '  <name>           Phase name (slug: lowercase letters, digits, hyphens).',
-        '  --sdd <sdd-name> The SDD catalog to add the phase to (required).',
+        '  --sdd <sdd-name> The SDD to add the phase to (required).',
       ].join('\n') + '\n';
     }
     if (sub === 'invoke') {
       return [
-        'Usage: gsr phase invoke <phase-name> --sdd <sdd-name> --target <catalog>/<sdd> --trigger <trigger>',
+        'Usage: gsr phase invoke <phase-name> --sdd <sdd-name> --target <sdd>/<sub-sdd> --trigger <trigger>',
         '  [--input-from <field>] [--required-fields <comma-separated>]',
         'Add or update an invoke declaration on a phase in a custom SDD.',
         '  <phase-name>          Phase to add invoke to (must exist in sdd.yaml).',
-        '  --sdd <sdd-name>      The SDD catalog that owns the phase (required).',
-        '  --target <cat>/<sdd>  Target catalog/sdd to invoke (required).',
+        '  --sdd <sdd-name>      The SDD that owns the phase (required).',
+        '  --target <sdd>/<sub-sdd>  Target SDD/sub-SDD to invoke (required).',
         '  --trigger <trigger>   When to invoke: on_issues | always | never | manual.',
         '  --input-from <field>  Where the callee reads its input from (optional).',
         '  --required-fields <fields>  Comma-separated field names required from phase output (optional).',
@@ -2169,7 +2218,7 @@ function renderOpenCodeSurface(report) {
   }
 
   if (report.selectedCatalogName) {
-    lines.push(`Selected catalog: ${report.selectedCatalogName}`);
+    lines.push(`Selected SDD: ${report.selectedCatalogName}`);
   }
 
   if (report.selectedPresetName) {
@@ -3095,7 +3144,7 @@ description: >
 metadata:
   author: user
   version: "1.0"
-  scope: catalog
+  scope: sdd
 ---
 
 ## Role Definition
@@ -3137,7 +3186,7 @@ Default: \`sequential\`
 // === EXPORTED ROLE/PHASE COMMAND FUNCTIONS ====================================
 
 /**
- * Create a catalog-scoped role contract.
+ * Create a SDD-scoped role contract.
  * @param {string[]} args - CLI args after 'role create'
  * @param {string} catalogsDir
  */
@@ -3145,7 +3194,7 @@ export function runRoleCreate(args, catalogsDir) {
   const sddIndex = args.indexOf('--sdd');
   const sddName = sddIndex !== -1 ? args[sddIndex + 1] : null;
   if (!sddName) {
-    throw new Error('gsr role create requires --sdd <catalog>.');
+    throw new Error('gsr role create requires --sdd <sdd-name>.');
   }
 
   // Positional name: non-flag arg that is NOT the value after --sdd
@@ -3158,10 +3207,10 @@ export function runRoleCreate(args, catalogsDir) {
     throw new Error('gsr role create requires a role name.');
   }
 
-  // Verify catalog exists
+  // Verify SDD exists
   const catalogDir = path.join(catalogsDir, sddName);
   if (!fs.existsSync(catalogDir)) {
-    throw new Error(`Catalog '${sddName}' not found at ${catalogDir}.`);
+    throw new Error(`SDD '${sddName}' not found at ${catalogDir}.`);
   }
 
   const rolePath = path.join(catalogDir, 'contracts', 'roles', `${name}.md`);
@@ -3176,7 +3225,7 @@ export function runRoleCreate(args, catalogsDir) {
 }
 
 /**
- * Create a catalog-scoped phase contract.
+ * Create a SDD-scoped phase contract.
  * @param {string[]} args - CLI args after 'phase create'
  * @param {string} catalogsDir
  */
@@ -3189,13 +3238,13 @@ export function runPhaseCreate(args, catalogsDir) {
   const sddIndex = args.indexOf('--sdd');
   const sddName = sddIndex !== -1 ? args[sddIndex + 1] : null;
   if (!sddName) {
-    throw new Error('gsr phase create requires --sdd <catalog>.');
+    throw new Error('gsr phase create requires --sdd <sdd-name>.');
   }
 
-  // Verify catalog exists
+  // Verify SDD exists
   const catalogDir = path.join(catalogsDir, sddName);
   if (!fs.existsSync(catalogDir)) {
-    throw new Error(`Catalog '${sddName}' not found at ${catalogDir}.`);
+    throw new Error(`SDD '${sddName}' not found at ${catalogDir}.`);
   }
 
   const phasePath = path.join(catalogDir, 'contracts', 'phases', `${name}.md`);
@@ -3216,7 +3265,7 @@ export function runPhaseCreate(args, catalogsDir) {
 
 /**
  * Add or update an invoke declaration on a phase in a custom SDD.
- * gsr phase invoke <phase-name> --sdd <sdd-name> --target <catalog>/<sdd> --trigger <trigger>
+ * gsr phase invoke <phase-name> --sdd <sdd-name> --target <sdd>/<sub-sdd> --trigger <trigger>
  *   [--input-from <field>] [--required-fields <comma-separated>]
  *
  * @param {string[]} args - CLI args after 'phase invoke'
@@ -3241,14 +3290,14 @@ export function runPhaseInvoke(args, catalogsDir) {
     throw new Error('gsr phase invoke requires --sdd <sdd-name>.');
   }
 
-  // --target <catalog>/<sdd>
+  // --target <sdd>/<sub-sdd>
   const targetIndex = args.indexOf('--target');
   const targetArg = targetIndex !== -1 ? args[targetIndex + 1] : null;
   if (!targetArg) {
-    throw new Error('gsr phase invoke requires --target <catalog>/<sdd>.');
+    throw new Error('gsr phase invoke requires --target <sdd>/<sub-sdd>.');
   }
   const slashIdx = targetArg.indexOf('/');
-  const catalog = slashIdx !== -1 ? targetArg.slice(0, slashIdx).trim() : targetArg.trim();
+  const targetSdd = slashIdx !== -1 ? targetArg.slice(0, slashIdx).trim() : targetArg.trim();
   const sddTarget = slashIdx !== -1 ? targetArg.slice(slashIdx + 1).trim() : '';
 
   // --trigger <trigger>
@@ -3267,8 +3316,8 @@ export function runPhaseInvoke(args, catalogsDir) {
     : undefined;
 
   const result = addPhaseInvoke(catalogsDir, sddName, phaseName, {
-    catalog,
-    sdd: sddTarget || catalog,
+    catalog: targetSdd,
+    sdd: sddTarget || targetSdd,
     trigger,
     input_from,
     required_fields,
@@ -3276,7 +3325,7 @@ export function runPhaseInvoke(args, catalogsDir) {
 
   process.stdout.write(
     `Invoke added to phase '${result.phaseName}' in SDD '${result.sddName}'.\n` +
-    `  catalog: ${result.invoke.catalog}\n` +
+    `  target: ${result.invoke.catalog}/${result.invoke.sdd}\n` +
     (result.invoke.trigger ? `  trigger: ${result.invoke.trigger}\n` : '')
   );
 }
@@ -3284,31 +3333,36 @@ export function runPhaseInvoke(args, catalogsDir) {
 // === EXPORTED INVOKE COMMAND FUNCTIONS ========================================
 
 /**
- * Parse a "catalog/sdd" argument string into { catalog, sdd }.
+ * Parse a "sdd/sub-sdd" argument string into { catalog, sdd }.
+ * The "catalog" field in the returned object maps to the first segment (the SDD name)
+ * for backward compatibility with internal data structures.
  * Throws if argument is missing or malformed.
  * @param {string|undefined} arg
  * @param {string} label - Name for error messages ('callee', 'caller', etc.)
  * @returns {{ catalog: string, sdd: string }}
  */
-function parseCatalogSddArg(arg, label) {
+function parseSddArg(arg, label) {
   if (!arg || typeof arg !== 'string') {
-    throw new Error(`${label} argument is required in "catalog/sdd" format.`);
+    throw new Error(`${label} argument is required in "sdd/sub-sdd" format.`);
   }
   const slashIdx = arg.indexOf('/');
   if (slashIdx === -1) {
-    throw new Error(`${label} must be in "catalog/sdd" format (got: "${arg}").`);
+    throw new Error(`${label} must be in "sdd/sub-sdd" format (got: "${arg}").`);
   }
   const catalog = arg.slice(0, slashIdx).trim();
   const sdd = arg.slice(slashIdx + 1).trim();
   if (!catalog || !sdd) {
-    throw new Error(`${label} must be in "catalog/sdd" format (got: "${arg}").`);
+    throw new Error(`${label} must be in "sdd/sub-sdd" format (got: "${arg}").`);
   }
   return { catalog, sdd };
 }
 
+/** @deprecated Use parseSddArg instead */
+const parseCatalogSddArg = parseSddArg;
+
 /**
- * Create a cross-catalog invocation record.
- * gsr sdd invoke <catalog>/<sdd> --from <catalog>/<sdd> --phase <name> [--payload <string>]
+ * Create a cross-SDD invocation record.
+ * gsr sdd invoke <sdd>/<sub-sdd> --from <sdd>/<sub-sdd> --phase <name> [--payload <string>]
  *
  * @param {string[]} args - CLI args after 'sdd invoke'
  * @param {string} invDir - Path to invocations directory
@@ -3322,14 +3376,14 @@ export function runSddInvoke(args, invDir) {
     if (prev && prev.startsWith('--')) return false;
     return true;
   });
-  const callee = parseCatalogSddArg(calleeArg, 'callee');
+  const callee = parseSddArg(calleeArg, 'callee');
 
-  // --from <catalog>/<sdd>
+  // --from <sdd>/<sub-sdd>
   const fromIdx = args.indexOf('--from');
   if (fromIdx === -1 || !args[fromIdx + 1]) {
-    throw new Error('--from <catalog>/<sdd> is required.');
+    throw new Error('--from <sdd>/<sub-sdd> is required.');
   }
-  const caller = parseCatalogSddArg(args[fromIdx + 1], '--from');
+  const caller = parseSddArg(args[fromIdx + 1], '--from');
 
   // --phase <name>
   const phaseIdx = args.indexOf('--phase');
@@ -3492,10 +3546,10 @@ export async function runIdentityShow(args, options = {}) {
   const catalogs = config.catalogs ?? {};
   const presetsToShow = [];
 
-  // Collect all presets across enabled catalogs
-  for (const [, catalog] of Object.entries(catalogs)) {
-    if (catalog.enabled === false) continue;
-    for (const [presetName, preset] of Object.entries(catalog.presets ?? {})) {
+  // Collect all presets across enabled SDDs
+  for (const [, sddEntry] of Object.entries(catalogs)) {
+    if (sddEntry.enabled === false) continue;
+    for (const [presetName, preset] of Object.entries(sddEntry.presets ?? {})) {
       presetsToShow.push({ presetName, preset });
     }
   }
@@ -3509,7 +3563,7 @@ export async function runIdentityShow(args, options = {}) {
   if (targetPreset) {
     const found = presetsToShow.find(p => p.presetName === targetPreset);
     if (!found) {
-      process.stdout.write(`Preset '${targetPreset}' not found in enabled catalogs.\n`);
+      process.stdout.write(`Preset '${targetPreset}' not found in enabled SDDs.\n`);
       return;
     }
     _printIdentityForPreset(found.presetName, found.preset, cwd);

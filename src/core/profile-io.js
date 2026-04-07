@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { get } from 'node:https';
 import { parseYaml, stringifyYaml } from './router.js';
-import { validateProfileFile } from './router-v4-io.js';
+import { validateProfileFile, loadV4Profiles } from './router-v4-io.js';
 import { appendTuiDebug } from '../debug/tui-debug-log.js';
 
 const COMPACT_PREFIX = 'gsr://';
@@ -14,43 +14,57 @@ const URL_SIZE_LIMIT = 1024 * 1024; // 1MB
 // === EXPORT ===
 
 /**
- * Export a single preset as raw YAML string.
+ * Export a single profile as raw YAML string.
  * Reconstructs the standalone profile file content from the assembled config.
  * @param {object} config - assembled v4 config with _v4Source
- * @param {string} presetName
+ * @param {string} profileName - name of the profile to export
  * @returns {string} YAML string
  */
-export function exportPreset(config, presetName) {
-  const profileContent = findPresetContent(config, presetName);
-  if (!profileContent) throw new Error(`Preset '${presetName}' not found`);
+export function exportProfile(config, profileName) {
+  const profileContent = findPresetContent(config, profileName);
+  if (!profileContent) throw new Error(`Preset '${profileName}' not found`);
 
   return stringifyYaml(profileContent);
 }
 
 /**
- * Export a single preset as a gsr:// compact string.
+ * @deprecated Use exportProfile instead.
+ */
+export function exportPreset(config, profileName) {
+  return exportProfile(config, profileName);
+}
+
+/**
+ * Export a single profile as a gsr:// compact string.
  * @param {object} config - assembled v4 config with _v4Source
- * @param {string} presetName
+ * @param {string} profileName - name of the profile to export
  * @returns {string} compact string
  */
-export function exportPresetCompact(config, presetName) {
-  const yaml = exportPreset(config, presetName);
+export function exportProfileCompact(config, profileName) {
+  const yaml = exportProfile(config, profileName);
   return encodeCompactString(yaml);
 }
 
 /**
- * Export all presets as a Map<presetName, yamlString>.
+ * @deprecated Use exportProfileCompact instead.
+ */
+export function exportPresetCompact(config, profileName) {
+  return exportProfileCompact(config, profileName);
+}
+
+/**
+ * Export all profiles as a Map<profileName, yamlString>.
  * @param {object} config - assembled v4 config
  * @returns {Map<string, string>}
  */
-export function exportAllPresets(config) {
+export function exportAllProfiles(config) {
   const result = new Map();
-  const catalogs = config.catalogs || {};
+  const sdds = config.catalogs || {};
 
-  for (const catalog of Object.values(catalogs)) {
-    const presets = catalog.presets || {};
-    for (const [name, preset] of Object.entries(presets)) {
-      const profileContent = { name, ...preset };
+  for (const sdd of Object.values(sdds)) {
+    const profiles = sdd.presets || {};
+    for (const [name, profile] of Object.entries(profiles)) {
+      const profileContent = { name, ...profile };
       // Remove internal fields that shouldn't be exported
       delete profileContent._normalized;
       result.set(name, stringifyYaml(profileContent));
@@ -60,21 +74,28 @@ export function exportAllPresets(config) {
   return result;
 }
 
+/**
+ * @deprecated Use exportAllProfiles instead.
+ */
+export function exportAllPresets(config) {
+  return exportAllProfiles(config);
+}
+
 // === IMPORT ===
 
 /**
- * Import a preset from a raw YAML string.
+ * Import a profile from a raw YAML string.
  * @param {string} yamlString
  * @param {string} routerDir - path to the router directory (contains profiles/)
  * @param {object} options - { catalog?: string, force?: boolean }
  * @returns {{ presetName: string, path: string, catalog: string }}
  */
-export function importPresetFromYaml(yamlString, routerDir, options = {}) {
+export function importProfileFromYaml(yamlString, routerDir, options = {}) {
   const parsed = parseYaml(yamlString);
   validateProfileFile(parsed, '<import>');
 
-  const presetName = parsed.name;
-  if (!presetName) throw new Error('Profile must have a name field');
+  const profileName = parsed.name;
+  if (!profileName) throw new Error('Profile must have a name field');
 
   const catalog = options.catalog && options.catalog !== 'default'
     ? options.catalog
@@ -84,10 +105,10 @@ export function importPresetFromYaml(yamlString, routerDir, options = {}) {
     ? join(routerDir, 'profiles', catalog)
     : join(routerDir, 'profiles');
 
-  const targetPath = join(profilesDir, `${presetName}.router.yaml`);
+  const targetPath = join(profilesDir, `${profileName}.router.yaml`);
 
   if (existsSync(targetPath) && !options.force) {
-    throw new Error(`Preset '${presetName}' already exists at ${targetPath}. Use --force to overwrite.`);
+    throw new Error(`Preset '${profileName}' already exists at ${targetPath}. Use --force to overwrite.`);
   }
 
   mkdirSync(profilesDir, { recursive: true });
@@ -96,23 +117,37 @@ export function importPresetFromYaml(yamlString, routerDir, options = {}) {
   writeFileSync(tempPath, yaml, 'utf8');
   renameSync(tempPath, targetPath);
 
-  return { presetName, path: targetPath, catalog };
+  return { presetName: profileName, path: targetPath, catalog };
 }
 
 /**
- * Import a preset from a gsr:// compact string.
+ * @deprecated Use importProfileFromYaml instead.
+ */
+export function importPresetFromYaml(yamlString, routerDir, options = {}) {
+  return importProfileFromYaml(yamlString, routerDir, options);
+}
+
+/**
+ * Import a profile from a gsr:// compact string.
  * @param {string} compactString
  * @param {string} routerDir
  * @param {object} options
  * @returns {{ presetName: string, path: string, catalog: string }}
  */
-export function importPresetFromCompact(compactString, routerDir, options = {}) {
+export function importProfileFromCompact(compactString, routerDir, options = {}) {
   const yaml = decodeCompactString(compactString);
-  return importPresetFromYaml(yaml, routerDir, options);
+  return importProfileFromYaml(yaml, routerDir, options);
 }
 
 /**
- * Import a preset from an HTTPS URL.
+ * @deprecated Use importProfileFromCompact instead.
+ */
+export function importPresetFromCompact(compactString, routerDir, options = {}) {
+  return importProfileFromCompact(compactString, routerDir, options);
+}
+
+/**
+ * Import a profile from an HTTPS URL.
  * @param {string} url - must start with https://
  * @param {string} routerDir
  * @param {object} options
@@ -154,7 +189,7 @@ export function importPresetFromUrl(url, routerDir, options = {}) {
         clearTimeout(timeout);
         try {
           const yaml = Buffer.concat(chunks).toString('utf8');
-          const result = importPresetFromYaml(yaml, routerDir, options);
+          const result = importProfileFromYaml(yaml, routerDir, options);
           resolve(result);
         } catch (err) {
           reject(err);
@@ -203,18 +238,18 @@ export function decodeCompactString(str) {
 // === HELPERS ===
 
 /**
- * Find a preset by name in the assembled config and return its full profile content.
+ * Find a profile by name in the assembled config and return its full profile content.
  * @param {object} config
- * @param {string} presetName
+ * @param {string} profileName - name of the profile to find
  * @returns {object|null} profile content with name field included
  */
-function findPresetContent(config, presetName) {
-  const catalogs = config.catalogs || {};
+function findPresetContent(config, profileName) {
+  const sdds = config.catalogs || {};
 
-  for (const catalog of Object.values(catalogs)) {
-    const presets = catalog.presets || {};
-    if (presets[presetName]) {
-      const profileContent = { name: presetName, ...presets[presetName] };
+  for (const sdd of Object.values(sdds)) {
+    const profiles = sdd.presets || {};
+    if (profiles[profileName]) {
+      const profileContent = { name: profileName, ...profiles[profileName] };
       // Remove internal fields that shouldn't be exported
       delete profileContent._normalized;
       return profileContent;
@@ -524,8 +559,8 @@ export function updateProfile(name, phases, routerDir, options = {}) {
 }
 
 /**
- * Update preset metadata fields (hidden, identity, etc.) without changing phases.
- * @param {string} name - Preset name
+ * Update profile metadata fields (hidden, identity, etc.) without changing phases.
+ * @param {string} name - Profile name
  * @param {object} updates - Object with fields to update (e.g., { hidden: true })
  * @param {string} routerDir - Path to router/ directory
  * @param {{ catalog?: string }} options
@@ -533,7 +568,7 @@ export function updateProfile(name, phases, routerDir, options = {}) {
  */
 export function updatePresetMetadata(name, updates, routerDir, options = {}) {
   if (!name || typeof name !== 'string' || !name.trim()) {
-    throw new Error('Preset name is required and must be a non-empty string.');
+    throw new Error('Profile name is required and must be a non-empty string.');
   }
   if (!updates || typeof updates !== 'object') {
     throw new Error('Updates object is required.');
@@ -579,10 +614,10 @@ export function updatePresetMetadata(name, updates, routerDir, options = {}) {
   return { presetName: name, path: profilePath };
 }
 
-// === CATALOG CRUD ===
+// === SDD GROUP CRUD ===
 
 /**
- * List all catalogs (directories under profiles/ + 'default' for flat files).
+ * List all SDD groups (directories under profiles/ + 'default' for flat files).
  * @param {string} routerDir
  * @returns {{ name: string, profileCount: number }[] }
  */
@@ -594,7 +629,7 @@ export function listCatalogs(routerDir) {
     return [{ name: 'default', profileCount: 0 }];
   }
 
-  // Count flat .router.yaml files for 'default' catalog
+  // Count flat .router.yaml files for 'default' SDD group
   let defaultCount = 0;
   let entries;
   try {
@@ -603,7 +638,7 @@ export function listCatalogs(routerDir) {
     return [{ name: 'default', profileCount: 0 }];
   }
 
-  const namedCatalogs = [];
+  const namedSdds = [];
 
   for (const entry of entries) {
     const entryPath = join(profilesDir, entry);
@@ -618,7 +653,7 @@ export function listCatalogs(routerDir) {
           subEntries = [];
         }
         const profileCount = subEntries.filter((f) => f.endsWith('.router.yaml')).length;
-        namedCatalogs.push({ name: entry, profileCount });
+        namedSdds.push({ name: entry, profileCount });
       } else if (entry.endsWith('.router.yaml')) {
         defaultCount += 1;
       }
@@ -628,13 +663,13 @@ export function listCatalogs(routerDir) {
   }
 
   result.push({ name: 'default', profileCount: defaultCount });
-  result.push(...namedCatalogs);
+  result.push(...namedSdds);
 
   return result;
 }
 
 /**
- * Create a new catalog directory.
+ * Create a new SDD group directory.
  * @param {string} name
  * @param {string} routerDir
  * @returns {{ name: string, path: string }}
@@ -648,15 +683,15 @@ export function createCatalog(name, routerDir) {
     throw new Error("Cannot create a catalog named 'default'. It is reserved for flat profiles.");
   }
 
-  const catalogPath = join(routerDir, 'profiles', name);
+  const sddPath = join(routerDir, 'profiles', name);
 
-  if (existsSync(catalogPath)) {
-    throw new Error(`Catalog '${name}' already exists at ${catalogPath}.`);
+  if (existsSync(sddPath)) {
+    throw new Error(`Catalog '${name}' already exists at ${sddPath}.`);
   }
 
-  mkdirSync(catalogPath, { recursive: true });
+  mkdirSync(sddPath, { recursive: true });
 
-  // Register new catalog as disabled in router.yaml
+  // Register new SDD group as disabled in router.yaml
   const configPath = join(routerDir, 'router.yaml');
   if (existsSync(configPath)) {
     try {
@@ -671,20 +706,20 @@ export function createCatalog(name, routerDir) {
         renameSync(tempPath, configPath);
       }
     } catch {
-      // Non-blocking: catalog dir is already created
+      // Non-blocking: SDD group dir is already created
     }
   }
 
-  return { name, path: catalogPath };
+  return { name, path: sddPath };
 }
 
 /**
- * Delete an empty catalog directory. Throws if it contains profiles.
+ * Delete an empty SDD group directory. Throws if it contains profiles.
  * @param {string} name
  * @param {string} routerDir
  * @returns {{ name: string, path: string, deleted: true }}
  */
-export function deleteCatalog(name, routerDir) {
+export function deleteSdd(name, routerDir) {
   if (!name || typeof name !== 'string' || !name.trim()) {
     throw new Error('Catalog name is required and must be a non-empty string.');
   }
@@ -693,15 +728,15 @@ export function deleteCatalog(name, routerDir) {
     throw new Error("Cannot delete the 'default' catalog.");
   }
 
-  const catalogPath = join(routerDir, 'profiles', name);
+  const sddPath = join(routerDir, 'profiles', name);
 
-  if (!existsSync(catalogPath)) {
-    throw new Error(`Catalog '${name}' not found at ${catalogPath}.`);
+  if (!existsSync(sddPath)) {
+    throw new Error(`Catalog '${name}' not found at ${sddPath}.`);
   }
 
   let entries;
   try {
-    entries = readdirSync(catalogPath);
+    entries = readdirSync(sddPath);
   } catch {
     entries = [];
   }
@@ -711,28 +746,38 @@ export function deleteCatalog(name, routerDir) {
     throw new Error(`Catalog '${name}' is not empty — contains ${profileFiles.length} profile(s). Remove them first.`);
   }
 
-  rmdirSync(catalogPath);
+  rmdirSync(sddPath);
 
-  return { name, path: catalogPath, deleted: true };
+  return { name, path: sddPath, deleted: true };
 }
-
-// === CATALOG METADATA ===
 
 /**
- * Get the display label for a catalog.
- * Returns "DisplayName (default)" for the default catalog,
- * or just the catalog name for others.
- * @param {string} catalogName
- * @param {object|null|undefined} catalogMeta
+ * @deprecated Use deleteSdd instead.
+ */
+export const deleteCatalog = deleteSdd;
+
+// === SDD GROUP METADATA ===
+
+/**
+ * Get the display label for an SDD group.
+ * Returns "DisplayName (default)" for the default SDD group,
+ * or just the SDD name for others.
+ * @param {string} sddName - SDD group name
+ * @param {object|null|undefined} sddMeta
  * @returns {string}
  */
-export function getCatalogDisplayName(catalogName, catalogMeta) {
-  if (catalogName === 'default') {
-    const displayName = catalogMeta?.displayName ?? 'SDD-Orchestrator';
+export function getSddDisplayName(sddName, sddMeta) {
+  if (sddName === 'default') {
+    const displayName = sddMeta?.displayName ?? 'SDD-Orchestrator';
     return `${displayName} (default)`;
   }
-  return catalogMeta?.displayName ?? catalogName;
+  return sddMeta?.displayName ?? sddName;
 }
+
+/**
+ * @deprecated Use getSddDisplayName instead.
+ */
+export const getCatalogDisplayName = getSddDisplayName;
 
 /**
  * Move a profile from one catalog to another.
@@ -794,13 +839,13 @@ export function moveProfile(name, targetCatalog, routerDir, options = {}) {
 }
 
 /**
- * Enable or disable a catalog by updating router.yaml.
- * @param {string} catalogName
+ * Enable or disable an SDD group by updating router.yaml.
+ * @param {string} sddName - SDD group name
  * @param {boolean} enabled
  * @param {string} routerDir
  * @returns {{ name: string, enabled: boolean }}
  */
-export function setCatalogEnabled(catalogName, enabled, routerDir) {
+export function setSddEnabled(sddName, enabled, routerDir) {
   const configPath = join(routerDir, 'router.yaml');
   if (!existsSync(configPath)) {
     throw new Error('No router.yaml found.');
@@ -812,15 +857,36 @@ export function setCatalogEnabled(catalogName, enabled, routerDir) {
   if (!config.catalogs) {
     config.catalogs = {};
   }
-  if (!config.catalogs[catalogName]) {
-    config.catalogs[catalogName] = {};
+  if (!config.catalogs[sddName]) {
+    config.catalogs[sddName] = {};
   }
-  config.catalogs[catalogName].enabled = enabled;
+  config.catalogs[sddName].enabled = enabled;
 
   const yaml = stringifyYaml(config);
   const tempPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
   writeFileSync(tempPath, yaml, 'utf8');
   renameSync(tempPath, configPath);
 
-  return { name: catalogName, enabled };
+  return { name: sddName, enabled };
 }
+
+/**
+ * @deprecated Use setSddEnabled instead.
+ */
+export const setCatalogEnabled = setSddEnabled;
+
+// === PROFILE LOADER (canonical name) ===
+
+/**
+ * Load profiles — canonical name for loadV4Profiles.
+ * This is the primary export for the profile-io module.
+ * @type {typeof import('./router-v4-io.js').loadV4Profiles}
+ */
+export const loadProfiles = loadV4Profiles;
+
+/**
+ * @deprecated Use loadProfiles instead.
+ * Deprecated re-export maintained for backward compatibility.
+ * Will be removed in a future major version.
+ */
+export const loadPresets = loadProfiles;

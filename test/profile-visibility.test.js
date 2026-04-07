@@ -5,7 +5,7 @@ import {
   resolveRouterState,
 } from '../src/adapters/opencode/index.js';
 import { generateOpenCodeOverlay } from '../src/adapters/opencode/overlay-generator.js';
-import { getCatalogDisplayName } from '../src/core/preset-io.js';
+import { getCatalogDisplayName } from '../src/core/profile-io.js';
 import { assembleV4Config } from '../src/core/router-v4-io.js';
 
 describe('getCatalogDisplayName', () => {

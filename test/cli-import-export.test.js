@@ -26,7 +26,7 @@ import {
   exportPresetCompact,
   importPresetFromCompact,
   importPresetFromYaml,
-} from '../src/core/preset-io.js';
+} from '../src/core/profile-io.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

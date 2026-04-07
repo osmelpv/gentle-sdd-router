@@ -487,6 +487,11 @@ function validatePreset(catalogName, presetName, preset) {
 }
 
 function validatePhaseLanes(catalogName, presetName, phaseName, lanes) {
+  // Simplified schema: {model: string, fallbacks?: string[]} — accepted as valid, no lane array required.
+  if (isObject(lanes) && isNonEmptyString(lanes.model)) {
+    return; // simplified schema is valid
+  }
+
   const laneList = Array.isArray(lanes) ? lanes : lanes?.lanes;
 
   if (!Array.isArray(laneList) || laneList.length === 0) {

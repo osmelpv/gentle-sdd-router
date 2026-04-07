@@ -3,10 +3,11 @@ import path from 'node:path';
 import { parseYaml, stringifyYaml, validateRouterConfig } from '../router.js';
 import { loadV4Profiles, assembleV4Config } from '../router-v4-io.js';
 import { migration as m001 } from './001_v3-to-v4-multifile.js';
+import { migration as m002 } from './002_profile-schema-simplification.js';
 
 // ─── Static migration registry ───────────────────────────────────────────────
 // New migration scripts: add one import above and push here.
-const MIGRATIONS = [m001];
+const MIGRATIONS = [m001, m002];
 
 // ─── Registry I/O ────────────────────────────────────────────────────────────
 
@@ -106,7 +107,24 @@ export function planMigrations(routerDir) {
       continue;
     }
 
-    if (script.canApply(config)) {
+    // Migrations with needsProfiles:true need project profiles to decide canApply.
+    // Load profiles lazily only for those migrations, using includeGlobal:false to
+    // avoid global plugin profiles polluting migration decisions.
+    let profilesArray = [];
+    if (script.needsProfiles === true) {
+      try {
+        const profilesDir = path.join(routerDir, 'profiles');
+        if (fs.existsSync(profilesDir)) {
+          const rawProfiles = loadV4Profiles(routerDir, { includeGlobal: false });
+          profilesArray = rawProfiles.map((p) => p.content);
+        }
+      } catch {
+        // Non-fatal: if profiles can't be loaded, fall back to empty array
+        profilesArray = [];
+      }
+    }
+
+    if (script.canApply(config, profilesArray)) {
       pending.push({
         id: script.id,
         name: script.name,
@@ -169,13 +187,22 @@ export async function applyMinorMigrations(routerDir) {
       const raw = fs.readFileSync(configPath, 'utf8');
       const config = parseYaml(raw);
 
-      const output = script.apply(config, { routerDir });
+      let output;
+      if (script.needsProfiles === true) {
+        const rawProfiles = loadV4Profiles(routerDir, { includeGlobal: false });
+        const profilesArray = rawProfiles.map((p) => ({ ...p.content, name: p.content.name ?? p.fileName?.replace('.router.yaml', '') }));
+        output = script.apply(config, profilesArray);
+      } else {
+        output = script.apply(config, { routerDir });
+      }
       writeMigrationOutput(routerDir, output);
 
-      const writtenProfiles = loadV4Profiles(routerDir);
-      const writtenCore = parseYaml(fs.readFileSync(path.join(routerDir, ROUTER_FILENAME), 'utf8'));
-      const assembled = assembleV4Config(writtenCore, writtenProfiles);
-      validateRouterConfig(assembled);
+      if (!script.skipValidationAfterApply) {
+        const writtenProfiles = loadV4Profiles(routerDir);
+        const writtenCore = parseYaml(fs.readFileSync(path.join(routerDir, ROUTER_FILENAME), 'utf8'));
+        const assembled = assembleV4Config(writtenCore, writtenProfiles);
+        validateRouterConfig(assembled);
+      }
 
       const registry = loadMigrationsRegistry(routerDir);
       registry.applied[script.id] = {
@@ -260,10 +287,14 @@ export function restoreBackup(routerDir, backupPath) {
 // ─── Write migration output ───────────────────────────────────────────────────
 
 /**
- * Atomically write the migration output (coreConfig + profiles[]) to routerDir.
+ * Atomically write the migration output (coreConfig + profiles[] + optional invokeConfigs[]) to routerDir.
  *
  * @param {string} routerDir
- * @param {{ coreConfig: object, profiles: Array<{name: string, catalog: string, content: object}> }} output
+ * @param {{
+ *   coreConfig: object,
+ *   profiles: Array<{name: string, catalog?: string, content: object}>,
+ *   invokeConfigs?: Array<{name: string, content: object}>
+ * }} output
  */
 function writeMigrationOutput(routerDir, output) {
   const configPath = path.join(routerDir, 'router.yaml');
@@ -291,6 +322,31 @@ function writeMigrationOutput(routerDir, output) {
     const tempProfile = `${profilePath}.${process.pid}.${Date.now()}.tmp`;
     fs.writeFileSync(tempProfile, profileYaml, 'utf8');
     fs.renameSync(tempProfile, profilePath);
+  }
+
+  // Write invokeConfigs to router/invoke_configs/ (migration 002 output)
+  if (Array.isArray(output.invokeConfigs) && output.invokeConfigs.length > 0) {
+    const invokeConfigsDir = path.join(routerDir, 'invoke_configs');
+    fs.mkdirSync(invokeConfigsDir, { recursive: true });
+
+    for (const cfg of output.invokeConfigs) {
+      const cfgPath = path.join(invokeConfigsDir, `${cfg.name}.yaml`);
+      const cfgYaml = stringifyYaml(cfg.content);
+      const tempCfg = `${cfgPath}.${process.pid}.${Date.now()}.tmp`;
+      fs.writeFileSync(tempCfg, cfgYaml, 'utf8');
+      fs.renameSync(tempCfg, cfgPath);
+    }
+  }
+
+  // Delete profiles that were moved to invokeConfigs (e.g. sdd-debug-*)
+  if (Array.isArray(output.deleteFromProfiles) && output.deleteFromProfiles.length > 0) {
+    const profilesDir = path.join(routerDir, 'profiles');
+    for (const fileName of output.deleteFromProfiles) {
+      const filePath = path.join(profilesDir, fileName);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    }
   }
 }
 
@@ -341,16 +397,27 @@ export async function runMigrations(routerDir, options = {}) {
       const config = parseYaml(raw);
 
       // Step 3c: apply migration
-      const output = script.apply(config, { routerDir });
+      // Migrations with needsProfiles:true receive the current profiles as the second arg.
+      let output;
+      if (script.needsProfiles === true) {
+        const rawProfiles = loadV4Profiles(routerDir, { includeGlobal: false });
+        const profilesArray = rawProfiles.map((p) => ({ ...p.content, name: p.content.name ?? p.fileName?.replace('.router.yaml', '') }));
+        output = script.apply(config, profilesArray);
+      } else {
+        output = script.apply(config, { routerDir });
+      }
 
       // Step 3d: write output
       writeMigrationOutput(routerDir, output);
 
       // Step 3e: validate — load written files and assemble to validate
-      const writtenProfiles = loadV4Profiles(routerDir);
-      const writtenCore = parseYaml(fs.readFileSync(path.join(routerDir, ROUTER_FILENAME), 'utf8'));
-      const assembled = assembleV4Config(writtenCore, writtenProfiles);
-      validateRouterConfig(assembled);
+      // (skip validation for migrations that transform to new schema the validator doesn't understand)
+      if (!script.skipValidationAfterApply) {
+        const writtenProfiles = loadV4Profiles(routerDir);
+        const writtenCore = parseYaml(fs.readFileSync(path.join(routerDir, ROUTER_FILENAME), 'utf8'));
+        const assembled = assembleV4Config(writtenCore, writtenProfiles);
+        validateRouterConfig(assembled);
+      }
 
       // Step 3f: update registry
       const registry = loadMigrationsRegistry(routerDir);

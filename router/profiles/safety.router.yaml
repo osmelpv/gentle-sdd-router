@@ -1,11 +1,10 @@
 name: safety
+sdd: agent-orchestrator
+builtin: true
 debug_invoke:
-  preset: sdd-debug-mono
+  profile: gsr-sdd-debug-mono
   trigger: never
+hidden: true
 phases:
   orchestrator:
-    - target: anthropic/claude-opus
-      phase: orchestrator
-      role: primary
-      contextWindow: 200000
-hidden: true
+    model: anthropic/claude-opus

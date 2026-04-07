@@ -15,7 +15,7 @@ import {
   listCatalogs,
   createCatalog,
   deleteCatalog,
-} from '../src/core/preset-io.js';
+} from '../src/core/profile-io.js';
 import { removeOpenCodeOverlay } from '../src/adapters/opencode/overlay-generator.js';
 import { runCli } from '../src/cli.js';
 import { createOpenCodeSlashCommandManifest } from '../src/adapters/opencode/index.js';

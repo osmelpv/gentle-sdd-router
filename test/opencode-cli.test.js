@@ -307,6 +307,7 @@ activation_state: active
 
 const v4FastProfileYaml = `name: fast
 availability: stable
+visible: true
 phases:
   orchestrator:
     - target: anthropic/claude-sonnet
@@ -317,6 +318,7 @@ phases:
 
 const v4SafetyProfileYaml = `name: safety
 availability: stable
+visible: true
 permissions:
   read: true
   write: false

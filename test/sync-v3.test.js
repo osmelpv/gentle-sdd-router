@@ -165,7 +165,6 @@ describe('generateSyncManifest — v3 manifest (SDDs with invoke)', () => {
       const narrativePhase = sddEntry.phases.find(p => p.name === 'narrative');
       assert.ok(narrativePhase, 'Expected narrative phase');
       assert.ok(narrativePhase.invoke, 'Expected invoke on narrative phase');
-      assert.equal(narrativePhase.invoke.catalog, 'art-production');
       assert.equal(narrativePhase.invoke.sdd, 'asset-pipeline');
       assert.equal(narrativePhase.invoke.payload_from, 'output');
       assert.equal(narrativePhase.invoke.await, true);
@@ -238,8 +237,7 @@ describe('generateSyncManifest — v3 manifest (SDDs with invoke)', () => {
       const sddEntry = manifest.custom_sdds[0];
       const assetsPhase = sddEntry.phases.find(p => p.name === 'assets');
       assert.ok(assetsPhase.invoke);
-      assert.equal(assetsPhase.invoke.catalog, 'game-design');
-      assert.equal(assetsPhase.invoke.sdd, 'game-design'); // defaulted to catalog
+      assert.equal(assetsPhase.invoke.sdd, 'game-design'); // sdd value from catalog field (no override)
     } finally {
       cleanup(tmp);
     }

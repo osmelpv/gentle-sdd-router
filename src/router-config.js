@@ -30,7 +30,7 @@ export {
   addPhaseInvoke,
   validateSddFull,
   listDeclaredInvocations,
-} from './core/sdd-catalog-io.js';
+} from './core/sdd-profile-io.js';
 
 export { shouldInvokeDebug } from './core/debug-invoke.js';
 
@@ -74,7 +74,7 @@ export {
   deleteCatalog,
   getCatalogDisplayName,
   setCatalogEnabled,
-} from './core/preset-io.js';
+} from './core/profile-io.js';
 
 export {
   planMigrations,

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { createCustomSdd, scaffoldPhaseContract } from '../src/core/sdd-catalog-io.js';
+import { createCustomSdd, scaffoldPhaseContract } from '../src/core/sdd-profile-io.js';
 import { getProjectSddAgentSpecs } from '../src/core/project-sdd-agent-routing.js';
 import { materializeProjectSddAgents } from '../src/adapters/opencode/project-sdd-agent-materializer.js';
 import { runSddCreate } from '../src/cli.js';

@@ -1,6 +1,5 @@
 version: 5
 active_sdd: agent-orchestrator
-active_preset: local-hybrid
 activation_state: active
 metadata:
   installation_contract:

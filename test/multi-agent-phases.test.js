@@ -110,10 +110,16 @@ describe('profile fixes', () => {
     const config = loadRouterConfig();
     const preset = config.catalogs?.default?.presets?.multiagent;
     assert.ok(preset, 'multiagent preset should exist');
-    const verifyLanes = preset.phases?.verify;
-    assert.ok(Array.isArray(verifyLanes), 'verify should have lanes');
-    const hasPrimary = verifyLanes.some(l => l.role === 'primary');
-    assert.ok(hasPrimary, 'verify should have a primary lane');
+    const verifyPhase = preset.phases?.verify;
+    assert.ok(verifyPhase, 'verify phase should exist');
+    // Phase 7: simplified schema {model, fallbacks} OR lane array format
+    if (Array.isArray(verifyPhase)) {
+      const hasPrimary = verifyPhase.some(l => l.role === 'primary');
+      assert.ok(hasPrimary, 'verify should have a primary lane');
+    } else {
+      // Simplified schema — model field acts as primary
+      assert.ok(verifyPhase.model, 'verify simplified schema should have model');
+    }
   });
 
   test('cheap verify has correct role', async () => {
@@ -121,11 +127,17 @@ describe('profile fixes', () => {
     const config = loadRouterConfig();
     const preset = config.catalogs?.default?.presets?.cheap;
     assert.ok(preset, 'cheap preset should exist');
-    const verifyLanes = preset.phases?.verify;
-    assert.ok(Array.isArray(verifyLanes), 'verify should have lanes');
-    // Should NOT have a lone judge without primary
-    if (verifyLanes.length === 1) {
-      assert.equal(verifyLanes[0].role, 'primary', 'Single lane should be primary, not judge');
+    const verifyPhase = preset.phases?.verify;
+    assert.ok(verifyPhase, 'verify phase should exist');
+    // Phase 7: simplified schema {model, fallbacks} OR lane array format
+    if (Array.isArray(verifyPhase)) {
+      // Should NOT have a lone judge without primary
+      if (verifyPhase.length === 1) {
+        assert.equal(verifyPhase[0].role, 'primary', 'Single lane should be primary, not judge');
+      }
+    } else {
+      // Simplified schema — model field acts as primary
+      assert.ok(verifyPhase.model, 'verify simplified schema should have model');
     }
   });
 });

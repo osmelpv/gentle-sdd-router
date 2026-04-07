@@ -9,8 +9,11 @@ const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN_ROOT = path.resolve(MODULE_DIR, '..', '..');
 const PLUGIN_ROUTER_DIR = path.join(PLUGIN_ROOT, 'router');
 const PLUGIN_CONFIG_PATH = path.join(PLUGIN_ROUTER_DIR, 'router.yaml');
+const PLUGIN_INVOKE_CONFIGS_DIR = path.join(PLUGIN_ROUTER_DIR, 'invoke_configs');
 const DEFAULT_PRESET = 'local-hybrid';
-const DEFAULT_DEBUG_PRESET = 'sdd-debug-mono';
+const DEFAULT_DEBUG_PROFILE = 'gsr-sdd-debug-mono';
+/** @deprecated Use DEFAULT_DEBUG_PROFILE instead */
+const DEFAULT_DEBUG_PRESET = DEFAULT_DEBUG_PROFILE;
 
 const STANDARD_PHASE_AGENT_NAMES = {
   orchestrator: 'sdd-orchestrator',
@@ -43,14 +46,52 @@ function loadPluginConfig() {
 }
 
 function getPreset(config, presetName) {
-  for (const [catalogName, catalog] of Object.entries(config.catalogs ?? {})) {
-    const preset = catalog.presets?.[presetName];
-    if (preset) return { catalogName, preset };
-  }
+  const profilesMap = config.profilesMap instanceof Map ? config.profilesMap : new Map();
+  const entry = profilesMap.get(presetName);
+  if (entry) return { catalogName: entry.catalogName, preset: entry.content };
   throw new Error(`Preset '${presetName}' not found in plugin profiles.`);
 }
 
+/**
+ * Load a debug invoke config from router/invoke_configs/{profileName}.yaml.
+ * Returns the parsed YAML or throws if not found.
+ *
+ * @param {string} profileName - e.g. "gsr-sdd-debug-mono"
+ * @returns {object} parsed invoke config
+ */
+function loadDebugInvokeConfig(profileName) {
+  const filePath = path.join(PLUGIN_INVOKE_CONFIGS_DIR, `${profileName}.yaml`);
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Debug invoke config '${profileName}' not found at '${filePath}'.`);
+  }
+  const raw = fs.readFileSync(filePath, 'utf8');
+  return parseYaml(raw);
+}
+
+/**
+ * Extract the primary model target from a simplified invoke config phase entry.
+ * Invoke config phases use { model, fallbacks } format (not the lane array format).
+ *
+ * @param {object|null} phaseEntry
+ * @returns {string|null}
+ */
+function pickInvokeConfigTarget(phaseEntry) {
+  if (!phaseEntry || typeof phaseEntry !== 'object') return null;
+  return phaseEntry.model ?? null;
+}
+
+/**
+ * Pick the primary lane from a phase entry (lane array OR simplified schema).
+ * Returns an object with at least a `target` field, or null if none found.
+ *
+ * - Lane array format: [{target, role, ...}] → returns the primary/judge lane
+ * - Simplified schema: {model, fallbacks?} → returns {target: model}
+ */
 function pickPrimaryLane(lanes = []) {
+  // Simplified schema: {model: string, fallbacks?: string[]}
+  if (!Array.isArray(lanes) && lanes && typeof lanes === 'object' && typeof lanes.model === 'string') {
+    return { target: lanes.model };
+  }
   if (!Array.isArray(lanes) || lanes.length === 0) return null;
   return lanes.find((lane) => lane.role === 'primary')
     ?? lanes.find((lane) => lane.role === 'judge')
@@ -126,7 +167,7 @@ function buildSpec({ name, phase, target, prompt, sdd, variant, permissions, hid
 
 export function getGlobalSddAgentSpecs(options = {}) {
   const presetName = options.preset ?? DEFAULT_PRESET;
-  const debugPresetName = options.debugPreset ?? DEFAULT_DEBUG_PRESET;
+  const debugProfileName = options.debugPreset ?? DEFAULT_DEBUG_PROFILE;
   const cwd = options.cwd ?? process.cwd();
   const config = loadPluginConfig();
 
@@ -155,28 +196,29 @@ export function getGlobalSddAgentSpecs(options = {}) {
     }));
   }
 
-  // Debug SDD executors — decoupled: failure here does NOT block standard SDD agents
+  // Debug SDD executors — read from invoke_configs/ (simplified schema).
+  // Decoupled: failure here does NOT block standard SDD agents.
   try {
-    const { preset: debugPreset } = getPreset(config, debugPresetName);
+    const debugInvokeConfig = loadDebugInvokeConfig(debugProfileName);
     for (const phaseName of Object.keys(DEBUG_PHASE_ROLE_NAMES)) {
-      const lane = pickPrimaryLane(debugPreset.phases?.[phaseName] ?? []);
-      if (!lane?.target) continue;
+      const target = pickInvokeConfigTarget(debugInvokeConfig.phases?.[phaseName]);
+      if (!target) continue;
 
       specs.push(buildSpec({
         name: `sdd-debug-${phaseName}`,
         phase: phaseName,
-        target: lane.target,
+        target,
         prompt: debugPrompt(phaseName),
         sdd: 'sdd-debug',
-        variant: debugPresetName,
+        variant: debugProfileName,
         permissions: baseTools(false),
         hidden: true,
         mode: 'subagent',
-        description: `gsr global sdd-debug ${phaseName} via ${debugPresetName}`,
+        description: `gsr global sdd-debug ${phaseName} via ${debugProfileName}`,
       }));
     }
   } catch {
-    // Debug preset not found or malformed — standard SDD agents still work
+    // Debug profile not found or malformed — standard SDD agents still work
   }
 
   return specs;

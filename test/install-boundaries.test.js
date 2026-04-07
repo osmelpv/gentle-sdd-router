@@ -161,8 +161,7 @@ test('fresh install generates a valid v4 config with all canonical phases', () =
   const config = loadRouterConfig(path.join(tempDir, 'router', 'router.yaml'));
 
   assert.equal(config.activation_state, 'inactive');
-  assert.equal(config.active_preset, 'multivendor');
-  // Assembled v4 config uses catalogs/presets structure (v3-shaped)
+  // active_preset is no longer written to disk (Phase 7); profile exists in catalog instead.
   assert.ok(config.catalogs?.default?.presets?.multivendor, 'multivendor preset should exist in default catalog');
   const phaseKeys = Object.keys(config.catalogs.default.presets.multivendor.phases);
   assert.ok(phaseKeys.includes('orchestrator'));
@@ -196,12 +195,19 @@ test('starter config assigns a provider/model target to every phase', () => {
 
   for (const phaseName of CANONICAL_PHASES) {
     const chain = phases[phaseName];
-    assert.ok(Array.isArray(chain), `${phaseName} should be an array`);
-    assert.ok(chain.length > 0, `${phaseName} should have at least one candidate`);
-    // v4 lanes are objects with target field
-    const firstLane = chain[0];
-    assert.ok(firstLane && typeof firstLane === 'object', `${phaseName} first candidate should be a lane object`);
-    assert.ok(firstLane.target?.includes('/'), `${phaseName} target should be provider/model`);
+    assert.ok(chain, `${phaseName} should be present`);
+    // Phase 7: phases are now in simplified schema {model, fallbacks?}
+    if (Array.isArray(chain)) {
+      // Old lane array format (backward compat)
+      assert.ok(chain.length > 0, `${phaseName} should have at least one candidate`);
+      const firstLane = chain[0];
+      assert.ok(firstLane && typeof firstLane === 'object', `${phaseName} first candidate should be a lane object`);
+      assert.ok((firstLane.target ?? firstLane.model)?.includes('/'), `${phaseName} target should be provider/model`);
+    } else {
+      // Simplified schema
+      assert.ok(chain && typeof chain === 'object', `${phaseName} should be an object`);
+      assert.ok(chain.model?.includes('/'), `${phaseName} model should be provider/model`);
+    }
   }
 });
 
@@ -358,7 +364,8 @@ test('install on a fresh repo with profile intent sets the active profile', () =
   assert.equal(report.activeProfileName, 'multivendor');
 
   const config = loadRouterConfig(path.join(tempDir, 'router', 'router.yaml'));
-  assert.equal(config.active_preset, 'multivendor');
+  // active_preset is no longer written to disk (Phase 7); profile exists in catalog instead.
+  assert.ok(config.catalogs?.default?.presets?.multivendor, 'multivendor preset in catalog after profile intent install');
 });
 
 // ─── Installability docs/metadata coherence ──────────────────────────

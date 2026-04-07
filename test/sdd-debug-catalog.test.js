@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, test } from 'node:test';
-import { validateSddYaml, resolveContract } from '../src/core/sdd-catalog-io.js';
+import { validateSddYaml, resolveContract } from '../src/core/sdd-profile-io.js';
 import { parseYaml } from '../src/core/router.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

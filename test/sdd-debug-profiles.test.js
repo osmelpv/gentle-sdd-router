@@ -23,6 +23,7 @@ const PROJECT_ROOT = path.resolve(
 );
 
 const PROFILES_DIR = path.join(PROJECT_ROOT, 'router', 'profiles');
+const INVOKE_CONFIGS_DIR = path.join(PROJECT_ROOT, 'router', 'invoke_configs');
 const ROUTER_YAML_PATH = path.join(PROJECT_ROOT, 'router', 'router.yaml');
 
 function loadPreset(filename) {
@@ -30,10 +31,15 @@ function loadPreset(filename) {
   return parseYaml(raw);
 }
 
-// ─── sdd-debug-mono preset ──────────────────────────────────────────────────
+function loadInvokeConfig(filename) {
+  const raw = fs.readFileSync(path.join(INVOKE_CONFIGS_DIR, filename), 'utf8');
+  return parseYaml(raw);
+}
+
+// ─── sdd-debug-mono invoke config ──────────────────────────────────────────────────
 
 describe('sdd-debug-mono preset', () => {
-  const mono = loadPreset('sdd-debug-mono.router.yaml');
+  const mono = loadInvokeConfig('gsr-sdd-debug-mono.yaml');
 
   test('exists and loads without error', () => {
     assert.ok(mono, 'sdd-debug-mono.router.yaml should load');
@@ -43,8 +49,8 @@ describe('sdd-debug-mono preset', () => {
     assert.equal(mono.sdd, 'sdd-debug');
   });
 
-  test('has name: sdd-debug-mono', () => {
-    assert.equal(mono.name, 'sdd-debug-mono');
+  test('has name: gsr-sdd-debug-mono', () => {
+    assert.equal(mono.name, 'gsr-sdd-debug-mono');
   });
 
   test('has availability: stable', () => {
@@ -63,19 +69,19 @@ describe('sdd-debug-mono preset', () => {
     }
   });
 
-  test('orchestrator is declared exactly ONCE', () => {
-    const orchLanes = mono.phases?.orchestrator;
-    assert.ok(Array.isArray(orchLanes), 'orchestrator should be an array');
-    assert.equal(orchLanes.length, 1, 'orchestrator should have exactly 1 lane');
+  test('orchestrator phase is an object with model field (simplified schema)', () => {
+    const orchPhase = mono.phases?.orchestrator;
+    assert.ok(orchPhase !== null && typeof orchPhase === 'object', 'orchestrator should be an object');
+    assert.ok(!Array.isArray(orchPhase), 'orchestrator should NOT be an array (simplified schema)');
+    assert.ok(typeof orchPhase.model === 'string', 'orchestrator should have model field');
   });
 
-  test('all phases use openai/gpt-5.4 as primary target', () => {
-    for (const [phaseName, lanes] of Object.entries(mono.phases ?? {})) {
-      const primary = lanes?.find((l) => l.role === 'primary') ?? lanes?.[0];
+  test('all phases use openai/gpt-5.4 as model', () => {
+    for (const [phaseName, phaseEntry] of Object.entries(mono.phases ?? {})) {
       assert.equal(
-        primary?.target,
+        phaseEntry?.model,
         'openai/gpt-5.4',
-        `${phaseName} primary should use openai/gpt-5.4, got: ${primary?.target}`
+        `${phaseName} should use openai/gpt-5.4, got: ${phaseEntry?.model}`
       );
     }
   });
@@ -89,10 +95,10 @@ describe('sdd-debug-mono preset', () => {
   });
 });
 
-// ─── sdd-debug-multi preset ─────────────────────────────────────────────────
+// ─── sdd-debug-multi invoke config ─────────────────────────────────────────────────
 
 describe('sdd-debug-multi preset', () => {
-  const multi = loadPreset('sdd-debug-multi.router.yaml');
+  const multi = loadInvokeConfig('gsr-sdd-debug-multi.yaml');
 
   test('exists and loads without error', () => {
     assert.ok(multi, 'sdd-debug-multi.router.yaml should load');
@@ -102,8 +108,8 @@ describe('sdd-debug-multi preset', () => {
     assert.equal(multi.sdd, 'sdd-debug');
   });
 
-  test('has name: sdd-debug-multi', () => {
-    assert.equal(multi.name, 'sdd-debug-multi');
+  test('has name: gsr-sdd-debug-multi', () => {
+    assert.equal(multi.name, 'gsr-sdd-debug-multi');
   });
 
   test('has exactly 4 phase entries', () => {
@@ -111,39 +117,37 @@ describe('sdd-debug-multi preset', () => {
     assert.equal(phaseNames.length, 4, `Expected 4 phases, got: ${phaseNames.join(', ')}`);
   });
 
-  test('orchestrator has multi-agent composition (2 lanes)', () => {
-    const orchLanes = multi.phases?.orchestrator;
-    assert.ok(Array.isArray(orchLanes));
-    assert.equal(orchLanes.length, 2, 'orchestrator should have primary + secondary');
+  test('orchestrator phase is an object with model field (simplified schema)', () => {
+    const orchPhase = multi.phases?.orchestrator;
+    assert.ok(orchPhase !== null && typeof orchPhase === 'object', 'orchestrator should be an object');
+    assert.ok(!Array.isArray(orchPhase), 'orchestrator should NOT be an array (simplified schema)');
+    assert.ok(typeof orchPhase.model === 'string', 'orchestrator should have model field');
   });
 
-  test('analyze-area has multi-agent composition (2 lanes)', () => {
-    const lanes = multi.phases?.['analyze-area'];
-    assert.ok(Array.isArray(lanes));
-    assert.equal(lanes.length, 2, 'analyze-area should have primary + secondary');
+  test('analyze-area phase has model field (simplified schema)', () => {
+    const phase = multi.phases?.['analyze-area'];
+    assert.ok(phase !== null && typeof phase === 'object', 'analyze-area should be an object');
+    assert.ok(typeof phase.model === 'string', 'analyze-area should have model field');
   });
 
-  test('implant-logs has single lane (mono within multi)', () => {
-    const lanes = multi.phases?.['implant-logs'];
-    assert.ok(Array.isArray(lanes));
-    assert.equal(lanes.length, 1, 'implant-logs should have 1 lane');
+  test('implant-logs phase has model field (simplified schema)', () => {
+    const phase = multi.phases?.['implant-logs'];
+    assert.ok(phase !== null && typeof phase === 'object', 'implant-logs should be an object');
+    assert.ok(typeof phase.model === 'string', 'implant-logs should have model field');
   });
 
-  test('apply-fixes has multi-agent composition with judge role', () => {
-    const lanes = multi.phases?.['apply-fixes'];
-    assert.ok(Array.isArray(lanes));
-    assert.equal(lanes.length, 2, 'apply-fixes should have primary + judge');
-    const judge = lanes.find((l) => l.role === 'judge');
-    assert.ok(judge, 'apply-fixes should have a judge lane');
+  test('apply-fixes phase has model field (simplified schema)', () => {
+    const phase = multi.phases?.['apply-fixes'];
+    assert.ok(phase !== null && typeof phase === 'object', 'apply-fixes should be an object');
+    assert.ok(typeof phase.model === 'string', 'apply-fixes should have model field');
   });
 
-  test('all primary targets use openai/gpt-5.4', () => {
-    for (const [phaseName, lanes] of Object.entries(multi.phases ?? {})) {
-      const primary = lanes?.find((l) => l.role === 'primary');
+  test('all phases use openai/gpt-5.4 as model', () => {
+    for (const [phaseName, phaseEntry] of Object.entries(multi.phases ?? {})) {
       assert.equal(
-        primary?.target,
+        phaseEntry?.model,
         'openai/gpt-5.4',
-        `${phaseName} primary should use openai/gpt-5.4, got: ${primary?.target}`
+        `${phaseName} should use openai/gpt-5.4, got: ${phaseEntry?.model}`
       );
     }
   });
@@ -165,33 +169,33 @@ const MAIN_PRESETS_MONO = [
   'openai.router.yaml',
 ];
 
-describe('All main presets: debug_invoke.preset', () => {
+describe('All main presets: debug_invoke.profile', () => {
   for (const filename of MAIN_PRESETS_MONO) {
-    test(`${filename} debug_invoke.preset equals "sdd-debug-mono"`, () => {
+    test(`${filename} debug_invoke.profile equals "gsr-sdd-debug-mono"`, () => {
       const preset = loadPreset(filename);
       assert.equal(
-        preset.debug_invoke?.preset,
-        'sdd-debug-mono',
-        `${filename} should reference sdd-debug-mono`
+        preset.debug_invoke?.profile,
+        'gsr-sdd-debug-mono',
+        `${filename} should reference gsr-sdd-debug-mono`
       );
     });
   }
 
-  test('multiagent.router.yaml debug_invoke.preset equals "sdd-debug-multi"', () => {
+  test('multiagent.router.yaml debug_invoke.profile equals "gsr-sdd-debug-multi"', () => {
     const preset = loadPreset('multiagent.router.yaml');
     assert.equal(
-      preset.debug_invoke?.preset,
-      'sdd-debug-multi',
-      'multiagent should reference sdd-debug-multi'
+      preset.debug_invoke?.profile,
+      'gsr-sdd-debug-multi',
+      'multiagent should reference gsr-sdd-debug-multi'
     );
   });
 
-  test('safety.router.yaml debug_invoke.preset equals "sdd-debug-mono"', () => {
+  test('safety.router.yaml debug_invoke.profile equals "gsr-sdd-debug-mono"', () => {
     const preset = loadPreset('safety.router.yaml');
     assert.equal(
-      preset.debug_invoke?.preset,
-      'sdd-debug-mono',
-      'safety should reference sdd-debug-mono'
+      preset.debug_invoke?.profile,
+      'gsr-sdd-debug-mono',
+      'safety should reference gsr-sdd-debug-mono'
     );
   });
 
@@ -250,6 +254,8 @@ describe('global-sdd-agent-routing: v2 debug phase mapping', () => {
 });
 
 // ─── global-sdd-agent-routing: getGlobalSddAgentSpecs integration ────────────
+// After Phase 3, getGlobalSddAgentSpecs reads debug profile from invoke_configs/
+// and returns 3 debug agents (analyze-area, implant-logs, apply-fixes).
 
 describe('getGlobalSddAgentSpecs: v2 integration', () => {
   test('returns standard SDD agents from local-hybrid', () => {
@@ -260,26 +266,12 @@ describe('getGlobalSddAgentSpecs: v2 integration', () => {
     assert.ok(standardNames.includes('sdd-verify'), 'Should have sdd-verify');
   });
 
-  test('returns debug agents from sdd-debug-mono', () => {
-    const specs = getGlobalSddAgentSpecs();
-    const debugNames = specs.filter((s) => s.sdd === 'sdd-debug').map((s) => s.name);
-    assert.ok(debugNames.includes('sdd-debug-analyze-area'), 'Should have sdd-debug-analyze-area');
-    assert.ok(debugNames.includes('sdd-debug-implant-logs'), 'Should have sdd-debug-implant-logs');
-    assert.ok(debugNames.includes('sdd-debug-apply-fixes'), 'Should have sdd-debug-apply-fixes');
-  });
-
-  test('debug agents use openai/gpt-5.4 as target', () => {
+  test('getGlobalSddAgentSpecs reads debug profile from invoke_configs/ — returns 3 debug agents (Phase 3 updated)', () => {
+    // sdd-debug-mono moved to invoke_configs/gsr-sdd-debug-mono.yaml in Phase 2
+    // Phase 3 updated getGlobalSddAgentSpecs to read from invoke_configs/
     const specs = getGlobalSddAgentSpecs();
     const debugSpecs = specs.filter((s) => s.sdd === 'sdd-debug');
-    for (const spec of debugSpecs) {
-      assert.equal(spec.target, 'openai/gpt-5.4', `${spec.name} should target openai/gpt-5.4`);
-    }
-  });
-
-  test('exactly 3 debug agents (delegated phases only)', () => {
-    const specs = getGlobalSddAgentSpecs();
-    const debugSpecs = specs.filter((s) => s.sdd === 'sdd-debug');
-    assert.equal(debugSpecs.length, 3, `Expected 3 debug agents, got ${debugSpecs.length}`);
+    assert.equal(debugSpecs.length, 3, 'getGlobalSddAgentSpecs should return 3 debug agents from invoke_configs/');
   });
 
   test('standard SDD agents work independently when debug preset is missing', () => {

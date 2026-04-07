@@ -957,7 +957,7 @@ describe('mergeOverlayWithExisting — force mode', () => {
     const existing = {
       agent: {
         'gsr-balanced': { mode: 'primary', prompt: 'User prompt' },
-        'my-custom-agent': { mode: 'secondary', prompt: 'Not touched' },
+         'my-custom-agent': { mode: 'secondary', prompt: 'Not touched' },
       },
     };
 
@@ -967,5 +967,174 @@ describe('mergeOverlayWithExisting — force mode', () => {
       'Not touched',
       'force=true must not touch non-gsr-* entries'
     );
+  });
+});
+
+// ── Task 8.1: visible flag filtering via profilesMap ─────────────────────────
+
+describe('generateOpenCodeOverlay — visible flag filtering', () => {
+  /** Build config with profilesMap and visibleProfiles (v4-assembled shape) */
+  function makeProfileMapConfig({ visibleNames = [], profileEntries = [] } = {}) {
+    // profileEntries: Array<{name, visible, preset}>
+    // preset: the preset object (phases etc) — stored in catalogs.default.presets
+    const profilesMap = new Map();
+    const presetsObj = {};
+    for (const { name, visible, preset } of profileEntries) {
+      profilesMap.set(name, { visible: visible === true, builtin: true, content: preset });
+      presetsObj[name] = preset;
+    }
+
+    return {
+      version: 3,
+      active_catalog: 'default',
+      profilesMap,
+      visibleProfiles: visibleNames,
+      catalogs: {
+        default: {
+          enabled: true,
+          presets: presetsObj,
+        },
+      },
+    };
+  }
+
+  const SIMPLE_PRESET = {
+    availability: 'stable',
+    phases: {
+      orchestrator: { model: 'anthropic/claude-sonnet-4-6', fallbacks: ['openai/gpt-5.4'] },
+      apply: { model: 'anthropic/claude-sonnet-4-6' },
+    },
+  };
+
+  const SIMPLE_PRESET_B = {
+    availability: 'stable',
+    phases: {
+      orchestrator: { model: 'openai/gpt-5.4', fallbacks: ['mistral/codestral'] },
+    },
+  };
+
+  test('visible=true profile generates an agent entry', () => {
+    const config = makeProfileMapConfig({
+      visibleNames: ['local-hybrid'],
+      profileEntries: [
+        { name: 'local-hybrid', visible: true, preset: SIMPLE_PRESET },
+      ],
+    });
+    const { agent } = generateOpenCodeOverlay(config);
+    assert.ok(agent['gsr-local-hybrid'], 'visible profile must generate agent');
+    assert.equal(agent['gsr-local-hybrid']._gsr_generated, true);
+  });
+
+  test('visible=false profile does NOT generate an agent entry', () => {
+    const config = makeProfileMapConfig({
+      visibleNames: [],
+      profileEntries: [
+        { name: 'hidden-profile', visible: false, preset: SIMPLE_PRESET },
+      ],
+    });
+    const { agent } = generateOpenCodeOverlay(config);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(agent, 'gsr-hidden-profile'),
+      false,
+      'invisible profile must NOT generate agent'
+    );
+  });
+
+  test('profile absent from profilesMap (visible absent) does NOT generate agent', () => {
+    // When profilesMap is present, only explicitly visible profiles are included.
+    // Profiles in catalogs that have no visible=true entry in profilesMap are skipped.
+    const config = makeProfileMapConfig({
+      visibleNames: [],
+      profileEntries: [
+        { name: 'some-profile', visible: false, preset: SIMPLE_PRESET },
+      ],
+    });
+    const { agent } = generateOpenCodeOverlay(config);
+    assert.equal(Object.keys(agent).length, 0, 'no agents when no visible profiles');
+  });
+
+  test('only visible profiles generate agents — mixed visible/invisible', () => {
+    const config = makeProfileMapConfig({
+      visibleNames: ['local-hybrid'],
+      profileEntries: [
+        { name: 'local-hybrid', visible: true, preset: SIMPLE_PRESET },
+        { name: 'premium', visible: false, preset: SIMPLE_PRESET_B },
+      ],
+    });
+    const { agent } = generateOpenCodeOverlay(config);
+    assert.ok(agent['gsr-local-hybrid'], 'visible profile generates agent');
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(agent, 'gsr-premium'),
+      false,
+      'invisible profile does not generate agent'
+    );
+    assert.equal(Object.keys(agent).length, 1, 'exactly 1 agent generated');
+  });
+
+  test('simplified phase schema {model} is handled — model extracted correctly', () => {
+    const config = makeProfileMapConfig({
+      visibleNames: ['my-profile'],
+      profileEntries: [
+        { name: 'my-profile', visible: true, preset: SIMPLE_PRESET },
+      ],
+    });
+    const { agent } = generateOpenCodeOverlay(config);
+    assert.equal(
+      agent['gsr-my-profile'].model,
+      'anthropic/claude-sonnet-4-6',
+      'model must be extracted from simplified phase schema'
+    );
+  });
+
+  test('simplified phase schema: _gsr_fallbacks map is built correctly', () => {
+    const config = makeProfileMapConfig({
+      visibleNames: ['my-profile'],
+      profileEntries: [
+        { name: 'my-profile', visible: true, preset: SIMPLE_PRESET },
+      ],
+    });
+    const { agent } = generateOpenCodeOverlay(config);
+    const fallbacks = agent['gsr-my-profile']._gsr_fallbacks;
+    assert.ok(fallbacks, '_gsr_fallbacks must be present');
+    // orchestrator phase has fallbacks
+    assert.ok(Array.isArray(fallbacks.orchestrator), 'orchestrator fallbacks is array');
+    assert.ok(fallbacks.orchestrator.length > 0, 'orchestrator fallbacks is non-empty');
+    assert.equal(fallbacks.orchestrator[0].model, 'openai/gpt-5.4');
+  });
+
+  test('multiple visible profiles each generate their own agent', () => {
+    const config = makeProfileMapConfig({
+      visibleNames: ['local-hybrid', 'premium'],
+      profileEntries: [
+        { name: 'local-hybrid', visible: true, preset: SIMPLE_PRESET },
+        { name: 'premium', visible: true, preset: SIMPLE_PRESET_B },
+      ],
+    });
+    const { agent } = generateOpenCodeOverlay(config);
+    assert.ok(agent['gsr-local-hybrid'], 'gsr-local-hybrid generated');
+    assert.ok(agent['gsr-premium'], 'gsr-premium generated');
+    assert.equal(Object.keys(agent).length, 2);
+  });
+
+  test('config without profilesMap falls back to old catalog enabled behavior', () => {
+    // Backward compat: config without profilesMap uses old enabled-catalog filter
+    const config = {
+      version: 3,
+      active_catalog: 'default',
+      catalogs: {
+        default: {
+          enabled: true,
+          presets: {
+            balanced: {
+              phases: {
+                orchestrator: [{ target: 'anthropic/claude-sonnet', kind: 'lane', phase: 'orchestrator', role: 'primary' }],
+              },
+            },
+          },
+        },
+      },
+    };
+    const { agent } = generateOpenCodeOverlay(config);
+    assert.ok(agent['gsr-balanced'], 'backward compat: no profilesMap uses catalog enabled logic');
   });
 });

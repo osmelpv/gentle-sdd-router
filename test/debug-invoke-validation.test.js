@@ -234,11 +234,11 @@ describe('Integration: main presets have debug_invoke block', () => {
       );
     });
 
-    test(`${filename} debug_invoke.preset is a non-empty string`, () => {
+    test(`${filename} debug_invoke.profile is a non-empty string`, () => {
       const preset = loadPreset(filename);
       assert.ok(
-        typeof preset.debug_invoke?.preset === 'string' && preset.debug_invoke.preset.trim().length > 0,
-        `${filename} debug_invoke.preset must be a non-empty string`
+        typeof preset.debug_invoke?.profile === 'string' && preset.debug_invoke.profile.trim().length > 0,
+        `${filename} debug_invoke.profile must be a non-empty string`
       );
     });
 
@@ -289,31 +289,31 @@ describe('Integration: safety preset debug_invoke', () => {
 // NOTE: Tests temporarily removed — sdd-debug presets deleted in sdd-debug-v2 Phase 1.
 // Will be rewritten with new v2 preset structure in Phase 3 (task 3.5).
 
-// ─── Integration: multiagent uses sdd-debug-multi ────────────────────────────
+// ─── Integration: multiagent uses gsr-sdd-debug-multi ───────────────────────
 
 describe('Integration: multiagent uses sdd-debug-multi variant', () => {
-  test('multiagent.router.yaml debug_invoke.preset is sdd-debug-multi', () => {
+  test('multiagent.router.yaml debug_invoke.profile is gsr-sdd-debug-multi', () => {
     const preset = loadPreset('multiagent.router.yaml');
     assert.equal(
-      preset.debug_invoke?.preset,
-      'sdd-debug-multi',
-      'multiagent must use sdd-debug-multi (has judges, multi-agent debugging)'
+      preset.debug_invoke?.profile,
+      'gsr-sdd-debug-multi',
+      'multiagent must use gsr-sdd-debug-multi (has judges, multi-agent debugging)'
     );
   });
 });
 
-// ─── Integration: all other main presets use sdd-debug-mono ──────────────────
+// ─── Integration: all other main presets use gsr-sdd-debug-mono ──────────────
 
 describe('Integration: non-multiagent presets use sdd-debug-mono', () => {
   const MONO_PRESETS = MAIN_PRESETS.filter((f) => f !== 'multiagent.router.yaml');
 
   for (const filename of MONO_PRESETS) {
-    test(`${filename} debug_invoke.preset is sdd-debug-mono`, () => {
+    test(`${filename} debug_invoke.profile is gsr-sdd-debug-mono`, () => {
       const preset = loadPreset(filename);
       assert.equal(
-        preset.debug_invoke?.preset,
-        'sdd-debug-mono',
-        `${filename} must use sdd-debug-mono`
+        preset.debug_invoke?.profile,
+        'gsr-sdd-debug-mono',
+        `${filename} must use gsr-sdd-debug-mono`
       );
     });
   }
@@ -321,7 +321,7 @@ describe('Integration: non-multiagent presets use sdd-debug-mono', () => {
 
 // ─── Round-trip: delegation/checkpoint/loop_target survive validation (S02, S05) ─
 
-import { validateSddYaml } from '../src/core/sdd-catalog-io.js';
+import { validateSddYaml } from '../src/core/sdd-profile-io.js';
 
 describe('Round-trip: delegation field survives validation (S02)', () => {
   test('delegation: sub-agent is preserved through validateSddYaml', () => {

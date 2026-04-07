@@ -17,12 +17,16 @@ import {
   importPresetFromCompact,
   importPresetFromUrl,
   importPresetFromYaml,
-} from '../src/core/preset-io.js';
+  // Deprecated re-export — must still be importable
+  loadPresets,
+  // New canonical name
+  loadProfiles,
+} from '../src/core/profile-io.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-preset-io-test-'));
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'gsr-profile-io-test-'));
 }
 
 function cleanup(dir) {
@@ -54,6 +58,34 @@ phases:
       role: primary
 `;
 
+const VISIBLE_PROFILE_YAML = `name: visible-preset
+visible: true
+phases:
+  orchestrator:
+    - target: anthropic/claude-sonnet
+      phase: orchestrator
+      role: primary
+`;
+
+const BUILTIN_PROFILE_YAML = `name: builtin-preset
+builtin: true
+phases:
+  orchestrator:
+    - target: anthropic/claude-sonnet
+      phase: orchestrator
+      role: primary
+`;
+
+const VISIBLE_AND_BUILTIN_YAML = `name: both-preset
+visible: true
+builtin: true
+phases:
+  orchestrator:
+    - target: openai/gpt-4o
+      phase: orchestrator
+      role: primary
+`;
+
 const MINIMAL_CORE_CONFIG = {
   version: 4,
   active_preset: 'balanced',
@@ -66,6 +98,191 @@ function makeAssembledConfig(dir) {
   const profiles = loadV4Profiles(dir, { includeGlobal: false });
   return assembleV4Config(MINIMAL_CORE_CONFIG, profiles);
 }
+
+// ─── loadProfiles / loadPresets deprecation ────────────────────────────────
+
+describe('loadProfiles and loadPresets (deprecated)', () => {
+  test('loadProfiles is a function exported from profile-io', () => {
+    assert.equal(typeof loadProfiles, 'function');
+  });
+
+  test('loadPresets is the same function as loadProfiles (deprecated re-export)', () => {
+    assert.equal(loadPresets, loadProfiles);
+  });
+});
+
+// ─── loadV4Profiles return shape — visible and builtin fields ─────────────────
+
+describe('loadV4Profiles return shape — visible and builtin', () => {
+  test('profile without visible field defaults to visible: false', () => {
+    const dir = makeTempDir();
+    try {
+      writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
+
+      const balanced = profiles.find((p) => p.content.name === 'balanced');
+      assert.ok(balanced, 'balanced profile should be loaded');
+      assert.equal(balanced.visible, false, 'visible should default to false');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('profile without builtin field defaults to builtin: false', () => {
+    const dir = makeTempDir();
+    try {
+      writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
+
+      const balanced = profiles.find((p) => p.content.name === 'balanced');
+      assert.ok(balanced, 'balanced profile should be loaded');
+      assert.equal(balanced.builtin, false, 'builtin should default to false');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('profile with visible: true has visible: true on result entry', () => {
+    const dir = makeTempDir();
+    try {
+      writeFile(dir, 'profiles/visible-preset.router.yaml', VISIBLE_PROFILE_YAML);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
+
+      const visible = profiles.find((p) => p.content.name === 'visible-preset');
+      assert.ok(visible, 'visible-preset should be loaded');
+      assert.equal(visible.visible, true, 'visible should be true when set in YAML');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('profile with builtin: true has builtin: true on result entry', () => {
+    const dir = makeTempDir();
+    try {
+      writeFile(dir, 'profiles/builtin-preset.router.yaml', BUILTIN_PROFILE_YAML);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
+
+      const builtin = profiles.find((p) => p.content.name === 'builtin-preset');
+      assert.ok(builtin, 'builtin-preset should be loaded');
+      assert.equal(builtin.builtin, true, 'builtin should be true when set in YAML');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('profile with both visible and builtin set correctly propagates both', () => {
+    const dir = makeTempDir();
+    try {
+      writeFile(dir, 'profiles/both-preset.router.yaml', VISIBLE_AND_BUILTIN_YAML);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
+
+      const both = profiles.find((p) => p.content.name === 'both-preset');
+      assert.ok(both, 'both-preset should be loaded');
+      assert.equal(both.visible, true, 'visible should be true');
+      assert.equal(both.builtin, true, 'builtin should be true');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('multiple profiles get correct visible/builtin defaults', () => {
+    const dir = makeTempDir();
+    try {
+      writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
+      writeFile(dir, 'profiles/visible-preset.router.yaml', VISIBLE_PROFILE_YAML);
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
+
+      const balanced = profiles.find((p) => p.content.name === 'balanced');
+      const visible = profiles.find((p) => p.content.name === 'visible-preset');
+
+      assert.equal(balanced.visible, false, 'balanced should not be visible by default');
+      assert.equal(visible.visible, true, 'visible-preset should have visible: true');
+    } finally {
+      cleanup(dir);
+    }
+  });
+});
+
+// ─── assembleV4Config — profilesMap and visibleProfiles ───────────────────────
+
+describe('assembleV4Config — profilesMap and visibleProfiles', () => {
+  test('assembled config has profilesMap as a Map', () => {
+    const dir = makeTempDir();
+    try {
+      const config = makeAssembledConfig(dir);
+
+      assert.ok(config.profilesMap instanceof Map, 'profilesMap should be a Map');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('profilesMap contains all loaded profiles keyed by name', () => {
+    const dir = makeTempDir();
+    try {
+      const config = makeAssembledConfig(dir);
+
+      assert.ok(config.profilesMap.has('balanced'), 'profilesMap should have balanced');
+      assert.ok(config.profilesMap.has('safety'), 'profilesMap should have safety');
+      assert.equal(config.profilesMap.size, 2, 'profilesMap should have exactly 2 entries');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('assembled config has visibleProfiles as an array', () => {
+    const dir = makeTempDir();
+    try {
+      const config = makeAssembledConfig(dir);
+
+      assert.ok(Array.isArray(config.visibleProfiles), 'visibleProfiles should be an array');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('visibleProfiles is empty when no profiles have visible: true', () => {
+    const dir = makeTempDir();
+    try {
+      const config = makeAssembledConfig(dir);
+
+      // balanced and safety have no visible field, so both default to false
+      assert.equal(config.visibleProfiles.length, 0, 'visibleProfiles should be empty when none are visible');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('visibleProfiles contains names of profiles with visible: true', () => {
+    const dir = makeTempDir();
+    try {
+      writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
+      writeFile(dir, 'profiles/visible-preset.router.yaml', VISIBLE_PROFILE_YAML);
+
+      const profiles = loadV4Profiles(dir, { includeGlobal: false });
+      const config = assembleV4Config(MINIMAL_CORE_CONFIG, profiles);
+
+      assert.ok(config.visibleProfiles.includes('visible-preset'), 'visible-preset should be in visibleProfiles');
+      assert.ok(!config.visibleProfiles.includes('balanced'), 'balanced should NOT be in visibleProfiles');
+      assert.equal(config.visibleProfiles.length, 1, 'exactly 1 visible profile');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('catalogsMap is still present after Phase 3 (compat shim preserved)', () => {
+    const dir = makeTempDir();
+    try {
+      const config = makeAssembledConfig(dir);
+
+      // Compat shim must NOT be removed
+      assert.ok(config.catalogs, 'catalogs (catalogsMap) must still exist');
+      assert.ok(config.catalogs.default, 'default catalog must still exist');
+    } finally {
+      cleanup(dir);
+    }
+  });
+});
 
 // ─── encodeCompactString / decodeCompactString ────────────────────────────────
 
@@ -206,8 +423,8 @@ describe('exportPresetCompact', () => {
 
 // ─── exportAllPresets ─────────────────────────────────────────────────────────
 
-describe('exportAllPresets', () => {
-  test('returns a Map with all preset names', () => {
+describe('exportAllProfiles', () => {
+  test('returns a Map with all profile names', () => {
     const dir = makeTempDir();
     try {
       const config = makeAssembledConfig(dir);
@@ -249,7 +466,7 @@ describe('exportAllPresets', () => {
     assert.equal(result.size, 0);
   });
 
-  test('handles presets from multiple catalogs', () => {
+  test('handles profiles from multiple catalog subdirectories', () => {
     const dir = makeTempDir();
     try {
       writeFile(dir, 'profiles/balanced.router.yaml', BALANCED_PROFILE_YAML);
@@ -270,7 +487,7 @@ describe('exportAllPresets', () => {
 
 // ─── importPresetFromYaml ─────────────────────────────────────────────────────
 
-describe('importPresetFromYaml', () => {
+describe('importProfileFromYaml', () => {
   test('saves file to profiles/ directory', () => {
     const dir = makeTempDir();
     try {
@@ -323,7 +540,7 @@ describe('importPresetFromYaml', () => {
     }
   });
 
-  test('--force overwrites existing preset', () => {
+  test('--force overwrites existing profile', () => {
     const dir = makeTempDir();
     try {
       importPresetFromYaml(BALANCED_PROFILE_YAML, dir);
@@ -345,7 +562,7 @@ phases:
     }
   });
 
-  test('--catalog creates a subdirectory for the preset', () => {
+  test('--catalog creates a subdirectory for the profile', () => {
     const dir = makeTempDir();
     try {
       const result = importPresetFromYaml(SAFETY_PROFILE_YAML, dir, { catalog: 'team' });
@@ -423,7 +640,7 @@ instructions: do something bad
 
 // ─── importPresetFromCompact ──────────────────────────────────────────────────
 
-describe('importPresetFromCompact', () => {
+describe('importProfileFromCompact', () => {
   test('round-trip: exportPresetCompact then importPresetFromCompact', () => {
     const exportDir = makeTempDir();
     const importDir = makeTempDir();
@@ -482,7 +699,7 @@ execute: rm -rf /
 
 // ─── importPresetFromUrl (HTTPS-only rejection, sync path) ───────────────────
 
-describe('importPresetFromUrl (static validation)', () => {
+describe('importProfileFromUrl (static validation)', () => {
   test('rejects non-HTTPS URLs immediately', async () => {
     const dir = makeTempDir();
 

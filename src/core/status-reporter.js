@@ -32,22 +32,30 @@ export const STATUS_LEVELS = {
 
 /**
  * Get the active preset config object from the assembled config.
- * Supports both v3/v4 (catalogs-based) and legacy v1/v2 (profiles-based) configs.
+ * Resolves the active/visible profile from the router state.
+ * Supports v5 (profilesMap), v4 compat shim (catalogs), and legacy v1/v2 (profiles).
  * @param {object} config
- * @returns {object|null} preset config or null
+ * @returns {object|null} profile config or null
  */
 function getActivePreset(config) {
-  // v3/v4: catalogs-based
-  if (config?.catalogs) {
-    const catalogName = config.active_catalog ?? 'default';
-    const presetName = config.active_preset ?? config.active_profile;
-    if (!presetName) return null;
-    const catalog = config.catalogs[catalogName];
-    if (!catalog) return null;
-    return catalog.presets?.[presetName] ?? null;
+  // v5: profilesMap — use first visible profile or the active_profile name
+  if (config?.profilesMap instanceof Map) {
+    const profileName = config.active_profile ?? config.visibleProfiles?.[0];
+    if (!profileName) return null;
+    return config.profilesMap.get(profileName)?.content ?? null;
   }
 
-  // Legacy v1/v2: profiles-based
+  // v4 compat shim: catalogs object
+  if (config?.catalogs) {
+    const presetName = config.active_profile ?? config.active_preset;
+    if (!presetName) return null;
+    for (const catalog of Object.values(config.catalogs)) {
+      if (catalog?.presets?.[presetName]) return catalog.presets[presetName];
+    }
+    return null;
+  }
+
+  // Legacy v1/v2: flat profiles object
   if (config?.profiles) {
     const profileName = config.active_profile ?? config.active_preset;
     if (!profileName) return null;
@@ -577,10 +585,14 @@ export function getUnifiedStatus(config, options = {}) {
   const identityLabel = resolveIdentityLabel(preset, config);
   const environment = detectEnvironment();
 
-  // Count presets
+  // Count profiles
   let totalPresets = 0;
-  for (const catalog of Object.values(config?.catalogs ?? {})) {
-    totalPresets += Object.keys(catalog?.presets ?? {}).length;
+  if (config?.profilesMap instanceof Map) {
+    totalPresets = config.profilesMap.size;
+  } else if (config?.catalogs) {
+    for (const catalog of Object.values(config.catalogs)) {
+      totalPresets += Object.keys(catalog?.presets ?? {}).length;
+    }
   }
 
   // Count custom SDDs (from customSdds option if provided, else 0)
@@ -636,6 +648,25 @@ export function getUnifiedStatus(config, options = {}) {
   }
   lines.push('');
 
+  // ── PROFILES section ───────────────────────────────────────────────────────
+  const profilesMap = config.profilesMap instanceof Map ? config.profilesMap : new Map();
+  const visibleProfileNames = Array.isArray(config.visibleProfiles) ? config.visibleProfiles : [];
+  const totalProfileCount = profilesMap.size;
+  const visibleProfileCount = visibleProfileNames.length;
+
+  lines.push('PROFILES');
+  lines.push(`  ${padLabel('Profiles', LABEL_WIDTH)}${visibleProfileCount} visible / ${totalProfileCount} total`);
+  for (const name of visibleProfileNames) {
+    const entry = profilesMap.get(name);
+    const orchestratorLanes = entry?.content?.phases?.orchestrator;
+    const orchestratorModel = Array.isArray(orchestratorLanes)
+      ? (orchestratorLanes[0]?.target ?? null)
+      : (orchestratorLanes?.model ?? null);
+    const modelStr = orchestratorModel ?? '—';
+    lines.push(`    ✓ ${name.padEnd(18)}${modelStr}`);
+  }
+  lines.push('');
+
   // ── ROUTES section ─────────────────────────────────────────────────────────
   lines.push('ROUTES');
   if (preset?.phases && Object.keys(preset.phases).length > 0) {
@@ -672,13 +703,9 @@ export function getUnifiedStatus(config, options = {}) {
 
   // ── PRESETS section ────────────────────────────────────────────────────────
   const allPresets = publicPresets.map((p) => ({ ...p, meta: p.preset ?? p.meta ?? null }));
-  const activePresetName2 = config?.active_preset ?? config?.active_profile ?? null;
 
   if (allPresets.length > 0) {
     lines.push('PRESETS');
-    if (activePresetName2) {
-      lines.push(`  ${padLabel('Active preset', LABEL_WIDTH)}${activePresetName2}`);
-    }
     for (const p of allPresets) {
       const pPhaseCount = p.phases ?? Object.keys(p.meta?.phases ?? {}).length;
       const debugLabel = p.preset?.debug_invoke?.preset || p.meta?.debug_invoke?.preset

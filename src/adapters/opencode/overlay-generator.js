@@ -90,6 +90,10 @@ export function mapPermissions(permissions) {
  * Extract the orchestrator primary lane target model from a preset.
  * Returns null if no orchestrator phase is present.
  *
+ * Handles both:
+ *   - Simplified schema: phases.orchestrator = { model: 'anthropic/...', fallbacks?: [...] }
+ *   - Lane array schema: phases.orchestrator = [{ target: 'anthropic/...', kind: 'lane', ... }]
+ *
  * @param {object} preset - A preset from the assembled config (catalogs[name].presets[name])
  * @returns {string|null}
  */
@@ -100,7 +104,12 @@ function getOrchestratorTarget(preset) {
   const orchestrator = phases.orchestrator;
   if (!orchestrator) return null;
 
-  // Phases in assembled (non-normalized) config are arrays of lane objects.
+  // Simplified schema: { model: '...', fallbacks?: [...] }
+  if (!Array.isArray(orchestrator) && typeof orchestrator === 'object' && typeof orchestrator.model === 'string') {
+    return orchestrator.model;
+  }
+
+  // Lane array schema: [{ target: '...', kind: 'lane', ... }]
   if (Array.isArray(orchestrator) && orchestrator.length > 0) {
     return orchestrator[0].target ?? null;
   }
@@ -110,8 +119,15 @@ function getOrchestratorTarget(preset) {
 
 /**
  * Generate OpenCode overlay from a loaded (assembled) router config.
- * Each preset that has an orchestrator phase becomes a gsr-{name} agent entry.
- * Presets without an orchestrator phase are skipped with a warning.
+ *
+ * When `config.profilesMap` is present (v4-assembled config):
+ *   Only profiles with `visible === true` in profilesMap generate a gsr-{name} agent entry.
+ *   Profiles with visible: false (or absent) are silently skipped.
+ *
+ * When `config.profilesMap` is absent (v3 config or test fixtures):
+ *   Falls back to old behavior — iterates over catalogs, skipping disabled catalogs.
+ *
+ * Presets without an orchestrator phase are skipped with a warning (both modes).
  *
  * Each generated entry includes:
  *   - prompt: resolved identity prompt (via resolveIdentity fallback chain)
@@ -132,21 +148,81 @@ export function generateOpenCodeOverlay(config, options = {}) {
   // Router-level identity overrides: config.identity.overrides.<agentName>
   const routerOverrides = config?.identity?.overrides ?? {};
 
-  for (const [catalogName, catalog] of Object.entries(catalogs)) {
-    // Only include presets from enabled catalogs in the overlay
-    if (catalog.enabled === false) {
-      continue;
-    }
-    const presets = catalog.presets ?? {};
+  // ── Determine iteration mode ────────────────────────────────────────────────
+  // v4-assembled config has profilesMap (Map<name, {visible, builtin, content}>).
+  // When present, use visible flag as the gate. When absent, fall back to SDD-enabled gate.
 
-    for (const [presetName, preset] of Object.entries(presets)) {
+  const hasProfilesMap = config.profilesMap instanceof Map;
+
+  if (hasProfilesMap) {
+    // v4 mode: iterate over profiles that have visible === true
+    const profilesMap = config.profilesMap;
+
+    for (const [profileName, profileEntry] of profilesMap.entries()) {
+      if (profileEntry.visible !== true) continue; // skip non-visible profiles
+
+      // Fetch preset data from SDD groups (where phase data lives after assembly)
+      let preset = null;
+      for (const sdd of Object.values(catalogs)) {
+        if (sdd.presets?.[profileName]) {
+          preset = sdd.presets[profileName];
+          break;
+        }
+      }
+      // Fallback: use profileEntry.content directly (simplified schema)
+      if (!preset) {
+        preset = profileEntry.content ?? {};
+        // Strip the 'name' field if present (it's not part of the preset spec)
+        if (preset.name) {
+          const { name: _n, ...rest } = preset;
+          preset = rest;
+        }
+      }
+
+      const presetName = profileName;
+      buildAgentEntry(presetName, preset, agents, warnings, persona, cwd, routerOverrides);
+    }
+  } else {
+    // v3 / fallback mode: iterate over SDD groups with enabled-flag gate
+    for (const [sddName, sdd] of Object.entries(catalogs)) {
+      // Only include presets from enabled SDD groups in the overlay
+      if (sdd.enabled === false) {
+        continue;
+      }
+      const presets = sdd.presets ?? {};
+
+      for (const [presetName, preset] of Object.entries(presets)) {
+        buildAgentEntry(presetName, preset, agents, warnings, persona, cwd, routerOverrides);
+      }
+    }
+  }
+
+  return { agent: agents, warnings };
+}
+
+/**
+ * Build one agent entry for a given preset and push it into `agents` (or `warnings` if invalid).
+ *
+ * Handles both:
+ *   - Simplified schema: phases[name] = { model: '...', fallbacks?: [...] }
+ *   - Lane array schema: phases[name] = [{ target: '...', kind: 'lane', ... }]
+ *
+ * @param {string} presetName
+ * @param {object} preset
+ * @param {object} agents - mutated in place
+ * @param {string[]} warnings - mutated in place
+ * @param {string} persona
+ * @param {string} cwd
+ * @param {object} routerOverrides
+ */
+function buildAgentEntry(presetName, preset, agents, warnings, persona, cwd, routerOverrides) {
       const orchestratorTarget = getOrchestratorTarget(preset);
 
       if (!orchestratorTarget) {
         warnings.push(
           `Profile "${presetName}" has no orchestrator phase with a target — skipped from overlay.`
         );
-        continue;
+        return;
       }
 
       const agentName = `${GSR_AGENT_PREFIX}${presetName}`;
@@ -159,12 +235,21 @@ export function generateOpenCodeOverlay(config, options = {}) {
       const agentOverride = routerOverrides[agentName] ?? {};
       let resolvedPrompt = agentOverride.prompt ?? identity.prompt;
 
-      // Task 4: Build _gsr_fallbacks map keyed by phase name (preliminary pass to check if any fallbacks exist)
+      // Build _gsr_fallbacks map keyed by phase name (preliminary pass to check if any fallbacks exist)
       // We need this BEFORE the protocol injection to gate the injection
       const preCheckPhases = preset.phases ?? {};
-      const presetHasFallbacks = Object.values(preCheckPhases).some((lanes) => {
-        if (!Array.isArray(lanes) || lanes.length === 0) return false;
-        const primaryLane = lanes[0];
+      const presetHasFallbacks = Object.values(preCheckPhases).some((phaseValue) => {
+        // Simplified schema: { model, fallbacks? }
+        if (!Array.isArray(phaseValue) && typeof phaseValue === 'object' && phaseValue !== null) {
+          const rawFallbacks = phaseValue.fallbacks;
+          if (!rawFallbacks) return false;
+          if (Array.isArray(rawFallbacks)) return rawFallbacks.length > 0;
+          if (typeof rawFallbacks === 'string') return rawFallbacks.trim().length > 0;
+          return false;
+        }
+        // Lane array schema: [{ target, fallbacks?, ... }]
+        if (!Array.isArray(phaseValue) || phaseValue.length === 0) return false;
+        const primaryLane = phaseValue[0];
         if (!primaryLane || typeof primaryLane !== 'object') return false;
         const rawFallbacks = primaryLane.fallbacks;
         if (!rawFallbacks) return false;
@@ -173,7 +258,7 @@ export function generateOpenCodeOverlay(config, options = {}) {
         return false;
       });
 
-      // Task 5: Inject fallback protocol into prompt ONLY when preset has fallbacks (design D2)
+      // Inject fallback protocol into prompt ONLY when preset has fallbacks (design D2)
       if (FALLBACK_PROTOCOL_TEXT && presetHasFallbacks && !resolvedPrompt.includes('GSR Fallback Protocol')) {
         resolvedPrompt = resolvedPrompt + '\n\n' + FALLBACK_PROTOCOL_TEXT;
       }
@@ -187,15 +272,24 @@ export function generateOpenCodeOverlay(config, options = {}) {
       // Build _gsr_fallbacks map keyed by phase name.
       // Each entry is Array<{model: string, on: string[]}> — preserves on-conditions
       // for error-type-aware fallback selection by the orchestrator.
-      // Backward compat: CSV string → {model, on: ["any"]} via normalizeFallbacks().
+      // Handles both simplified schema and lane array schema.
       const gsrFallbacks = {};
       const phases = preset.phases ?? {};
-      for (const [phaseName, lanes] of Object.entries(phases)) {
-        if (!Array.isArray(lanes) || lanes.length === 0) continue;
-        const primaryLane = lanes[0];
-        if (!primaryLane || typeof primaryLane !== 'object') continue;
+      for (const [phaseName, phaseValue] of Object.entries(phases)) {
+        let rawFallbacks;
 
-        const rawFallbacks = primaryLane.fallbacks;
+        if (!Array.isArray(phaseValue) && typeof phaseValue === 'object' && phaseValue !== null) {
+          // Simplified schema: { model, fallbacks? }
+          rawFallbacks = phaseValue.fallbacks;
+        } else if (Array.isArray(phaseValue) && phaseValue.length > 0) {
+          // Lane array schema: take primary lane
+          const primaryLane = phaseValue[0];
+          if (!primaryLane || typeof primaryLane !== 'object') continue;
+          rawFallbacks = primaryLane.fallbacks;
+        } else {
+          continue;
+        }
+
         if (rawFallbacks !== undefined) {
           // normalizeFallbacks always returns Array<{model, on}> — use it as the source of truth
           const normalized = normalizeFallbacks(rawFallbacks);
@@ -224,10 +318,6 @@ export function generateOpenCodeOverlay(config, options = {}) {
       }
 
       agents[agentName] = entry;
-    }
-  }
-
-  return { agent: agents, warnings };
 }
 
 /**

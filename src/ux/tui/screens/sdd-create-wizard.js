@@ -205,7 +205,7 @@ export function SddCreateWizard({
           try {
             const pathMod = await import('node:path');
             const catalogsDir = pathMod.join(pathMod.dirname(configPath), 'catalogs');
-            const { createCustomSdd, scaffoldPhaseContract } = await import('../../../core/sdd-catalog-io.js');
+            const { createCustomSdd, scaffoldPhaseContract } = await import('../../../core/sdd-profile-io.js');
             const { materializeProjectSddAgents } = await import('../../../adapters/opencode/project-sdd-agent-materializer.js');
             const { stringifyYaml } = await import('../../../core/router.js');
             const fsMod = await import('node:fs');

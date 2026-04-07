@@ -1,4 +1,4 @@
-import { loadCustomSdd } from './sdd-catalog-io.js';
+import { loadCustomSdd } from './sdd-profile-io.js';
 
 /**
  * Canonical SDD phase list — the universal phase ordering for the pipeline.
@@ -107,23 +107,23 @@ export const PHASE_METADATA = {
 };
 
 /**
- * Load phase metadata for a given SDD catalog.
+ * Load phase metadata for a given SDD.
  *
  * - If sddName is null, undefined, or 'default': returns PHASE_METADATA (canonical behavior).
- * - Otherwise: loads the custom SDD from catalogsDir and builds a phase metadata map from sdd.yaml.
+ * - Otherwise: loads the custom SDD from sddsDir and builds a phase metadata map from sdd.yaml.
  *
- * @param {string|null|undefined} sddName - SDD catalog name, or null/undefined/'default' for canonical
- * @param {string} catalogsDir - Path to router/catalogs/
+ * @param {string|null|undefined} sddName - SDD name, or null/undefined/'default' for canonical
+ * @param {string} sddsDir - Path to router/catalogs/ (custom SDDs directory)
  * @returns {Record<string, PhaseMetadataEntry>}
  */
-export function loadPhaseMetadataForCatalog(sddName, catalogsDir) {
+export function loadPhaseMetadataForSdd(sddName, sddsDir) {
   // Default fallback: return canonical metadata unchanged
   if (!sddName || sddName === 'default') {
     return PHASE_METADATA;
   }
 
   // Load the custom SDD definition (throws if not found)
-  const sdd = loadCustomSdd(catalogsDir, sddName);
+  const sdd = loadCustomSdd(sddsDir, sddName);
 
   // Build phase metadata map from sdd.yaml phases
   const result = {};
@@ -151,3 +151,6 @@ export function loadPhaseMetadataForCatalog(sddName, catalogsDir) {
 
   return result;
 }
+
+/** @deprecated Use loadPhaseMetadataForSdd instead */
+export const loadPhaseMetadataForCatalog = loadPhaseMetadataForSdd;

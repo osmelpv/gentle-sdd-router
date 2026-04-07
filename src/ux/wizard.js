@@ -145,10 +145,10 @@ export async function wizardCurrentConfig(context, prompts = p) {
 export async function wizardSwitchPreset(context, prompts = p) {
   // Get available presets from config
   const presets = [];
-  const catalogs = context.config?.catalogs || {};
-  for (const [catalogName, catalog] of Object.entries(catalogs)) {
-    const catalogPresets = catalog?.presets || {};
-    for (const [presetName, preset] of Object.entries(catalogPresets)) {
+  const sddGroups = context.config?.catalogs || {};
+  for (const [, sdd] of Object.entries(sddGroups)) {
+    const sddPresets = sdd?.presets || {};
+    for (const [presetName, preset] of Object.entries(sddPresets)) {
       const isActive = presetName === context.config?.active_preset;
       presets.push({
         value: presetName,
@@ -178,9 +178,9 @@ export async function wizardSwitchPreset(context, prompts = p) {
 export async function wizardExport(context, prompts = p) {
   // Build preset list from config
   const presets = [];
-  const catalogs = context.config?.catalogs || {};
-  for (const [, catalog] of Object.entries(catalogs)) {
-    for (const [presetName] of Object.entries(catalog?.presets || {})) {
+  const sddGroups = context.config?.catalogs || {};
+  for (const [, sdd] of Object.entries(sddGroups)) {
+    for (const [presetName] of Object.entries(sdd?.presets || {})) {
       presets.push({ value: presetName, label: presetName });
     }
   }
@@ -247,9 +247,9 @@ export async function wizardManageProfiles(context, prompts = p) {
 
   if (action === 'profile-delete') {
     const presets = [];
-    const catalogs = context.config?.catalogs || {};
-    for (const [, catalog] of Object.entries(catalogs)) {
-      for (const [presetName] of Object.entries(catalog?.presets || {})) {
+    const sddGroups = context.config?.catalogs || {};
+    for (const [, sdd] of Object.entries(sddGroups)) {
+      for (const [presetName] of Object.entries(sdd?.presets || {})) {
         presets.push({ value: presetName, label: presetName });
       }
     }
@@ -264,9 +264,9 @@ export async function wizardManageProfiles(context, prompts = p) {
 
   if (action === 'profile-rename') {
     const presets = [];
-    const catalogs = context.config?.catalogs || {};
-    for (const [, catalog] of Object.entries(catalogs)) {
-      for (const [presetName] of Object.entries(catalog?.presets || {})) {
+    const sddGroups = context.config?.catalogs || {};
+    for (const [, sdd] of Object.entries(sddGroups)) {
+      for (const [presetName] of Object.entries(sdd?.presets || {})) {
         presets.push({ value: presetName, label: presetName });
       }
     }
@@ -286,9 +286,9 @@ export async function wizardManageProfiles(context, prompts = p) {
 
   if (action === 'profile-copy') {
     const presets = [];
-    const catalogs = context.config?.catalogs || {};
-    for (const [, catalog] of Object.entries(catalogs)) {
-      for (const [presetName] of Object.entries(catalog?.presets || {})) {
+    const sddGroups = context.config?.catalogs || {};
+    for (const [, sdd] of Object.entries(sddGroups)) {
+      for (const [presetName] of Object.entries(sdd?.presets || {})) {
         presets.push({ value: presetName, label: presetName });
       }
     }
@@ -311,9 +311,9 @@ export async function wizardManageProfiles(context, prompts = p) {
 
 export async function wizardCompare(context, prompts = p) {
   const presets = [];
-  const catalogs = context.config?.catalogs || {};
-  for (const [, catalog] of Object.entries(catalogs)) {
-    for (const [presetName] of Object.entries(catalog?.presets || {})) {
+  const sddGroups = context.config?.catalogs || {};
+  for (const [, sdd] of Object.entries(sddGroups)) {
+    for (const [presetName] of Object.entries(sdd?.presets || {})) {
       presets.push({ value: presetName, label: presetName });
     }
   }

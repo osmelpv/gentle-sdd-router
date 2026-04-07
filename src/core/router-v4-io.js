@@ -147,8 +147,9 @@ function validateDebugInvoke(debugInvoke, filePath) {
     throw new Error(`Profile file "${filePath}" has "debug_invoke" but it must be an object.`);
   }
 
-  // preset is required and must be a non-empty string
-  if (typeof debugInvoke.preset !== 'string' || !debugInvoke.preset.trim()) {
+  // profile (canonical) or preset (deprecated) is required and must be a non-empty string
+  const profileValue = debugInvoke.profile ?? debugInvoke.preset;
+  if (typeof profileValue !== 'string' || !profileValue.trim()) {
     throw new Error(
       `Profile file "${filePath}" debug_invoke.preset must be a non-empty string.`
     );
@@ -396,7 +397,15 @@ function _loadProfilesFromDir(profilesDir, results, skipNames) {
 
         validateProfileFile(content, filePath);
         const sddName = content.sdd ?? catalogName;
-        results.push({ filePath, fileName, catalogName, sddName, content });
+        results.push({
+          filePath,
+          fileName,
+          catalogName,
+          sddName,
+          content,
+          visible: content.visible === true,
+          builtin: content.builtin === true,
+        });
       }
     } else if (entry.endsWith('.router.yaml')) {
       const filePath = entryPath;
@@ -410,7 +419,15 @@ function _loadProfilesFromDir(profilesDir, results, skipNames) {
 
       validateProfileFile(content, filePath);
       const sddName = content.sdd ?? 'agent-orchestrator';
-      results.push({ filePath, fileName, catalogName, sddName, content });
+      results.push({
+        filePath,
+        fileName,
+        catalogName,
+        sddName,
+        content,
+        visible: content.visible === true,
+        builtin: content.builtin === true,
+      });
     }
   }
 }
@@ -472,6 +489,19 @@ export function assembleV4Config(coreConfig, profiles) {
   const activeCatalog = profiles.find((p) => p.content.name === activePreset)?.catalogName
     ?? (activeSdd === 'agent-orchestrator' ? 'default' : activeSdd);
 
+  // Build profilesMap: Map<name, profileEntry> for all loaded profiles
+  const profilesMap = new Map(
+    profiles.map(({ filePath, catalogName, sddName, content, visible, builtin }) => [
+      content.name,
+      { filePath, catalogName, sddName, visible: visible === true, builtin: builtin === true, content },
+    ])
+  );
+
+  // visibleProfiles: names of profiles with visible: true
+  const visibleProfiles = profiles
+    .filter((p) => p.visible === true)
+    .map((p) => p.content.name);
+
   const assembled = {
     version: 3,
     active_catalog: coreConfig.active_catalog ?? activeCatalog,
@@ -482,6 +512,8 @@ export function assembleV4Config(coreConfig, profiles) {
     metadata: coreConfig.metadata,
     sdds: sddMap,
     catalogs: catalogsMap,
+    profilesMap,
+    visibleProfiles,
     ...(coreConfig.persona !== undefined ? { persona: coreConfig.persona } : {}),
     ...(coreConfig.identity !== undefined ? { identity: coreConfig.identity } : {}),
     // Preserve optional settings block (e.g. settings.platforms) — non-breaking pass-through
@@ -566,6 +598,75 @@ function serializableConfig(config) {
   return result;
 }
 
+/**
+ * Normalize a single phase entry for writing to disk.
+ *
+ * Accepts either:
+ *   - Lane array format: [{target, kind, role, phase, fallbacks, inputPerMillion, ...}]
+ *   - Already simplified: {model, fallbacks?}
+ *
+ * Returns the simplified schema: {model: string, fallbacks?: string[]}
+ *
+ * Stripped fields: kind, role, phase (redundant), inputPerMillion, outputPerMillion,
+ *   contextWindow, aliases (all metadata-only, not needed for routing).
+ *
+ * @param {Array|object} phaseEntry - Phase entry from in-memory profile
+ * @returns {{model: string, fallbacks?: string[]}}
+ */
+export function normalizePhaseForWrite(phaseEntry) {
+  // Already simplified schema: {model, fallbacks?}
+  if (isObject(phaseEntry) && typeof phaseEntry.model === 'string') {
+    const result = { model: phaseEntry.model };
+    if (phaseEntry.fallbacks !== undefined && phaseEntry.fallbacks !== null) {
+      const fallbackArr = Array.isArray(phaseEntry.fallbacks)
+        ? phaseEntry.fallbacks
+        : String(phaseEntry.fallbacks).split(',').map(s => s.trim()).filter(Boolean);
+      if (fallbackArr.length > 0) result.fallbacks = fallbackArr;
+    }
+    return result;
+  }
+
+  // Lane array format: take primary lane (index 0)
+  const lane = Array.isArray(phaseEntry) ? phaseEntry[0] : phaseEntry;
+  if (!isObject(lane)) return phaseEntry; // unknown format — return as-is
+
+  const model = lane.target ?? lane.model;
+  const result = { model };
+
+  if (lane.fallbacks !== undefined && lane.fallbacks !== null) {
+    const raw = lane.fallbacks;
+    let fallbackArr;
+    if (Array.isArray(raw)) {
+      fallbackArr = raw
+        .map(item => (isObject(item) ? item.model : String(item)).trim())
+        .filter(Boolean);
+    } else if (typeof raw === 'string') {
+      fallbackArr = raw.split(',').map(s => s.trim()).filter(Boolean);
+    } else {
+      fallbackArr = [];
+    }
+    if (fallbackArr.length > 0) result.fallbacks = fallbackArr;
+  }
+
+  return result;
+}
+
+/**
+ * Normalize all phases in a profile content object for writing.
+ * Applies normalizePhaseForWrite to each phase entry.
+ *
+ * @param {object} phases - phases object from profile
+ * @returns {object} normalized phases
+ */
+function normalizePhasesForWrite(phases) {
+  if (!isObject(phases)) return phases;
+  const result = {};
+  for (const [phaseName, phaseEntry] of Object.entries(phases)) {
+    result[phaseName] = normalizePhaseForWrite(phaseEntry);
+  }
+  return result;
+}
+
 export function buildV4WritePlan(oldConfig, newConfig) {
   // oldConfig may be null for fresh installs — treat everything as new in that case.
   const oldSource = oldConfig?._v4Source;
@@ -579,12 +680,12 @@ export function buildV4WritePlan(oldConfig, newConfig) {
     (field) => JSON.stringify(oldCore[field]) !== JSON.stringify(newCore[field])
   );
 
+  // Build coreContent: strip active_preset and active_catalog — they are never written to disk.
+  // active_sdd is the canonical field for routing target; active_preset lives only in memory.
+  const activeSdd = newCore.active_sdd ?? newConfig.active_sdd;
   const coreContent = {
-    version: newCore.active_sdd || newConfig.active_sdd || newCore.sdds || newConfig.sdds ? 5 : 4,
-    ...(newCore.active_sdd || newConfig.active_sdd
-      ? { active_sdd: newCore.active_sdd ?? newConfig.active_sdd }
-      : { active_catalog: newCore.active_catalog ?? newConfig.active_catalog }),
-    active_preset: newCore.active_preset ?? newConfig.active_preset,
+    version: activeSdd || newCore.sdds || newConfig.sdds ? 5 : 4,
+    ...(activeSdd ? { active_sdd: activeSdd } : {}),
     activation_state: newCore.activation_state ?? newConfig.activation_state,
     metadata: newCore.metadata ?? newConfig.metadata,
     ...((newCore.sdds ?? newConfig.sdds) ? { sdds: newCore.sdds ?? newConfig.sdds } : {}),
@@ -619,6 +720,11 @@ export function buildV4WritePlan(oldConfig, newConfig) {
     const filePath = sourceInfo?.filePath ?? null;
 
     if (!oldEntry || JSON.stringify(oldEntry.preset) !== JSON.stringify(preset)) {
+      // Normalize phases to simplified schema before writing.
+      // Strip: kind, role, phase (redundant), inputPerMillion, outputPerMillion, contextWindow, aliases.
+      const { phases: rawPhases, ...presetWithoutPhases } = preset;
+      const normalizedPhases = rawPhases ? normalizePhasesForWrite(rawPhases) : rawPhases;
+
       profileWrites.push({
         filePath,
         presetName,
@@ -626,7 +732,8 @@ export function buildV4WritePlan(oldConfig, newConfig) {
         content: {
           name: presetName,
           ...(catalogName ? { sdd: newSource?.profileMap?.get(presetName)?.sddName ?? newConfig.catalogs?.[catalogName]?.sdd ?? (catalogName === 'default' ? 'agent-orchestrator' : catalogName) } : {}),
-          ...preset,
+          ...presetWithoutPhases,
+          ...(normalizedPhases ? { phases: normalizedPhases } : {}),
         },
       });
     }

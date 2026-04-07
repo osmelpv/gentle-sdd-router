@@ -66,8 +66,8 @@ catalogs:
 `;
 
 // ─── Minimal v4 core config fixture ──────────────────────────────────────────
+// Note: v4 config after Phase 7 cleanup has NO active_preset (fully-migrated state)
 const V4_ROUTER_YAML = `version: 4
-active_preset: balanced
 activation_state: active
 `;
 
@@ -242,16 +242,17 @@ describe('planMigrations', () => {
     }
   });
 
-  test('skips migration 001 when it is already applied', () => {
+  test('skips migrations 001 and 002 when both are already applied', () => {
     const dir = makeTempDir();
 
     try {
       writeRouterYaml(dir, V3_ROUTER_YAML);
-      writeRegistryWithApplied(dir, ['001']);
+      // Both 001 and 002 applied → no pending migrations
+      writeRegistryWithApplied(dir, ['001', '002']);
 
       const plan = planMigrations(dir);
 
-      assert.deepEqual(plan.pending, [], 'no pending migrations when 001 is already applied');
+      assert.deepEqual(plan.pending, [], 'no pending migrations when all are already applied');
     } finally {
       cleanup(dir);
     }
@@ -863,6 +864,56 @@ describe('planMigrations — pendingMinor / pendingMajor split', () => {
       writeRouterYaml(dir, V3_ROUTER_YAML);
       const result = await applyMinorMigrations(dir);
       assert.deepEqual(result.applied, [], 'no minor migrations to apply');
+    } finally {
+      cleanup(dir);
+    }
+  });
+});
+
+// ── Task 8.2 — Migration 002 registration and needsProfiles support ──────────
+
+describe('MIGRATIONS registry includes 002', () => {
+  test('MIGRATIONS contains migration 002', () => {
+    const m002 = MIGRATIONS.find((m) => m.id === '002');
+    assert.ok(m002, 'migration 002 must be registered in MIGRATIONS array');
+    assert.equal(m002.id, '002');
+    assert.equal(typeof m002.canApply, 'function');
+    assert.equal(typeof m002.apply, 'function');
+  });
+
+  test('migration 002 has needsProfiles: true flag', () => {
+    const m002 = MIGRATIONS.find((m) => m.id === '002');
+    assert.ok(m002, 'migration 002 must be registered');
+    assert.equal(m002.needsProfiles, true, 'migration 002 must declare needsProfiles: true');
+  });
+
+  test('planMigrations does not throw when 002 is registered (profiles dir absent)', () => {
+    const dir = makeTempDir();
+    try {
+      // Write a v4 router.yaml that does NOT trigger migration 002 (no active_preset, simplified phases)
+      writeRouterYaml(dir, 'version: 4\nactivation_state: active\n');
+      // Mark both migrations as already applied
+      writeRegistryWithApplied(dir, ['001', '002']);
+
+      const plan = planMigrations(dir);
+      // Both applied → no pending migrations
+      assert.equal(plan.pending.length, 0, 'no pending when both applied');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('planMigrations can detect 002 as pending when active_preset is present', () => {
+    const dir = makeTempDir();
+    try {
+      // v4 router.yaml with active_preset → triggers canApply for m002
+      writeRouterYaml(dir, 'version: 4\nactive_preset: balanced\nactivation_state: active\n');
+      // Only 001 applied — 002 is pending
+      writeRegistryWithApplied(dir, ['001']);
+
+      const plan = planMigrations(dir);
+      const pending002 = plan.pending.find((m) => m.id === '002');
+      assert.ok(pending002, 'migration 002 must be pending when active_preset is present and 002 not applied');
     } finally {
       cleanup(dir);
     }

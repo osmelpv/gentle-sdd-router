@@ -16,7 +16,7 @@ import {
   createCustomSdd,
   loadCustomSdds,
   deleteCustomSdd,
-} from '../src/core/sdd-catalog-io.js';
+} from '../src/core/sdd-profile-io.js';
 import {
   runSddCreate,
   runSddList,
@@ -913,7 +913,7 @@ phases:
       const output = await captureStdout(() => runSddDeclaredInvocations(['game-design'], catalogsDir));
       assert.ok(output.includes('game-design'), 'output must mention SDD name');
       assert.ok(output.includes('level-design'), 'output must mention phase with invoke');
-      assert.ok(output.includes('art-production'), 'output must mention target catalog');
+      assert.ok(output.includes('asset-pipeline'), 'output must mention target SDD');
     } finally {
       cleanup(tmp);
     }

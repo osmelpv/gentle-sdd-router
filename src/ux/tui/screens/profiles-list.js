@@ -8,7 +8,7 @@ import { getPublicPresetMetadata } from '../../../core/public-preset-metadata.js
 
 const h = React.createElement;
 
-export function PresetsScreen({ config, configPath, router, setDescription, showResult, reloadConfig, setSelectedProfile, setConfig }) {
+export function ProfilesScreen({ config, configPath, router, setDescription, showResult, reloadConfig, setSelectedProfile, setConfig }) {
   const [lastMessage, setLastMessage] = useState(null);
   const [selectedPresetName, setSelectedPresetName] = useState(null);
 
@@ -21,13 +21,13 @@ export function PresetsScreen({ config, configPath, router, setDescription, show
   const metadataRows = getPublicPresetMetadata(config);
   const scopeMap = new Map(metadataRows.map(r => [r.name, r.scope]));
 
-  for (const [catalogName, catalog] of Object.entries(catalogs)) {
-    const catalogPresets = catalog?.presets ?? {};
+  for (const [sddName, sddGroup] of Object.entries(catalogs)) {
+    const sddPresets = sddGroup?.presets ?? {};
     
-    for (const [presetName, preset] of Object.entries(catalogPresets)) {
+    for (const [presetName, preset] of Object.entries(sddPresets)) {
       const phaseCount = Object.keys(preset.phases ?? {}).length;
       const isActive = presetName === activePreset;
-      const isVisible = preset.hidden !== true && catalog.enabled !== false;
+      const isVisible = preset.hidden !== true && sddGroup.enabled !== false;
       const scope = scopeMap.get(presetName) ?? 'project';
       
       presets.push({
@@ -36,7 +36,7 @@ export function PresetsScreen({ config, configPath, router, setDescription, show
         tag: isVisible ? 'visible' : 'hidden',
         scope,
         description: `${isActive ? '(currently active)' : 'Select to view details'}. ${phaseCount} phases. ${scope}. ${isVisible ? 'Visible in TAB cycling.' : 'Hidden from TAB cycling.'}`,
-        catalogName,
+        sddName,
         isActive,
         isVisible,
       });
@@ -106,11 +106,11 @@ export function PresetsScreen({ config, configPath, router, setDescription, show
 
       // Reload the exact config file backing the current TUI session.
       const freshConfig = mod.loadRouterConfig(configPath);
-      const freshPreset = freshConfig?.catalogs?.[preset.catalogName]?.presets?.[preset.label];
+      const freshPreset = freshConfig?.catalogs?.[preset.sddName]?.presets?.[preset.label];
       appendTuiDebug('presets_toggle_reloaded', {
         preset: preset.label,
         hiddenInFreshConfig: freshPreset?.hidden,
-        catalogName: preset.catalogName,
+        sddName: preset.sddName,
         freshActivePreset: freshConfig?.active_preset ?? null,
       });
       if (setConfig) {

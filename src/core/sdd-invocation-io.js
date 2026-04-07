@@ -1,5 +1,5 @@
 /**
- * SDD Invocation IO — CRUD for cross-catalog invocation records
+ * SDD Invocation IO — CRUD for cross-SDD invocation records
  *
  * Storage layout:
  *   .gsr/invocations/{id}.json
@@ -58,20 +58,20 @@ function writeRecord(id, record, invDir) {
 /**
  * Create a new invocation record with status "pending".
  *
- * @param {string} callerCatalog - Caller's catalog slug
+ * @param {string} callerSddGroup - Caller's SDD group slug
  * @param {string} callerSdd - Caller's SDD slug
  * @param {string} callerPhase - Calling phase name
- * @param {string} calleeCatalog - Target catalog slug
+ * @param {string} calleeSddGroup - Target SDD group slug
  * @param {string} calleeSdd - Target SDD slug
  * @param {string} payload - Data to pass (may be empty string)
  * @param {string} invDir - Path to invocations directory (e.g. .gsr/invocations/)
  * @returns {InvocationRecord} The created record
  */
 export function createInvocation(
-  callerCatalog,
+  callerSddGroup,
   callerSdd,
   callerPhase,
-  calleeCatalog,
+  calleeSddGroup,
   calleeSdd,
   payload,
   invDir
@@ -85,12 +85,12 @@ export function createInvocation(
     id,
     status: 'pending',
     caller: {
-      catalog: callerCatalog,
+      catalog: callerSddGroup,
       sdd: callerSdd,
       phase: callerPhase,
     },
     callee: {
-      catalog: calleeCatalog,
+      catalog: calleeSddGroup,
       sdd: calleeSdd,
     },
     payload: payload ?? '',

@@ -145,7 +145,7 @@ phases:
     try {
       const catalogsDir = path.join(tmp, 'catalogs');
       fs.mkdirSync(catalogsDir);
-      const { loadCustomSdds } = await import('../src/core/sdd-catalog-io.js');
+      const { loadCustomSdds } = await import('../src/core/sdd-profile-io.js');
       const result = loadCustomSdds(catalogsDir, { includeGlobal: false });
       // Empty state — TUI should show "No custom SDDs" message
       assert.deepEqual(result, []);
@@ -161,7 +161,7 @@ phases:
       writeFile(catalogsDir, 'game-design/sdd.yaml', GAME_SDD_YAML);
       writeFile(catalogsDir, 'alpha/sdd.yaml', GAME_SDD_YAML.replace('game-design', 'alpha'));
       writeFile(catalogsDir, 'beta/sdd.yaml', GAME_SDD_YAML.replace('game-design', 'beta'));
-      const { loadCustomSdds } = await import('../src/core/sdd-catalog-io.js');
+      const { loadCustomSdds } = await import('../src/core/sdd-profile-io.js');
       const result = loadCustomSdds(catalogsDir, { includeGlobal: false });
       // TUI sdd-list should show 3 items
       assert.equal(result.length, 3);
@@ -175,7 +175,7 @@ phases:
     try {
       const catalogsDir = path.join(tmp, 'catalogs');
       writeFile(catalogsDir, 'game-design/sdd.yaml', GAME_SDD_YAML);
-      const { loadCustomSdd } = await import('../src/core/sdd-catalog-io.js');
+      const { loadCustomSdd } = await import('../src/core/sdd-profile-io.js');
       const sdd = loadCustomSdd(catalogsDir, 'game-design');
       // sdd-detail should render 2 phases
       assert.equal(Object.keys(sdd.phases).length, 2);
@@ -191,7 +191,7 @@ phases:
     try {
       const catalogsDir = path.join(tmp, 'catalogs');
       fs.mkdirSync(catalogsDir);
-      const { createCustomSdd, loadCustomSdd } = await import('../src/core/sdd-catalog-io.js');
+      const { createCustomSdd, loadCustomSdd } = await import('../src/core/sdd-profile-io.js');
       createCustomSdd(catalogsDir, 'new-sdd', 'Created via wizard');
       // Wizard should navigate to sdd-detail after completion
       const sdd = loadCustomSdd(catalogsDir, 'new-sdd');
@@ -206,7 +206,7 @@ phases:
     try {
       const catalogsDir = path.join(tmp, 'catalogs');
       fs.mkdirSync(catalogsDir);
-      const { createCustomSdd } = await import('../src/core/sdd-catalog-io.js');
+      const { createCustomSdd } = await import('../src/core/sdd-profile-io.js');
       createCustomSdd(catalogsDir, 'existing-sdd', 'First creation');
       // Second creation with same name must throw — this is the wizard duplicate rejection path
       assert.throws(
@@ -240,7 +240,7 @@ phases:
     try {
       const catalogsDir = path.join(tmp, 'catalogs');
       writeFile(catalogsDir, 'detail-sdd/sdd.yaml', DETAIL_SDD_YAML);
-      const { loadCustomSdd } = await import('../src/core/sdd-catalog-io.js');
+      const { loadCustomSdd } = await import('../src/core/sdd-profile-io.js');
       const sdd = loadCustomSdd(catalogsDir, 'detail-sdd');
       // sdd-detail requires a loaded SDD to render — back nav goes to sdd-list (router.pop)
       assert.equal(sdd.name, 'detail-sdd');
@@ -257,7 +257,7 @@ phases:
     try {
       const catalogsDir = path.join(tmp, 'catalogs');
       fs.mkdirSync(catalogsDir);
-      const { loadCustomSdd } = await import('../src/core/sdd-catalog-io.js');
+      const { loadCustomSdd } = await import('../src/core/sdd-profile-io.js');
       assert.throws(
         () => loadCustomSdd(catalogsDir, 'nonexistent'),
         /not found|does not exist/i,
@@ -293,7 +293,7 @@ phases:
     try {
       const catalogsDir = path.join(tmp, 'catalogs');
       writeFile(catalogsDir, 'phase-test/sdd.yaml', PHASE_SDD_YAML);
-      const { loadCustomSdd } = await import('../src/core/sdd-catalog-io.js');
+      const { loadCustomSdd } = await import('../src/core/sdd-profile-io.js');
       const sdd = loadCustomSdd(catalogsDir, 'phase-test');
       assert.equal(Object.keys(sdd.phases).length, 3);
       // Phase editor should show dependency warning when deleting 'concept' (design depends on it)
@@ -311,7 +311,7 @@ phases:
     try {
       const catalogsDir = path.join(tmp, 'catalogs');
       writeFile(catalogsDir, 'phase-test/sdd.yaml', PHASE_SDD_YAML);
-      const { loadCustomSdd } = await import('../src/core/sdd-catalog-io.js');
+      const { loadCustomSdd } = await import('../src/core/sdd-profile-io.js');
       const sdd = loadCustomSdd(catalogsDir, 'phase-test');
       const phases = Object.keys(sdd.phases);
       // Simulate the phase editor dependency check for 'concept'
@@ -329,7 +329,7 @@ phases:
     try {
       const catalogsDir = path.join(tmp, 'catalogs');
       writeFile(catalogsDir, 'phase-test/sdd.yaml', PHASE_SDD_YAML);
-      const { loadCustomSdd } = await import('../src/core/sdd-catalog-io.js');
+      const { loadCustomSdd } = await import('../src/core/sdd-profile-io.js');
       const sdd = loadCustomSdd(catalogsDir, 'phase-test');
       const phases = Object.keys(sdd.phases);
       // Deleting 'apply' — nothing depends on it — no warning
@@ -343,7 +343,7 @@ phases:
   });
 
   test('sdd.yaml requires at least 1 phase — validateSddYaml throws for empty phases', async () => {
-    const { validateSddYaml } = await import('../src/core/sdd-catalog-io.js');
+    const { validateSddYaml } = await import('../src/core/sdd-profile-io.js');
     assert.throws(
       () => validateSddYaml({ name: 'test-sdd', version: 1, phases: {} }, 'test.yaml'),
       /at least one phase/i,
@@ -478,32 +478,30 @@ describe('SddPhaseEditor — invoke config helper (buildInvokeFromInputs)', () =
     assert.equal(result, null);
   });
 
-  test('buildInvokeFromInputs returns invoke object when catalog is filled', async () => {
+  test('buildInvokeFromInputs returns invoke object when sdd is filled', async () => {
     const { buildInvokeFromInputs } = await import('../src/ux/tui/screens/sdd-phase-editor.js');
     const result = buildInvokeFromInputs({
-      catalog: 'art-production',
       sdd: 'asset-pipeline',
       payload_from: 'output',
       await: true,
       result_field: '',
     });
-    assert.ok(result !== null, 'Expected non-null invoke when catalog is filled');
-    assert.equal(result.catalog, 'art-production');
+    assert.ok(result !== null, 'Expected non-null invoke when sdd is filled');
     assert.equal(result.sdd, 'asset-pipeline');
     assert.equal(result.payload_from, 'output');
     assert.equal(result.await, true);
   });
 
-  test('buildInvokeFromInputs defaults sdd to catalog when sdd is empty', async () => {
+  test('buildInvokeFromInputs uses catalog as fallback when sdd is empty (backward compat)', async () => {
     const { buildInvokeFromInputs } = await import('../src/ux/tui/screens/sdd-phase-editor.js');
     const result = buildInvokeFromInputs({ catalog: 'my-catalog', sdd: '', payload_from: 'input', await: true, result_field: '' });
     assert.equal(result.sdd, 'my-catalog');
   });
 
-  test('buildInvokeFromInputs trims whitespace from catalog', async () => {
+  test('buildInvokeFromInputs trims whitespace from sdd target', async () => {
     const { buildInvokeFromInputs } = await import('../src/ux/tui/screens/sdd-phase-editor.js');
-    const result = buildInvokeFromInputs({ catalog: '  my-catalog  ', sdd: '', payload_from: 'output', await: false, result_field: '' });
-    assert.equal(result.catalog, 'my-catalog');
+    const result = buildInvokeFromInputs({ sdd: '  my-catalog  ', payload_from: 'output', await: false, result_field: '' });
+    assert.equal(result.sdd, 'my-catalog');
   });
 });
 
@@ -513,13 +511,11 @@ describe('SddPhaseEditor — invoke inputs rendered and saved', () => {
   test('SddPhaseEditor exports buildInvokeFromInputs with result_field support', async () => {
     const { buildInvokeFromInputs } = await import('../src/ux/tui/screens/sdd-phase-editor.js');
     const result = buildInvokeFromInputs({
-      catalog: 'art-production',
       sdd: 'asset-pipeline',
       payload_from: 'input',
       await: false,
       result_field: 'result_data',
     });
-    assert.equal(result.catalog, 'art-production');
     assert.equal(result.sdd, 'asset-pipeline');
     assert.equal(result.payload_from, 'input');
     assert.equal(result.await, false);
@@ -545,7 +541,7 @@ describe('SddPhaseEditor — invoke inputs rendered and saved', () => {
         '    intent: "Define concept"',
       ].join('\n') + '\n');
 
-      const { loadCustomSdd } = await import('../src/core/sdd-catalog-io.js');
+      const { loadCustomSdd } = await import('../src/core/sdd-profile-io.js');
       const sdd = loadCustomSdd(catalogsDir, 'game-design');
 
       // Simulate what the editor does: build invoke, then write updated sdd
@@ -577,7 +573,6 @@ describe('SddPhaseEditor — invoke inputs rendered and saved', () => {
       const protoPhase = reloaded.phases.prototype;
       assert.ok(protoPhase, 'prototype phase should be present');
       assert.ok(protoPhase.invoke, 'prototype phase should have invoke block');
-      assert.equal(protoPhase.invoke.catalog, 'art-production');
       assert.equal(protoPhase.invoke.sdd, 'asset-pipeline');
     } finally {
       cleanup(tmp);
@@ -597,7 +592,7 @@ describe('SddPhaseEditor — invoke inputs rendered and saved', () => {
         '    intent: "Define concept"',
       ].join('\n') + '\n');
 
-      const { loadCustomSdd } = await import('../src/core/sdd-catalog-io.js');
+      const { loadCustomSdd } = await import('../src/core/sdd-profile-io.js');
       const sdd = loadCustomSdd(catalogsDir, 'game-design');
 
       const { buildInvokeFromInputs } = await import('../src/ux/tui/screens/sdd-phase-editor.js');
@@ -678,7 +673,7 @@ describe('SddCreateWizard — cancel behavior (reducer + exported helper)', () =
 
 describe('scaffoldPhaseContract — data layer used by TUI', () => {
   test('scaffoldPhaseContract is exported from sdd-catalog-io', async () => {
-    const mod = await import('../src/core/sdd-catalog-io.js');
+    const mod = await import('../src/core/sdd-profile-io.js');
     assert.equal(typeof mod.scaffoldPhaseContract, 'function',
       'scaffoldPhaseContract must be exported from sdd-catalog-io.js');
   });
@@ -688,7 +683,7 @@ describe('scaffoldPhaseContract — data layer used by TUI', () => {
     try {
       const catalogsDir = path.join(tmp, 'catalogs');
       fs.mkdirSync(catalogsDir, { recursive: true });
-      const { createCustomSdd } = await import('../src/core/sdd-catalog-io.js');
+      const { createCustomSdd } = await import('../src/core/sdd-profile-io.js');
       // Simulate wizard creating SDD with a custom phase
       createCustomSdd(catalogsDir, 'wizard-sdd', 'Created by wizard');
       // Default main phase contract must exist
@@ -708,7 +703,7 @@ describe('scaffoldPhaseContract — data layer used by TUI', () => {
       fs.mkdirSync(phasesDir, { recursive: true });
       const existingPath = path.join(phasesDir, 'explore.md');
       fs.writeFileSync(existingPath, '# Existing Content\n', 'utf8');
-      const { scaffoldPhaseContract } = await import('../src/core/sdd-catalog-io.js');
+      const { scaffoldPhaseContract } = await import('../src/core/sdd-profile-io.js');
       const result = scaffoldPhaseContract(catalogsDir, 'test-sdd', 'explore', {
         intent: 'New intent attempt',
         agents: 1,
@@ -728,7 +723,7 @@ describe('scaffoldPhaseContract — data layer used by TUI', () => {
     try {
       const catalogsDir = path.join(tmp, 'catalogs');
       fs.mkdirSync(path.join(catalogsDir, 'my-sdd', 'contracts', 'phases'), { recursive: true });
-      const { scaffoldPhaseContract } = await import('../src/core/sdd-catalog-io.js');
+      const { scaffoldPhaseContract } = await import('../src/core/sdd-profile-io.js');
       const result = scaffoldPhaseContract(catalogsDir, 'my-sdd', 'design', {
         intent: 'Plan the architecture carefully',
         agents: 2,
@@ -756,7 +751,7 @@ describe('scaffoldPhaseContract — data layer used by TUI', () => {
     try {
       const catalogsDir = path.join(tmp, 'catalogs');
       fs.mkdirSync(catalogsDir, { recursive: true });
-      const { createCustomSdd, scaffoldPhaseContract } = await import('../src/core/sdd-catalog-io.js');
+      const { createCustomSdd, scaffoldPhaseContract } = await import('../src/core/sdd-profile-io.js');
 
       // Step 1: wizard calls createCustomSdd
       createCustomSdd(catalogsDir, 'wizard-test', '');
@@ -803,7 +798,7 @@ describe('scaffoldPhaseContract — data layer used by TUI', () => {
     try {
       const catalogsDir = path.join(tmp, 'catalogs');
       fs.mkdirSync(catalogsDir, { recursive: true });
-      const { createCustomSdd, scaffoldPhaseContract } = await import('../src/core/sdd-catalog-io.js');
+      const { createCustomSdd, scaffoldPhaseContract } = await import('../src/core/sdd-profile-io.js');
 
       // Set up existing SDD
       createCustomSdd(catalogsDir, 'editor-test', '');
