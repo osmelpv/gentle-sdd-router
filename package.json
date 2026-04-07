@@ -1,6 +1,6 @@
 {
   "name": "gentle-sdd-router",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Release-ready non-executing CLI router for SDD adoption, YAML control, and OpenCode boundary reports.",
   "private": true,
   "license": "UNLICENSED",

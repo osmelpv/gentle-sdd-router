@@ -455,29 +455,90 @@ The **router** pillar assigns AI models to development phases with fallbacks, mu
     prompt                       context                  verify
          │                           │                         │
          ▼                           ▼                         ▼
-    ┌─────────┐                ┌───────────┐            ┌───────────┐
-    │ Agent A │ GPT-5          │           │            │ Code Test │
-    │ Agent B │ Claude Opus    │  Apply    │            │ UI Test   │
-    │ Agent C │ Gemini Pro     │  (best    │            │ Risk Det. │
-    │ Radar   │ scans blinds   │   coder)  │            │ Security  │
-    │ Judge   │ synthesizes    │           │            │ Judge     │
-    └─────────┘                └───────────┘            └───────────┘
+    ┌───────────────┐          ┌───────────┐            ┌───────────┐
+    │ Judge         │          │           │            │ Code Test │
+    │  |- Minister A│ GPT-5    │  Apply    │            │ UI Test   │
+    │  |- Minister B│ Claude   │  (best    │            │ Risk Det. │
+    │  |- Minister C│ Gemini   │   coder)  │            │ Security  │
+    │  |- Radar     │ scans    │           │            │ Judge     │
+    └───────────────┘          └───────────┘            └───────────┘
+          |
+          | file-based channel (.tribunal/)
+          | heartbeat monitoring
+          v
+    Judge synthesizes + decides
 ```
 
 **An army prepares context. ONE king executes. A team of sabuesos verifies.**
+
+#### The Tribunal: Multi-Agent Debate
+
+When a phase needs multiple perspectives, the Tribunal system orchestrates structured debate:
+
+```
+Orchestrator
+  +- delegates to Judge (sub-orchestrator)
+       +- Minister 1 ----+
+       +- Minister 2 ----|-- file-based channel (.tribunal/)
+       +- Minister N ----|   with heartbeat monitoring
+       +- Radar (opt) ---+
+```
+
+**Roles:**
+
+| Role | Required | What it does |
+|------|----------|-------------|
+| **Judge** | Yes (in multiagent phases) | Directs debate, manages rounds, synthesizes decision |
+| **Ministers** | 2+ per phase | Analyze independently, defend positions, challenge each other |
+| **Radar** | Optional | Investigates codebase, identifies risks, feeds questions to Judge |
+
+**Round Protocol:**
+1. **Independent** — Each minister responds without seeing others
+2. **Brainstorming** — Judge formulates directed questions per dimension
+3. **Comparison** — Judge presents matrix, ministers evaluate each other
+4. **Synthesis** — Judge proposes combined response, ministers confirm or defend
+5. **Tiebreak** — If no consensus: judge decides or escalates to user
+
+**Communication:** All agents communicate via JSON files in `.tribunal/{sdd}/{phase}/`. Each message has `from`/`to` routing. Ministers poll every 3-5 seconds for judge instructions.
+
+**Heartbeat monitoring:** Every agent writes a heartbeat file every 5-15 seconds. If an agent stops reporting for 90 seconds, the Judge replaces it with a fallback model.
+
+**Configuration in profile YAML:**
+```yaml
+phases:
+  explore:
+    - kind: orchestrator
+      role: agent
+      target: anthropic/claude-opus
+    tribunal:
+      enabled: true
+      max_rounds: 4
+      escalate_after: 4
+    judge:
+      model: anthropic/claude-opus
+    ministers:
+      - model: openai/gpt-5
+      - model: google/gemini-pro
+      - model: anthropic/claude-sonnet
+    radar:
+      model: google/gemini-1.5-pro
+      enabled: true
+    minister_fallbacks:
+      - openai/gpt-4o
+```
 
 #### 10 SDD Phases
 
 | Phase | Job | Composition | Execution |
 |-------|-----|-------------|-----------|
 | **orchestrator** | Coordinate the pipeline | 1 agent + optional judge | Sequential |
-| **explore** | Investigate codebase | 2+ agents + judge + radar | **Parallel** |
+| **explore** | Investigate codebase | 2+ agents + judge + radar + minister | **Parallel** |
 | **propose** | Structure a formal proposal | 1 agent + optional judge | Sequential |
-| **spec** | Write requirements | 2+ agents + judge + investigator | **Parallel** |
-| **design** | Architecture and decisions | 2+ agents + judge + radar | **Parallel** |
+| **spec** | Write requirements | 2+ agents + judge + investigator + minister | **Parallel** |
+| **design** | Architecture and decisions | 2+ agents + judge + radar + minister | **Parallel** |
 | **tasks** | Task checklist + TDD tests | 1 agent | Sequential |
 | **apply** | Write code. **Always ONE agent.** | 1 agent only | Sequential |
-| **verify** | Validate implementation | 2+ sabuesos + judge + radar | **Parallel** |
+| **verify** | Validate implementation | 2+ sabuesos + judge + radar + minister | **Parallel** |
 | **debug** | Diagnose bugs | Full mini-SDD cycle | **Conditional** |
 | **archive** | Sync specs, archive change. **Always ONE agent.** | 1 agent only | Sequential |
 
@@ -592,6 +653,8 @@ gsr role create <name> --sdd <sdd>  Create role contract for a custom SDD
 gsr phase create <name> --sdd <sdd> Create phase contract for a custom SDD
 gsr phase invoke <name> --sdd <sdd> --target <target-sdd>/<entry> --trigger <trigger>
                                      Add/update invoke declaration on a phase
+
+gsr skill-install [--global]        Install skills to detected environments
 ```
 
 Each category supports `help`: `gsr route help`, `gsr preset help`, `gsr sdd help`, etc.
@@ -599,6 +662,16 @@ Each category supports `help`: `gsr route help`, `gsr preset help`, `gsr sdd hel
 ---
 
 ## Architecture
+
+### Watchdog & Fallback
+
+Sub-agents write heartbeat files to `.gsr/watchdog/{taskId}.json` every 15-30 seconds. The orchestrator monitors these to detect dead agents (stale heartbeat > 90 seconds) and replaces them using the fallback chain from the profile.
+
+Tribunal agents use a parallel heartbeat in `.tribunal/{sdd}/{phase}/heartbeat-{name}.json`, monitored by the Judge.
+
+```
+Agent writes heartbeat -> Orchestrator polls -> Stale? -> Read fallback chain -> Spawn replacement
+```
 
 ### Non-executing boundary
 
@@ -713,6 +786,22 @@ router/contracts/
 
 `gsr sync` generates `.sync-manifest.json` so the host TUI can discover and consume all contracts.
 
+### Skills
+
+`gsr` ships with 6 skills that teach agents how to operate:
+
+```
+router/skills/
+  gsr-usage.md              # Complete gsr CLI and concepts reference
+  tribunal-judge.md         # Judge agentic leadership + round protocol
+  tribunal-minister.md      # Minister debate rules + polling protocol
+  tribunal-radar.md         # Radar investigation + risk mapping
+  watchdog-heartbeat.md     # Sub-agent heartbeat protocol
+  watchdog-monitor.md       # Orchestrator monitoring + fallback switching
+```
+
+Skills are auto-installed to detected environments on `npm install` (global), `gsr install`, and `gsr sync`.
+
 ---
 
 ## Standalone Mode
@@ -724,7 +813,7 @@ router/contracts/
 | Mode | Controller | Execution owners | Persona | Persistence |
 |------|-----------|-----------------|---------|-------------|
 | **With gentle-ai** | `Alan/gentle-ai` | `gentle-ai`, `agent-teams-lite` | Gentleman | Engram memory |
-| **Without gentle-ai** | `host` | `host` | Neutral (no accent) | File-based |
+| **Without gentle-ai** | `host` | `host` | Neutral (no accent) | File-based (.gsr/watchdog/, .tribunal/) |
 
 ### When gentle-ai is NOT installed
 
