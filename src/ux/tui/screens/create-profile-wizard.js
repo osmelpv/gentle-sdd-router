@@ -1,12 +1,14 @@
-import React, { useEffect, useMemo, useReducer } from 'react';
+import React, { useEffect, useMemo, useReducer, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { TextInput } from '@inkjs/ui';
+import { readdirSync, statSync, existsSync } from 'node:fs';
 import { ModelPicker } from '../components/model-picker.js';
 import { SplitPanelPicker } from '../components/split-panel-picker.js';
 import { PhaseComposer } from '../components/phase-composer.js';
 import { Menu } from '../components/menu.js';
 import { colors } from '../theme.js';
 import { CANONICAL_PHASES, PHASE_METADATA, loadPhaseMetadataForCatalog } from '../../../core/phases.js';
+import { profileNameExists } from '../../../core/profile-io.js';
 
 const h = React.createElement;
 
@@ -62,8 +64,10 @@ const PHASE_DESCRIPTIONS = {
 };
 
 const initialState = {
-  step: 1,           // 1=Name, 2=Type, 3=Models, 4=Fallbacks, 5=Review, 6=Save
+  step: 1,           // 1=Name, 15=SDD selector (optional), 2=Type, 3=Models, 4=Fallbacks, 5=Review, 6=Save
   name: '',
+  sdd: 'agent-orchestrator',
+  sddStepShown: false,
   type: null,        // 'mono' | 'per-phase' | 'multi-agent' | 'multi-full'
   phases: {},        // { orchestrator: [{ target, role, kind, phase }], ... }
   phaseIndex: 0,     // which phase (by index into phasesList) we're configuring
@@ -86,6 +90,7 @@ function makeReducer(phasesList) {
   return function reducer(state, action) {
     switch (action.type) {
       case 'SET_NAME': return { ...state, name: action.value, error: null };
+      case 'SET_SDD': return { ...state, sdd: action.value, sddStepShown: true, step: 2 };
       case 'SET_TYPE': return { ...state, type: action.value, step: 3, phaseIndex: 0, laneRole: 'primary' };
       case 'SET_MODEL': {
         // Add the model to the current phase/role, advance
@@ -183,6 +188,9 @@ function makeReducer(phasesList) {
       case 'SET_ERROR': return { ...state, error: action.value, saving: false };
       case 'BACK': {
         if (state.step === 1) return state; // can't go back from step 1
+        // Step 15 = SDD selector (between step 1 and step 2)
+        if (state.step === 15) return { ...state, step: 1 };
+        if (state.step === 2 && state.sddStepShown) return { ...state, step: 15 };
         if (state.step === 3 && state.phaseIndex === 0 && state.laneRole === 'primary') return { ...state, step: 2 };
         if (state.step === 3) {
           // Go back one step in model selection
@@ -214,6 +222,9 @@ function makeReducer(phasesList) {
   };
 }
 
+const GSR_PREFIX = 'gsr-';
+const SLUG_RE = /^[a-z0-9-]+$/;
+
 export function CreateProfileWizard({ configPath, router, setDescription, showResult, reloadConfig, catalogName }) {
   // Resolve phase list dynamically: use custom SDD phases when catalogName is provided,
   // otherwise fall back to CANONICAL_PHASES for the default/null catalog.
@@ -235,6 +246,9 @@ export function CreateProfileWizard({ configPath, router, setDescription, showRe
   const [state, dispatch] = useReducer(reducer, initialState);
   const pickerActive = state.step === 3 || (state.step === 4 && state.fallbackMode === 'yes');
 
+  // Live validation state for name input
+  const [nameInput, setNameInput] = useState('');
+
   // Handle ESC for back navigation
   useInput((input, key) => {
     if (key.escape) {
@@ -254,7 +268,7 @@ export function CreateProfileWizard({ configPath, router, setDescription, showRe
   useEffect(() => {
     if (!setDescription) return;
     if (state.step === 1) {
-      setDescription('Enter a name for the new profile. Must be unique.');
+      setDescription('Enter a name for the new profile. The gsr- prefix is added automatically. Must be unique.');
       return;
     }
     if (state.step === 5) {
@@ -262,23 +276,91 @@ export function CreateProfileWizard({ configPath, router, setDescription, showRe
     }
   }, [state.step, setDescription]);
 
+  // Compute inline validation for step 1
+  const nameValidation = useMemo(() => {
+    const fullName = nameInput.startsWith(GSR_PREFIX) ? nameInput : GSR_PREFIX + nameInput;
+    const slug = fullName.slice(GSR_PREFIX.length);
+    if (!slug) return { error: null, fullName };
+    if (!SLUG_RE.test(slug)) return { error: 'Only lowercase letters, digits, and hyphens allowed.', fullName };
+    if (routerDir && profileNameExists(fullName, routerDir)) return { error: 'Profile name already exists.', fullName };
+    return { error: null, fullName };
+  }, [nameInput, routerDir]);
+
+  // Detect available SDDs from router/catalogs/
+  const availableSdds = useMemo(() => {
+    const sdds = [{ label: 'SDD-Orchestrator (default)', value: 'agent-orchestrator' }];
+    if (routerDir) {
+      try {
+        const catalogsDir = `${routerDir}/catalogs`;
+        if (existsSync(catalogsDir)) {
+          for (const entry of readdirSync(catalogsDir)) {
+            try {
+              if (statSync(`${catalogsDir}/${entry}`).isDirectory()) {
+                sdds.push({ label: entry, value: entry });
+              }
+            } catch {
+              // skip
+            }
+          }
+        }
+      } catch {
+        // ignore — use default only
+      }
+    }
+    return sdds;
+  }, [routerDir]);
 
   // Step 1: Name
   if (state.step === 1) {
+    const slug = nameInput.startsWith(GSR_PREFIX) ? nameInput.slice(GSR_PREFIX.length) : nameInput;
     return h(Box, { flexDirection: 'column' },
       h(Text, { bold: true, color: colors.lavender }, 'Step 1/6 — Profile Name'),
       h(Text, null, ''),
+      h(Text, { color: colors.subtext }, 'Profile names are prefixed with gsr- automatically.'),
+      h(Text, null, ''),
       state.error ? h(Text, { color: colors.red }, state.error, '\n') : null,
-      h(TextInput, {
-        placeholder: 'my-custom-profile',
-        onSubmit: (value) => {
-          if (!value || !value.trim()) {
-            dispatch({ type: 'SET_ERROR', value: 'Name is required.' });
-            return;
-          }
-          dispatch({ type: 'SET_NAME', value: value.trim() });
-          dispatch({ type: 'GO_TO_STEP', value: 2 });
-        },
+      nameValidation.error && slug ? h(Text, { color: colors.red }, nameValidation.error) : null,
+      h(Box, { flexDirection: 'row' },
+        h(Text, { color: colors.peach }, GSR_PREFIX),
+        h(TextInput, {
+          placeholder: 'my-custom-profile',
+          value: nameInput.startsWith(GSR_PREFIX) ? nameInput.slice(GSR_PREFIX.length) : nameInput,
+          onChange: (value) => {
+            setNameInput(value);
+          },
+          onSubmit: (value) => {
+            const slug = value.startsWith(GSR_PREFIX) ? value.slice(GSR_PREFIX.length) : value;
+            if (!slug || !slug.trim()) {
+              dispatch({ type: 'SET_ERROR', value: 'Name cannot be empty.' });
+              return;
+            }
+            if (!SLUG_RE.test(slug.trim())) {
+              dispatch({ type: 'SET_ERROR', value: 'Only lowercase letters, digits, and hyphens allowed.' });
+              return;
+            }
+            const fullName = GSR_PREFIX + slug.trim();
+            if (routerDir && profileNameExists(fullName, routerDir)) {
+              dispatch({ type: 'SET_ERROR', value: 'Profile name already exists.' });
+              return;
+            }
+            dispatch({ type: 'SET_NAME', value: fullName });
+            dispatch({ type: 'GO_TO_STEP', value: availableSdds.length > 1 ? 15 : 2 });
+          },
+        }),
+      ),
+    );
+  }
+
+  // Step 1.5: SDD Selector (only shown when multiple SDDs are available)
+  if (state.step === 15) {
+    return h(Box, { flexDirection: 'column' },
+      h(Text, { bold: true, color: colors.lavender }, `Step 1.5/6 — Select SDD for "${state.name}"`),
+      h(Text, { color: colors.subtext }, 'Choose which SDD workflow this profile will follow.'),
+      h(Text, null, ''),
+      h(Menu, {
+        items: availableSdds,
+        onSelect: (value) => dispatch({ type: 'SET_SDD', value }),
+        setDescription,
       }),
     );
   }
@@ -474,7 +556,10 @@ export function CreateProfileWizard({ configPath, router, setDescription, showRe
           dispatch({ type: 'SET_SAVING' });
           try {
             const mod = await import('../../../router-config.js');
-            mod.createProfile(state.name, routerDir, catalogName ? { catalog: catalogName } : {});
+            mod.createProfile(state.name, routerDir, {
+              ...(catalogName ? { catalog: catalogName } : {}),
+              sdd: state.sdd,
+            });
             mod.updateProfile(state.name, state.phases, routerDir);
             await reloadConfig();
             router.pop();

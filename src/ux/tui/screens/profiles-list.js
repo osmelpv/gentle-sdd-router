@@ -1,19 +1,23 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
+import { TextInput } from '@inkjs/ui';
 import { Menu } from '../components/menu.js';
 import { colors, cursor as cursorChar } from '../theme.js';
 import { appendTuiDebug } from '../../../debug/tui-debug-log.js';
 import { unifiedSync } from '../../../core/unified-sync.js';
 import { getPublicPresetMetadata } from '../../../core/public-preset-metadata.js';
+import { detectGentleAiProfiles, duplicateFromGentleAi } from '../../../core/profile-io.js';
 
 const h = React.createElement;
 
 export function ProfilesScreen({ config, configPath, router, setDescription, showResult, reloadConfig, setSelectedProfile, setConfig }) {
   const [lastMessage, setLastMessage] = useState(null);
   const [selectedPresetName, setSelectedPresetName] = useState(null);
+  const [gentleAiProfiles, setGentleAiProfiles] = useState([]);
+  const [duplicatingProfile, setDuplicatingProfile] = useState(null); // { entry: gentleAiEntry } when in duplicating sub-view
+  const [duplicateName, setDuplicateName] = useState('');
 
-  const catalogs = config?.catalogs ?? {};
-  const activePreset = config?.active_preset;
+  const activePreset = config?.active_profile ?? config?.visibleProfiles?.[0] ?? config?.active_preset;
 
   const presets = [];
 
@@ -21,26 +25,28 @@ export function ProfilesScreen({ config, configPath, router, setDescription, sho
   const metadataRows = getPublicPresetMetadata(config);
   const scopeMap = new Map(metadataRows.map(r => [r.name, r.scope]));
 
-  for (const [sddName, sddGroup] of Object.entries(catalogs)) {
-    const sddPresets = sddGroup?.presets ?? {};
-    
-    for (const [presetName, preset] of Object.entries(sddPresets)) {
-      const phaseCount = Object.keys(preset.phases ?? {}).length;
-      const isActive = presetName === activePreset;
-      const isVisible = preset.hidden !== true && sddGroup.enabled !== false;
-      const scope = scopeMap.get(presetName) ?? 'project';
-      
-      presets.push({
-        label: presetName,
-        displayLabel: `${presetName}${isActive ? ' [active]' : ''} — ${phaseCount} phase(s)`,
-        tag: isVisible ? 'visible' : 'hidden',
-        scope,
-        description: `${isActive ? '(currently active)' : 'Select to view details'}. ${phaseCount} phases. ${scope}. ${isVisible ? 'Visible in TAB cycling.' : 'Hidden from TAB cycling.'}`,
-        sddName,
-        isActive,
-        isVisible,
-      });
-    }
+  const profilesMap = config?.profilesMap instanceof Map ? config.profilesMap : new Map();
+  for (const [name, entry] of profilesMap) {
+    const { content, visible, builtin, sddName } = entry;
+    const phaseCount = Object.keys(content?.phases ?? {}).length;
+    const isActive = name === activePreset;
+    const isVisible = visible === true;
+    const scope = builtin ? 'builtin' : (scopeMap.get(name) ?? 'user');
+    const tag = builtin ? 'builtin' : (isVisible ? 'visible' : 'hidden');
+    const displayLabel = builtin
+      ? `${name}${isActive ? ' [active]' : ''} — ${phaseCount} phase(s) [builtin]`
+      : `${name}${isActive ? ' [active]' : ''} — ${phaseCount} phase(s)`;
+
+    presets.push({
+      label: name,
+      displayLabel,
+      tag,
+      scope,
+      description: `${isActive ? '(currently active)' : 'Select to view details'}. ${phaseCount} phases. ${scope}. ${isVisible ? 'Visible in TAB cycling.' : 'Hidden from TAB cycling.'}`,
+      sddName,
+      isActive,
+      isVisible,
+    });
   }
 
   presets.sort((a, b) => {
@@ -49,9 +55,32 @@ export function ProfilesScreen({ config, configPath, router, setDescription, sho
     return a.label.localeCompare(b.label);
   });
 
+  // Append gentle-ai read-only profiles
+  for (const gai of gentleAiProfiles) {
+    presets.push({
+      label: gai.name,
+      displayLabel: `${gai.name} — [gentle-ai]`,
+      tag: 'gentle-ai',
+      scope: 'gentle-ai',
+      description: `Read-only gentle-ai profile. Model: ${gai.model ?? 'unknown'}. Cannot be deleted or renamed.`,
+      sddName: gai.name,
+      isActive: false,
+      isVisible: false,
+      isReadOnly: true,
+    });
+  }
+
   if (presets.length === 0) {
     presets.push({ label: '__none__', displayLabel: 'No presets found', description: 'Install gsr first or create a preset.', isActive: false });
   }
+
+  useEffect(() => {
+    detectGentleAiProfiles().then(profiles => {
+      setGentleAiProfiles(profiles);
+    }).catch(() => {
+      setGentleAiProfiles([]);
+    });
+  }, []);
 
   useEffect(() => {
     appendTuiDebug('presets_screen_render', {
@@ -106,7 +135,7 @@ export function ProfilesScreen({ config, configPath, router, setDescription, sho
 
       // Reload the exact config file backing the current TUI session.
       const freshConfig = mod.loadRouterConfig(configPath);
-      const freshPreset = freshConfig?.catalogs?.[preset.sddName]?.presets?.[preset.label];
+      const freshPreset = freshConfig?.profilesMap?.get(preset.label)?.content;
       appendTuiDebug('presets_toggle_reloaded', {
         preset: preset.label,
         hiddenInFreshConfig: freshPreset?.hidden,
@@ -164,6 +193,11 @@ export function ProfilesScreen({ config, configPath, router, setDescription, sho
 
   useInput((input, key) => {
     if (key.escape) {
+      if (duplicatingProfile) {
+        setDuplicatingProfile(null);
+        setDuplicateName('');
+        return;
+      }
       if (selectedPresetName) {
         appendTuiDebug('presets_escape_close_actions', { selectedPresetName });
         setSelectedPresetName(null);
@@ -174,17 +208,59 @@ export function ProfilesScreen({ config, configPath, router, setDescription, sho
     }
   });
 
+  // Duplicating sub-view
+  if (duplicatingProfile) {
+    const routerDir = configPath ? configPath.replace(/\/router\.yaml$/, '') : null;
+    return h(Box, { flexDirection: 'column' },
+      h(Text, { bold: true, color: colors.lavender }, `Duplicate: ${duplicatingProfile.entry.name}`),
+      h(Text, { color: colors.subtext }, 'Enter a name for the new local profile (must start with gsr-).'),
+      h(Text, null, ''),
+      h(TextInput, {
+        placeholder: `gsr-copy-of-${duplicatingProfile.entry.name}`,
+        value: duplicateName,
+        onChange: (value) => setDuplicateName(value),
+        onSubmit: async (value) => {
+          const name = value.trim() || duplicateName.trim();
+          if (!name) return;
+          const finalName = name.startsWith('gsr-') ? name : `gsr-${name}`;
+          try {
+            if (routerDir) {
+              duplicateFromGentleAi(duplicatingProfile.entry, finalName, routerDir);
+              await reloadConfig();
+              setDuplicatingProfile(null);
+              setDuplicateName('');
+              showResult(`Profile '${finalName}' created as a local copy of '${duplicatingProfile.entry.name}'.`);
+            } else {
+              showResult('Error: could not determine router directory.');
+              setDuplicatingProfile(null);
+            }
+          } catch (err) {
+            showResult(`Error: ${err.message}`);
+            setDuplicatingProfile(null);
+          }
+        },
+      }),
+      h(Text, null, ''),
+      h(Text, { color: colors.overlay }, 'ESC = cancel'),
+    );
+  }
+
   if (selectedPresetName) {
     const preset = presets.find(p => p.label === selectedPresetName);
     if (!preset) {
       return null;
     }
 
-    const actions = [
-      { label: 'View details', value: 'view', description: 'View preset phases and configuration.' },
-      { label: preset.isVisible ? 'Hide from OpenCode TAB' : 'Show in OpenCode TAB', value: 'toggle-visibility', description: preset.isVisible ? 'Hide this preset from TAB cycling.' : 'Make this preset visible in TAB cycling.' },
-      ...(!preset.isActive ? [{ label: 'Delete preset', value: 'delete', description: 'Permanently delete this preset from disk.' }] : []),
-    ];
+    const actions = preset.isReadOnly
+      ? [
+          { label: 'View details', value: 'view', description: 'View preset phases and configuration.' },
+          { label: 'Duplicate as local profile', value: 'duplicate', description: 'Create a local copy of this gentle-ai profile.' },
+        ]
+      : [
+          { label: 'View details', value: 'view', description: 'View preset phases and configuration.' },
+          { label: preset.isVisible ? 'Hide from OpenCode TAB' : 'Show in OpenCode TAB', value: 'toggle-visibility', description: preset.isVisible ? 'Hide this preset from TAB cycling.' : 'Make this preset visible in TAB cycling.' },
+          ...(!preset.isActive ? [{ label: 'Delete preset', value: 'delete', description: 'Permanently delete this preset from disk.' }] : []),
+        ];
 
     return h(Box, { flexDirection: 'column' },
       h(Text, { bold: true, color: colors.lavender }, `Preset: ${selectedPresetName}`),
@@ -208,6 +284,18 @@ export function ProfilesScreen({ config, configPath, router, setDescription, sho
           }
           if (value === 'delete') {
             await handleDelete(selectedPresetName);
+            return;
+          }
+          if (value === 'duplicate') {
+            const gentleAiEntry = gentleAiProfiles.find(g => g.name === selectedPresetName);
+            if (gentleAiEntry) {
+              setDuplicateName(`gsr-copy-of-${gentleAiEntry.name}`);
+              setDuplicatingProfile({ entry: gentleAiEntry });
+              setSelectedPresetName(null);
+            } else {
+              showResult(`Could not find gentle-ai profile '${selectedPresetName}'.`);
+              setSelectedPresetName(null);
+            }
             return;
           }
           setSelectedPresetName(null);

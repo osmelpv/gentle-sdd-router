@@ -222,6 +222,8 @@ export async function runCli(argv) {
       return runIdentityCommand(rest);
     case 'preset':
       return runPreset(rest);
+    case 'profile':
+      return runProfile(rest);
     case 'sdd':
       return runSddCommand(rest);
     case 'fallback':
@@ -375,6 +377,9 @@ function runList() {
 
 function runPreset(args) {
   const [subcommand, ...rest] = args;
+  if (subcommand === 'list') {
+    process.stdout.write('Deprecation warning: `gsr preset list` is deprecated, use `gsr profile list` instead.\n');
+  }
   return runProfile([subcommand, ...rest]);
 }
 
@@ -1083,11 +1088,93 @@ function renderInvalidStatus(configPath, error) {
   ].join('\n') + '\n';
 }
 
+/**
+ * Render the full profile list table, including builtin, user, and gentle-ai profiles.
+ * @param {{ configPath?: string, openCodeJsonPath?: string }} [options]
+ * @returns {Promise<void>}
+ */
+export async function runProfileList(options = {}) {
+  maybeWarnOutdatedConfig();
+
+  const configPath = options.configPath ?? safeDiscoverConfigPathFromCwd();
+  let localProfiles = [];
+
+  if (configPath) {
+    try {
+      const config = loadRouterConfig(configPath);
+      // Prefer profilesMap from _v4Source which carries correct visible/builtin fields
+      const profilesMap = config?.profilesMap;
+      if (profilesMap instanceof Map) {
+        for (const [name, entry] of profilesMap) {
+          localProfiles.push({
+            name,
+            sdd: entry.content?.sdd ?? entry.sddName ?? 'agent-orchestrator',
+            visible: entry.visible === true,
+            builtin: entry.builtin === true,
+          });
+        }
+        localProfiles.sort((a, b) => a.name.localeCompare(b.name));
+      } else {
+        // Fallback: use public preset metadata for non-v4 configs
+        const meta = getPublicPresetMetadata(config);
+        for (const p of meta) {
+          localProfiles.push({
+            name: p.name,
+            sdd: p.sdd ?? 'agent-orchestrator',
+            visible: p.visibility === 'visible',
+            builtin: p.preset?.builtin === true,
+          });
+        }
+      }
+    } catch {
+      // Non-blocking: show what we can
+    }
+  }
+
+  // Detect gentle-ai profiles from global opencode.json
+  let gentleAiProfiles = [];
+  try {
+    const { detectGentleAiProfiles } = await import('./core/profile-io.js');
+    gentleAiProfiles = await detectGentleAiProfiles(options.openCodeJsonPath);
+  } catch {
+    // Non-blocking: gentle-ai detection is optional
+  }
+
+  process.stdout.write('Profile List\n');
+  process.stdout.write('────────────────────────────────────────────────────\n');
+
+  if (localProfiles.length === 0 && gentleAiProfiles.length === 0) {
+    process.stdout.write('No profiles found.\n');
+    return;
+  }
+
+  // Print local profiles
+  for (const p of localProfiles) {
+    const name = p.name.padEnd(20);
+    const sdd = (p.sdd ?? 'agent-orchestrator').padEnd(20);
+    const visStr = p.visible ? 'visible' : 'hidden';
+    const typeStr = p.builtin ? 'builtin' : 'user';
+    process.stdout.write(`  ${name} ${sdd} ${visStr.padEnd(10)} ${typeStr}\n`);
+  }
+
+  // Print gentle-ai profiles section
+  if (gentleAiProfiles.length > 0) {
+    if (localProfiles.length > 0) {
+      process.stdout.write('  ── gentle-ai ──\n');
+    }
+    for (const gp of gentleAiProfiles) {
+      const name = gp.name.padEnd(20);
+      const sdd = '(gentle-ai)'.padEnd(20);
+      process.stdout.write(`  ${name} ${sdd} ${'-'.padEnd(10)} gentle-ai\n`);
+    }
+  }
+}
+
 async function runProfile(args) {
   const [subcommand, ...rest] = args;
   switch (subcommand) {
     case 'list':
-      return runList();
+      return runProfileList();
     case 'show':
       return runReload();
     case 'create':

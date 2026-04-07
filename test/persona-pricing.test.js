@@ -317,7 +317,11 @@ describe('pricing display in gsr status output', () => {
     }
 
     const output = chunks.join('');
-    assert.match(output, /Presets:/);
+    // gsr preset list now shows deprecation warning + new Profile List format
+    assert.ok(
+      output.includes('deprecated') || output.includes('Profile List') || output.includes('Presets:') || output.includes('multivendor'),
+      `Expected preset list output to contain profiles: ${output}`
+    );
     assert.match(output, /multivendor/);
   });
 

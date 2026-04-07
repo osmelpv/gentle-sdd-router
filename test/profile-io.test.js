@@ -21,6 +21,9 @@ import {
   loadPresets,
   // New canonical name
   loadProfiles,
+  // Phase 2 + 3
+  createProfile,
+  duplicateFromGentleAi,
 } from '../src/core/profile-io.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -720,6 +723,174 @@ describe('importProfileFromUrl (static validation)', () => {
       await assert.rejects(
         () => importPresetFromUrl('file:///etc/passwd', dir),
         /Only HTTPS URLs are supported/
+      );
+    } finally {
+      cleanup(dir);
+    }
+  });
+});
+
+// ─── createProfile — Phase 2 ──────────────────────────────────────────────────
+
+describe('createProfile — simplified schema', () => {
+  test('writes phases.orchestrator as { model, fallbacks: [] } format (not lane array)', () => {
+    const dir = makeTempDir();
+    try {
+      const result = createProfile('gsr-test-profile', dir);
+      const raw = fs.readFileSync(result.path, 'utf8');
+      const parsed = JSON.parse(JSON.stringify(
+        // parse via yaml-safe approach: read raw YAML and check structure
+        (() => {
+          // Use loadV4Profiles to parse the file correctly via the existing infra
+          // but we need the raw shape — just parse the written YAML manually
+          const lines = raw.split('\n');
+          // orchestrator should be an object (has 'model:' line), not an array (has '- target:')
+          const hasModelKey = raw.includes('model:');
+          const hasLaneArray = raw.includes('- target:');
+          return { hasModelKey, hasLaneArray };
+        })()
+      ));
+      assert.equal(parsed.hasModelKey, true, 'phases.orchestrator should use model: key');
+      assert.equal(parsed.hasLaneArray, false, 'phases.orchestrator should NOT be a lane array');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('writes visible: false and builtin: false', () => {
+    const dir = makeTempDir();
+    try {
+      const result = createProfile('gsr-visibility-test', dir);
+      const raw = fs.readFileSync(result.path, 'utf8');
+      assert.match(raw, /visible: false/, 'should write visible: false');
+      assert.match(raw, /builtin: false/, 'should write builtin: false');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('writes sdd: agent-orchestrator by default', () => {
+    const dir = makeTempDir();
+    try {
+      const result = createProfile('gsr-sdd-default', dir);
+      const raw = fs.readFileSync(result.path, 'utf8');
+      assert.match(raw, /sdd: agent-orchestrator/, 'should write default sdd field');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('writes custom sdd when options.sdd is provided', () => {
+    const dir = makeTempDir();
+    try {
+      const result = createProfile('gsr-custom-sdd', dir, { sdd: 'custom-sdd' });
+      const raw = fs.readFileSync(result.path, 'utf8');
+      assert.match(raw, /sdd: custom-sdd/, 'should write custom sdd field');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('throws on duplicate name (profile with same name already exists)', () => {
+    const dir = makeTempDir();
+    try {
+      createProfile('gsr-duplicate', dir);
+      assert.throws(
+        () => createProfile('gsr-duplicate', dir),
+        /Profile 'gsr-duplicate' already exists/
+      );
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('returns profileName and path (no catalog field)', () => {
+    const dir = makeTempDir();
+    try {
+      const result = createProfile('gsr-return-shape', dir);
+      assert.equal(result.profileName, 'gsr-return-shape', 'profileName should be set');
+      assert.ok(result.path, 'path should be set');
+      assert.ok(result.path.includes('gsr-return-shape.router.yaml'), 'path should contain filename');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('deprecated presetName alias is still present for backward compat', () => {
+    const dir = makeTempDir();
+    try {
+      const result = createProfile('gsr-compat', dir);
+      assert.equal(result.presetName, 'gsr-compat', 'presetName deprecated alias should still work');
+    } finally {
+      cleanup(dir);
+    }
+  });
+});
+
+// ─── duplicateFromGentleAi — Phase 3 ─────────────────────────────────────────
+
+describe('duplicateFromGentleAi', () => {
+  test('creates file with correct structure (source field, simplified phases, gsr-name)', () => {
+    const dir = makeTempDir();
+    try {
+      const entry = { name: 'sdd-orchestrator', model: 'anthropic/claude-sonnet-4-5', isGentleAi: true };
+      const result = duplicateFromGentleAi(entry, 'gsr-my-copy', dir);
+
+      assert.equal(result.profileName, 'gsr-my-copy');
+      assert.ok(fs.existsSync(result.path));
+
+      const raw = fs.readFileSync(result.path, 'utf8');
+      assert.match(raw, /name: gsr-my-copy/);
+      assert.match(raw, /source:.*gentle-ai:sdd-orchestrator/, 'source annotation should be present');
+      assert.match(raw, /anthropic\/claude-sonnet-4-5/, 'model should be used in phases');
+      assert.match(raw, /sdd: agent-orchestrator/);
+      assert.match(raw, /visible: false/);
+      assert.match(raw, /builtin: false/);
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('uses gentleAiEntry.model for all standard phases', () => {
+    const dir = makeTempDir();
+    try {
+      const entry = { name: 'sdd-orchestrator', model: 'openai/gpt-4o', isGentleAi: true };
+      const result = duplicateFromGentleAi(entry, 'gsr-gpt-copy', dir);
+      const raw = fs.readFileSync(result.path, 'utf8');
+
+      // All standard phases should be present
+      const STANDARD_PHASES = ['orchestrator', 'explore', 'propose', 'spec', 'design', 'tasks', 'apply', 'verify', 'archive'];
+      for (const phase of STANDARD_PHASES) {
+        assert.match(raw, new RegExp(phase + ':'), `Phase ${phase} should be present`);
+      }
+      // The model should appear multiple times (once per phase)
+      const modelMatches = (raw.match(/openai\/gpt-4o/g) || []).length;
+      assert.ok(modelMatches >= STANDARD_PHASES.length, `model should appear ${STANDARD_PHASES.length} times, found ${modelMatches}`);
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('defaults to anthropic/claude-sonnet if gentleAiEntry.model is null', () => {
+    const dir = makeTempDir();
+    try {
+      const entry = { name: 'sdd-orchestrator', model: null, isGentleAi: true };
+      const result = duplicateFromGentleAi(entry, 'gsr-default-model', dir);
+      const raw = fs.readFileSync(result.path, 'utf8');
+      assert.match(raw, /anthropic\/claude-sonnet/, 'should default to anthropic/claude-sonnet');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('throws on duplicate name', () => {
+    const dir = makeTempDir();
+    try {
+      const entry = { name: 'sdd-orchestrator', model: 'anthropic/claude-sonnet', isGentleAi: true };
+      duplicateFromGentleAi(entry, 'gsr-dup-check', dir);
+      assert.throws(
+        () => duplicateFromGentleAi(entry, 'gsr-dup-check', dir),
+        /Profile 'gsr-dup-check' already exists/
       );
     } finally {
       cleanup(dir);

@@ -264,6 +264,63 @@ export { COMPACT_PREFIX };
 // === PROFILE CRUD ===
 
 /**
+ * Check if a profile name already exists in the profiles directory.
+ * Scans all *.router.yaml files (flat and subdirectories) for any with name: {name}.
+ * @param {string} name
+ * @param {string} routerDir
+ * @returns {boolean}
+ */
+export function profileNameExists(name, routerDir) {
+  const profilesDir = join(routerDir, 'profiles');
+  if (!existsSync(profilesDir)) return false;
+
+  let entries;
+  try {
+    entries = readdirSync(profilesDir);
+  } catch {
+    return false;
+  }
+
+  for (const file of entries) {
+    const filePath = join(profilesDir, file);
+    try {
+      const stat = statSync(filePath);
+      if (stat.isDirectory()) {
+        // Check subdirectory
+        let subEntries;
+        try {
+          subEntries = readdirSync(filePath);
+        } catch {
+          continue;
+        }
+        for (const subFile of subEntries) {
+          if (!subFile.endsWith('.router.yaml')) continue;
+          try {
+            const raw = readFileSync(join(filePath, subFile), 'utf8');
+            const content = parseYaml(raw);
+            if (content.name === name) return true;
+          } catch {
+            // skip malformed files
+          }
+        }
+      } else if (file.endsWith('.router.yaml')) {
+        try {
+          const raw = readFileSync(filePath, 'utf8');
+          const content = parseYaml(raw);
+          if (content.name === name) return true;
+        } catch {
+          // skip malformed files
+        }
+      }
+    } catch {
+      // skip
+    }
+  }
+
+  return false;
+}
+
+/**
  * Find the file path for a profile by name.
  * If catalog is provided (and not 'default'), searches only that catalog subdirectory.
  * Otherwise, searches the project profiles directory first, then the plugin global profiles directory.
@@ -356,15 +413,19 @@ function resolveProfileTargetPath(name, routerDir, options = {}) {
 }
 
 /**
- * Create a new empty profile with a single orchestrator phase.
+ * Create a new empty profile with a single orchestrator phase (simplified schema).
  * @param {string} name - Profile name
  * @param {string} routerDir - Path to router/ directory
- * @param {{ catalog?: string, target?: string }} options
- * @returns {{ presetName: string, path: string, catalog: string }}
+ * @param {{ catalog?: string, target?: string, sdd?: string }} options
+ * @returns {{ profileName: string, presetName: string, path: string }}
  */
 export function createProfile(name, routerDir, options = {}) {
   if (!name || typeof name !== 'string' || !name.trim()) {
     throw new Error('Profile name is required and must be a non-empty string.');
+  }
+
+  if (profileNameExists(name, routerDir)) {
+    throw new Error(`Profile '${name}' already exists.`);
   }
 
   const targetPath = resolveProfileTargetPath(name, routerDir, options);
@@ -374,20 +435,17 @@ export function createProfile(name, routerDir, options = {}) {
   }
 
   const target = options.target ?? 'anthropic/claude-sonnet';
-  const catalog = options.catalog && options.catalog !== 'default'
-    ? options.catalog
-    : 'default';
 
   const profileContent = {
     name,
+    sdd: options.sdd ?? 'agent-orchestrator',
+    visible: false,
+    builtin: false,
     phases: {
-      orchestrator: [
-        {
-          target,
-          role: 'primary',
-          phase: 'orchestrator',
-        },
-      ],
+      orchestrator: {
+        model: target,
+        fallbacks: [],
+      },
     },
   };
 
@@ -399,7 +457,48 @@ export function createProfile(name, routerDir, options = {}) {
   writeFileSync(tempPath, yaml, 'utf8');
   renameSync(tempPath, targetPath);
 
-  return { presetName: name, path: targetPath, catalog };
+  return { profileName: name, presetName: name, path: targetPath };
+}
+
+/**
+ * Duplicate a gentle-ai profile entry as a local profile.
+ * Creates a new local profile with all standard phases pre-filled from the gentle-ai entry's model.
+ *
+ * @param {{ name: string, model: string|null, isGentleAi: true }} gentleAiEntry - Source gentle-ai profile
+ * @param {string} newName - Name for the new local profile (e.g. 'gsr-my-copy')
+ * @param {string} routerDir - Path to router/ directory
+ * @returns {{ profileName: string, path: string }}
+ */
+export function duplicateFromGentleAi(gentleAiEntry, newName, routerDir) {
+  if (profileNameExists(newName, routerDir)) {
+    throw new Error(`Profile '${newName}' already exists.`);
+  }
+
+  const STANDARD_PHASES = ['orchestrator', 'explore', 'propose', 'spec', 'design', 'tasks', 'apply', 'verify', 'archive'];
+  const defaultModel = gentleAiEntry.model ?? 'anthropic/claude-sonnet';
+
+  const phases = {};
+  for (const phase of STANDARD_PHASES) {
+    phases[phase] = { model: defaultModel, fallbacks: [] };
+  }
+
+  const content = {
+    name: newName,
+    sdd: 'agent-orchestrator',
+    visible: false,
+    builtin: false,
+    source: `gentle-ai:${gentleAiEntry.name}`,
+    phases,
+  };
+
+  const targetPath = join(routerDir, 'profiles', `${newName}.router.yaml`);
+  mkdirSync(join(targetPath, '..'), { recursive: true });
+  const yaml = stringifyYaml(content);
+  const tempPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tempPath, yaml, 'utf8');
+  renameSync(tempPath, targetPath);
+
+  return { profileName: newName, path: targetPath };
 }
 
 /**
@@ -890,3 +989,53 @@ export const loadProfiles = loadV4Profiles;
  * Will be removed in a future major version.
  */
 export const loadPresets = loadProfiles;
+
+// === GENTLE-AI PROFILE DETECTION ===
+
+/**
+ * Detect gentle-ai profiles from an opencode.json file.
+ *
+ * Scans the agents object for keys matching `sdd-orchestrator` or `sdd-orchestrator-*`
+ * (no `gsr-` prefix). Returns an array of read-only profile descriptors.
+ *
+ * @param {string} [openCodeJsonPath] - Path to opencode.json. Defaults to ~/.config/opencode/opencode.json.
+ * @returns {Promise<Array<{ name: string, model: string|null, isGentleAi: true }>>}
+ */
+export async function detectGentleAiProfiles(openCodeJsonPath) {
+  const { readFileSync: readFile, existsSync: existsFile } = await import('node:fs');
+  const { join: joinPath } = await import('node:path');
+  const { homedir } = await import('node:os');
+
+  const resolvedPath = openCodeJsonPath
+    ?? joinPath(homedir(), '.config', 'opencode', 'opencode.json');
+
+  if (!existsFile(resolvedPath)) {
+    return [];
+  }
+
+  let parsed;
+  try {
+    const raw = readFile(resolvedPath, 'utf8');
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+
+  // Support both 'agents' (gsr overlay format) and 'agent' (opencode native format)
+  const agents = parsed?.agents ?? parsed?.agent ?? {};
+  if (typeof agents !== 'object' || agents === null) {
+    return [];
+  }
+
+  const SDD_ORCHESTRATOR_RE = /^sdd-orchestrator(-.*)?$/;
+
+  const results = [];
+  for (const [key, agentDef] of Object.entries(agents)) {
+    if (SDD_ORCHESTRATOR_RE.test(key)) {
+      const model = agentDef?.model ?? null;
+      results.push({ name: key, model, isGentleAi: true });
+    }
+  }
+
+  return results;
+}

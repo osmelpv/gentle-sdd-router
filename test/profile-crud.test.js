@@ -101,7 +101,6 @@ describe('createProfile', () => {
     try {
       const result = createProfile('teamprofile', dir, { catalog: 'myteam' });
 
-      assert.equal(result.catalog, 'myteam');
       assert.match(result.path, /profiles\/myteam\/teamprofile\.router\.yaml/);
       assert.ok(fs.existsSync(result.path));
     } finally {
@@ -109,13 +108,13 @@ describe('createProfile', () => {
     }
   });
 
-  test('creates profile with custom target sets the lane target', () => {
+  test('creates profile with custom target sets the model', () => {
     const dir = makeTempDir();
     try {
       const result = createProfile('custom', dir, { target: 'openai/gpt-4o' });
       const raw = fs.readFileSync(result.path, 'utf8');
       const parsed = parseYaml(raw);
-      assert.equal(parsed.phases.orchestrator[0].target, 'openai/gpt-4o');
+      assert.equal(parsed.phases.orchestrator.model, 'openai/gpt-4o');
     } finally {
       cleanup(dir);
     }
@@ -738,9 +737,10 @@ describe('moveProfile', () => {
       fs.mkdirSync(routerDir, { recursive: true });
       // Create profile in default catalog
       createProfile('duplicate', routerDir);
-      // Create same-named profile in target catalog
-      fs.mkdirSync(path.join(routerDir, 'profiles', 'team'), { recursive: true });
-      createProfile('duplicate', routerDir, { catalog: 'team' });
+      // Write same-named profile in target catalog directly (bypassing createProfile uniqueness check)
+      const teamDir = path.join(routerDir, 'profiles', 'team');
+      fs.mkdirSync(teamDir, { recursive: true });
+      writeFile(teamDir, 'duplicate.router.yaml', 'name: duplicate\nphases:\n  orchestrator:\n    model: anthropic/claude-sonnet\n    fallbacks: []\n');
       // Attempting move should fail
       assert.throws(
         () => moveProfile('duplicate', 'team', routerDir),
