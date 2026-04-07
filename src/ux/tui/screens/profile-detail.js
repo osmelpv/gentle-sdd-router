@@ -10,6 +10,7 @@ import {
   readFallbackChain, readLanePrimary, getPresetPhases,
   promoteFallback, writeFallbackChain, validateModelId,
 } from '../../../core/fallback-io.js';
+import { GLOBAL_PROFILES_DIR } from '../../../core/profile-io.js';
 
 const h = React.createElement;
 
@@ -102,6 +103,13 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
     return h(Text, { color: colors.red }, `Profile '${activePresetName}' not found.`);
   }
 
+  // Detect profile scope: local, global (user-promoted), or builtin
+  const profileEntry = localConfig?.profilesMap?.get(activePresetName);
+  const profileFilePath = profileEntry?.filePath ?? null;
+  const isBuiltin = profileEntry?.builtin === true;
+  const isGlobal = profileFilePath != null && profileFilePath.startsWith(GLOBAL_PROFILES_DIR);
+  const isLocal = profileFilePath != null && !isBuiltin && !isGlobal;
+
   // Build phase detail lines — supports both simplified {model, fallbacks} and legacy lane array
   const phaseLines = [];
   for (const [phaseName, phaseEntry] of Object.entries(preset.phases ?? {})) {
@@ -137,6 +145,8 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
     { label: 'Rename', value: 'rename', description: 'Rename this preset.' },
     { label: 'Copy', value: 'copy', description: 'Clone this preset with a new name.' },
     { label: 'Delete', value: 'delete', description: 'Delete this preset from disk.' },
+    ...(isLocal ? [{ label: '↑ Promote to global', value: 'promote', description: 'Make available in all your projects (~/.config/gsr/profiles/).' }] : []),
+    ...(isGlobal ? [{ label: '↓ Demote to project', value: 'demote', description: 'Move back to this project only.' }] : []),
   ];
 
   // Sub-view: TextInput for copying preset with a new name
@@ -448,6 +458,32 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
             await reloadConfig();
             router.pop();
             showResult(`Preset '${activePresetName}' deleted.`);
+          } catch (err) {
+            showResult(`Error: ${err.message}`);
+          }
+          return;
+        }
+
+        if (value === 'promote') {
+          try {
+            const profileMod = await import('../../../core/profile-io.js');
+            profileMod.promoteProfile(activePresetName, routerDir);
+            await reloadConfig();
+            showResult(`Profile '${activePresetName}' promoted to global.`);
+            router.pop();
+          } catch (err) {
+            showResult(`Error: ${err.message}`);
+          }
+          return;
+        }
+
+        if (value === 'demote') {
+          try {
+            const profileMod = await import('../../../core/profile-io.js');
+            profileMod.demoteProfile(activePresetName, routerDir);
+            await reloadConfig();
+            showResult(`Profile '${activePresetName}' demoted to project.`);
+            router.pop();
           } catch (err) {
             showResult(`Error: ${err.message}`);
           }

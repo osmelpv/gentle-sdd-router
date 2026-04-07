@@ -1111,6 +1111,7 @@ export async function runProfileList(options = {}) {
             sdd: entry.content?.sdd ?? entry.sddName ?? 'agent-orchestrator',
             visible: entry.visible === true,
             builtin: entry.builtin === true,
+            global: entry.global === true,
           });
         }
         localProfiles.sort((a, b) => a.name.localeCompare(b.name));
@@ -1153,7 +1154,7 @@ export async function runProfileList(options = {}) {
     const name = p.name.padEnd(20);
     const sdd = (p.sdd ?? 'agent-orchestrator').padEnd(20);
     const visStr = p.visible ? 'visible' : 'hidden';
-    const typeStr = p.builtin ? 'builtin' : 'user';
+    const typeStr = p.builtin ? 'builtin' : (p.global ? 'user (global)' : 'user (project)');
     process.stdout.write(`  ${name} ${sdd} ${visStr.padEnd(10)} ${typeStr}\n`);
   }
 
@@ -1167,6 +1168,46 @@ export async function runProfileList(options = {}) {
       const sdd = '(gentle-ai)'.padEnd(20);
       process.stdout.write(`  ${name} ${sdd} ${'-'.padEnd(10)} gentle-ai\n`);
     }
+  }
+}
+
+async function runProfilePromote(args) {
+  const name = args[0];
+  if (!name) {
+    process.stderr.write('Usage: gsr profile promote <name>\n');
+    process.exit(1);
+  }
+  const configPath = safeDiscoverConfigPathFromCwd();
+  if (!configPath) { process.stderr.write('No router.yaml found.\n'); process.exit(1); }
+  const routerDir = path.dirname(configPath);
+
+  const { promoteProfile } = await import('./core/profile-io.js');
+  try {
+    const result = promoteProfile(name, routerDir);
+    process.stdout.write(`Profile '${name}' promoted to global.\n  From: ${result.from}\n  To: ${result.to}\n`);
+  } catch (err) {
+    process.stderr.write(`Error: ${err.message}\n`);
+    process.exit(1);
+  }
+}
+
+async function runProfileDemote(args) {
+  const name = args[0];
+  if (!name) {
+    process.stderr.write('Usage: gsr profile demote <name>\n');
+    process.exit(1);
+  }
+  const configPath = safeDiscoverConfigPathFromCwd();
+  if (!configPath) { process.stderr.write('No router.yaml found.\n'); process.exit(1); }
+  const routerDir = path.dirname(configPath);
+
+  const { demoteProfile } = await import('./core/profile-io.js');
+  try {
+    const result = demoteProfile(name, routerDir);
+    process.stdout.write(`Profile '${name}' demoted to project.\n  From: ${result.from}\n  To: ${result.to}\n`);
+  } catch (err) {
+    process.stderr.write(`Error: ${err.message}\n`);
+    process.exit(1);
   }
 }
 
@@ -1191,6 +1232,10 @@ async function runProfile(args) {
       return await runImport(rest);
     case 'move':
       return runCatalogMove(rest);
+    case 'promote':
+      return runProfilePromote(rest);
+    case 'demote':
+      return runProfileDemote(rest);
     default:
       if (subcommand === 'help' || subcommand === '--help' || !subcommand) {
         process.stdout.write(renderCommandHelp('preset') ?? '');

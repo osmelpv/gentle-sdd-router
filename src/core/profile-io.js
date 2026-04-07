@@ -1,11 +1,14 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, statSync, unlinkSync, rmdirSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, statSync, unlinkSync, rmdirSync, renameSync, copyFileSync } from 'node:fs';
 import { join, basename, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { homedir } from 'node:os';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { get } from 'node:https';
 import { parseYaml, stringifyYaml } from './router.js';
 import { validateProfileFile, loadV4Profiles } from './router-v4-io.js';
 import { appendTuiDebug } from '../debug/tui-debug-log.js';
+
+export const GLOBAL_PROFILES_DIR = join(homedir(), '.config', 'gsr', 'profiles');
 
 const COMPACT_PREFIX = 'gsr://';
 const URL_TIMEOUT_MS = 10000;
@@ -991,6 +994,98 @@ export const loadProfiles = loadV4Profiles;
 export const loadPresets = loadProfiles;
 
 // === GENTLE-AI PROFILE DETECTION ===
+
+// === PROMOTE / DEMOTE ===
+
+/**
+ * Find a profile by name in a specific directory (flat scan, no subdirectories).
+ * @param {string} dir
+ * @param {string} name
+ * @returns {{ filePath: string, content: object }|null}
+ */
+function findProfileInDir(dir, name) {
+  if (!existsSync(dir)) return null;
+  for (const file of readdirSync(dir)) {
+    if (!file.endsWith('.router.yaml')) continue;
+    const filePath = join(dir, file);
+    try {
+      const content = parseYaml(readFileSync(filePath, 'utf8'));
+      if (content.name === name) return { filePath, content };
+    } catch {
+      // skip malformed files
+    }
+  }
+  return null;
+}
+
+/**
+ * Promote a profile from the project's profiles/ directory to the user's global profiles directory.
+ * Moves the file; does not copy.
+ *
+ * @param {string} name - Profile name
+ * @param {string} routerDir - Path to router/ directory
+ * @param {string} [globalDir] - Override for global profiles dir (default: GLOBAL_PROFILES_DIR)
+ * @returns {{ profileName: string, from: string, to: string }}
+ */
+export function promoteProfile(name, routerDir, globalDir = GLOBAL_PROFILES_DIR) {
+  // 1. Find source file in routerDir/profiles/
+  const sourceResult = findProfileInDir(join(routerDir, 'profiles'), name);
+  if (!sourceResult) {
+    throw new Error(`Profile '${name}' not found in project profiles.`);
+  }
+
+  // 2. Reject builtin profiles
+  if (sourceResult.content.builtin === true) {
+    throw new Error(`Cannot promote builtin profile '${name}'. Only user-created profiles can be promoted.`);
+  }
+
+  // 3. Check dest doesn't already exist
+  const destPath = join(globalDir, `${name}.router.yaml`);
+  if (existsSync(destPath)) {
+    throw new Error(`Profile '${name}' already exists in global profiles.`);
+  }
+
+  // 4. Write to global dir
+  mkdirSync(globalDir, { recursive: true });
+  copyFileSync(sourceResult.filePath, destPath);
+
+  // 5. Delete from project
+  unlinkSync(sourceResult.filePath);
+
+  return { profileName: name, from: sourceResult.filePath, to: destPath };
+}
+
+/**
+ * Demote a profile from the user's global profiles directory back to the project's profiles/ directory.
+ * Moves the file; does not copy.
+ *
+ * @param {string} name - Profile name
+ * @param {string} routerDir - Path to router/ directory
+ * @param {string} [globalDir] - Override for global profiles dir (default: GLOBAL_PROFILES_DIR)
+ * @returns {{ profileName: string, from: string, to: string }}
+ */
+export function demoteProfile(name, routerDir, globalDir = GLOBAL_PROFILES_DIR) {
+  // 1. Find in global dir
+  const sourceResult = findProfileInDir(globalDir, name);
+  if (!sourceResult) {
+    throw new Error(`Profile '${name}' not found in global profiles (~/.config/gsr/profiles/).`);
+  }
+
+  // 2. Check dest doesn't conflict
+  const destPath = join(routerDir, 'profiles', `${name}.router.yaml`);
+  if (existsSync(destPath)) {
+    throw new Error(`Profile '${name}' already exists in project profiles.`);
+  }
+
+  // 3. Write to project
+  mkdirSync(join(routerDir, 'profiles'), { recursive: true });
+  copyFileSync(sourceResult.filePath, destPath);
+
+  // 4. Delete from global
+  unlinkSync(sourceResult.filePath);
+
+  return { profileName: name, from: sourceResult.filePath, to: destPath };
+}
 
 /**
  * Detect gentle-ai profiles from an opencode.json file.

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { homedir } from 'node:os';
 import { parseYaml } from './router.js';
 import { appendTuiDebug } from '../debug/tui-debug-log.js';
 
@@ -8,6 +9,9 @@ import { appendTuiDebug } from '../debug/tui-debug-log.js';
 const __pluginDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PLUGIN_PROFILES_DIR = path.join(__pluginDir, 'router', 'profiles');
 const PLUGIN_CATALOGS_DIR = path.join(__pluginDir, 'router', 'catalogs');
+
+/** User's promoted global profiles directory (~/.config/gsr/profiles/). */
+const USER_GLOBAL_PROFILES_DIR = path.join(homedir(), '.config', 'gsr', 'profiles');
 
 const EXECUTION_HINT_FIELDS = new Set([
   'execute',
@@ -337,13 +341,23 @@ export function loadV4Profiles(routerDir, options = {}) {
   //    Do NOT deduplicate here — assembleV4Config detects intra-project duplicates.
   _loadProfilesFromDir(projectProfilesDir, results, null);
 
-  // 2. Load plugin global profiles (only those NOT already loaded from project)
+  // 2. Load user's promoted global profiles (~/.config/gsr/profiles/) AFTER project, BEFORE plugin built-ins
+  if (includeGlobal) {
+    const userGlobalDir = USER_GLOBAL_PROFILES_DIR;
+    if (fs.existsSync(userGlobalDir) && userGlobalDir !== projectProfilesDir) {
+      // Build skip set from already-loaded project profiles
+      const projectNames = new Set(results.map(r => r.content.name ?? r.fileName.replace('.router.yaml', '')));
+      _loadProfilesFromDir(userGlobalDir, results, projectNames, true);
+    }
+  }
+
+  // 3. Load plugin built-in profiles (only those NOT already loaded from project or user-global)
   if (includeGlobal) {
     const globalProfilesDir = PLUGIN_PROFILES_DIR;
     if (fs.existsSync(globalProfilesDir) && globalProfilesDir !== projectProfilesDir) {
-      // Build the skip set from already-loaded project profiles
-      const projectNames = new Set(results.map(r => r.content.name ?? r.fileName.replace('.router.yaml', '')));
-      _loadProfilesFromDir(globalProfilesDir, results, projectNames);
+      // Build the skip set from already-loaded project + user-global profiles
+      const alreadyLoadedNames = new Set(results.map(r => r.content.name ?? r.fileName.replace('.router.yaml', '')));
+      _loadProfilesFromDir(globalProfilesDir, results, alreadyLoadedNames);
     }
   }
 
@@ -369,8 +383,9 @@ export function loadV4Profiles(routerDir, options = {}) {
  * @param {string} profilesDir
  * @param {Array} results - accumulator array
  * @param {Set|null} skipNames - names to skip (used for global vs project deduplication). Pass null to skip no names.
+ * @param {boolean} [isUserGlobal] - if true, entries get global: true flag
  */
-function _loadProfilesFromDir(profilesDir, results, skipNames) {
+function _loadProfilesFromDir(profilesDir, results, skipNames, isUserGlobal = false) {
   const topEntries = fs.readdirSync(profilesDir);
 
   for (const entry of topEntries) {
@@ -405,6 +420,7 @@ function _loadProfilesFromDir(profilesDir, results, skipNames) {
           content,
           visible: content.visible === true,
           builtin: content.builtin === true,
+          ...(isUserGlobal ? { global: true } : {}),
         });
       }
     } else if (entry.endsWith('.router.yaml')) {
@@ -427,6 +443,7 @@ function _loadProfilesFromDir(profilesDir, results, skipNames) {
         content,
         visible: content.visible === true,
         builtin: content.builtin === true,
+        ...(isUserGlobal ? { global: true } : {}),
       });
     }
   }
