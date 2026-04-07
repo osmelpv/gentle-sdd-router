@@ -107,15 +107,21 @@ describe('local-hybrid preset — phase coverage', () => {
     });
   }
 
-  test('each phase has at least one lane with a main role (primary or judge)', () => {
-    // The verify phase conventionally uses role: judge (not primary).
-    // All other phases use role: primary. Both are valid "main" lane roles.
+  test('each phase has a model assigned (simplified schema or lane array)', () => {
+    // Phase 7: phases use simplified schema {model, fallbacks?} — no lane array required.
+    // The model field replaces the old lane.target field.
     const preset = loadPreset();
-    for (const [phaseName, lanes] of Object.entries(preset.phases)) {
-      assert.ok(Array.isArray(lanes), `Phase "${phaseName}" must be an array of lanes`);
-      assert.ok(lanes.length > 0, `Phase "${phaseName}" must have at least one lane`);
-      const hasMainRole = lanes.some((lane) => lane.role === 'primary' || lane.role === 'judge');
-      assert.ok(hasMainRole, `Phase "${phaseName}" must have a lane with role primary or judge`);
+    for (const [phaseName, phaseEntry] of Object.entries(preset.phases)) {
+      if (Array.isArray(phaseEntry)) {
+        // Old lane array format (backward compat)
+        assert.ok(phaseEntry.length > 0, `Phase "${phaseName}" must have at least one lane`);
+        const hasMainRole = phaseEntry.some((lane) => lane.role === 'primary' || lane.role === 'judge');
+        assert.ok(hasMainRole, `Phase "${phaseName}" must have a lane with role primary or judge`);
+      } else {
+        // Simplified schema
+        assert.ok(phaseEntry && typeof phaseEntry === 'object', `Phase "${phaseName}" must be an object`);
+        assert.ok(typeof phaseEntry.model === 'string' && phaseEntry.model.length > 0, `Phase "${phaseName}" must have a non-empty model`);
+      }
     }
   });
 
@@ -132,8 +138,8 @@ describe('local-hybrid preset — phase coverage', () => {
 
 describe('local-hybrid preset — model assignment strategy', () => {
   test('main lane models match the intended hybrid routing strategy', () => {
-    // Main lane = role: primary for most phases, role: judge for verify phase.
-    // The preset intentionally mixes free cloud, paid cloud, and premium choices by phase.
+    // Phase 7: profiles use simplified schema {model, fallbacks?}.
+    // The model field replaces the old lane.target.
     const preset = loadPreset();
     const EXPECTED_PREFIXES = {
       orchestrator: 'anthropic/',
@@ -147,12 +153,15 @@ describe('local-hybrid preset — model assignment strategy', () => {
       archive: 'opencode-go/',
     };
 
-    for (const [phaseName, lanes] of Object.entries(preset.phases)) {
-      const mainLane = lanes.find((lane) => lane.role === 'primary' || lane.role === 'judge');
-      assert.ok(mainLane, `Phase "${phaseName}" has no primary or judge lane`);
+    for (const [phaseName, phaseEntry] of Object.entries(preset.phases)) {
+      // Extract model: simplified schema uses .model, lane array uses lanes[0].target
+      const mainModel = Array.isArray(phaseEntry)
+        ? (phaseEntry.find((l) => l.role === 'primary' || l.role === 'judge') ?? phaseEntry[0])?.target
+        : phaseEntry?.model;
+
       assert.ok(
-        typeof mainLane.target === 'string' && mainLane.target.length > 0,
-        `Phase "${phaseName}" main lane must have a non-empty target`
+        typeof mainModel === 'string' && mainModel.length > 0,
+        `Phase "${phaseName}" must have a non-empty model/target`
       );
 
       const expectedPrefix = EXPECTED_PREFIXES[phaseName];
@@ -161,8 +170,8 @@ describe('local-hybrid preset — model assignment strategy', () => {
         `Phase "${phaseName}" must have an expected prefix defined`
       );
       assert.ok(
-        mainLane.target.startsWith(expectedPrefix),
-        `Phase "${phaseName}" main target must use ${expectedPrefix} prefix, got: ${mainLane.target}`
+        mainModel.startsWith(expectedPrefix),
+        `Phase "${phaseName}" main model must use ${expectedPrefix} prefix, got: ${mainModel}`
       );
     }
   });
@@ -171,13 +180,14 @@ describe('local-hybrid preset — model assignment strategy', () => {
     const preset = loadPreset();
     const allFallbackProviders = new Set();
 
-    for (const [_phaseName, lanes] of Object.entries(preset.phases)) {
-      const primaryLane = lanes.find((lane) => lane.role === 'primary' || lane.role === 'judge');
-      if (!primaryLane) continue;
+    for (const [_phaseName, phaseEntry] of Object.entries(preset.phases)) {
+      // Extract fallbacks: simplified schema has .fallbacks array, lane array uses lane.fallbacks
+      const fallbacks = Array.isArray(phaseEntry)
+        ? (phaseEntry.find((l) => l.role === 'primary' || l.role === 'judge') ?? phaseEntry[0])?.fallbacks
+        : phaseEntry?.fallbacks;
 
-      const fallbacks = primaryLane.fallbacks;
-      const fallbackStr = typeof fallbacks === 'string' ? fallbacks : (fallbacks ?? []).join(', ');
-      const providers = fallbackStr.split(',').map((f) => f.trim().split('/')[0]).filter(Boolean);
+      const fallbackArr = Array.isArray(fallbacks) ? fallbacks : (typeof fallbacks === 'string' ? fallbacks.split(',') : []);
+      const providers = fallbackArr.map((f) => String(f).trim().split('/')[0]).filter(Boolean);
       for (const p of providers) allFallbackProviders.add(p);
     }
 
@@ -187,14 +197,16 @@ describe('local-hybrid preset — model assignment strategy', () => {
     );
   });
 
-  test('each main lane has a fallbacks field defined', () => {
+  test('each phase has a fallbacks field defined', () => {
+    // Phase 7: simplified schema {model, fallbacks?} — fallbacks may be an array or omitted.
     const preset = loadPreset();
-    for (const [phaseName, lanes] of Object.entries(preset.phases)) {
-      const mainLane = lanes.find((lane) => lane.role === 'primary' || lane.role === 'judge');
-      assert.ok(mainLane, `Phase "${phaseName}" missing main lane`);
+    for (const [phaseName, phaseEntry] of Object.entries(preset.phases)) {
+      const fallbacks = Array.isArray(phaseEntry)
+        ? (phaseEntry.find((l) => l.role === 'primary' || l.role === 'judge') ?? phaseEntry[0])?.fallbacks
+        : phaseEntry?.fallbacks;
       assert.ok(
-        mainLane.fallbacks !== undefined,
-        `Phase "${phaseName}" main lane must have a fallbacks field`
+        fallbacks !== undefined,
+        `Phase "${phaseName}" must have a fallbacks field`
       );
     }
   });

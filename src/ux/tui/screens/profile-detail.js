@@ -10,6 +10,7 @@ import {
   readFallbackChain, readLanePrimary, getPresetPhases,
   promoteFallback, writeFallbackChain, validateModelId,
 } from '../../../core/fallback-io.js';
+import { GLOBAL_PROFILES_DIR } from '../../../core/profile-io.js';
 
 const h = React.createElement;
 
@@ -69,41 +70,71 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
     return h(Box, null, h(Text, { color: colors.subtext }, 'Loading preset...'));
   }
 
-  const activePresetName = selectedProfile || localConfig?.active_preset;
-  
+  // Resolve profile name: prefer explicit selectedProfile, fall back to first visible
+  const activePresetName = selectedProfile
+    || localConfig?.active_profile
+    || localConfig?.visibleProfiles?.[0]
+    || localConfig?.active_preset; // deprecated fallback
+
   if (!activePresetName) {
     return h(Box, { flexDirection: 'column' },
       h(Text, { bold: true, color: colors.lavender }, 'Profile Detail'),
-      h(Text, { color: colors.subtext }, 'No preset selected. Use "Presets" menu to select a preset.'),
+      h(Text, { color: colors.subtext }, 'No profile selected. Use the Profiles menu to select one.'),
     );
   }
 
-  const activeOwner = getActivePresetOwner(localConfig);
-  const catalog = localConfig?.catalogs?.[selectedCatalog || activeOwner?.catalogName || localConfig?.active_catalog || 'default'];
-  const preset = catalog?.presets?.[activePresetName];
-  const isActive = activePresetName === localConfig?.active_preset;
-
-  if (!preset) {
-    return h(Text, { color: colors.red }, `Preset '${activePresetName}' not found.`);
+  // Resolve preset content from profilesMap (new) or catalogs compat shim (legacy)
+  let preset = null;
+  if (localConfig?.profilesMap instanceof Map) {
+    preset = localConfig.profilesMap.get(activePresetName)?.content ?? null;
   }
-
-  // Build phase detail lines
-  const phaseLines = [];
-  for (const [phaseName, lanes] of Object.entries(preset.phases ?? {})) {
-    const laneArr = Array.isArray(lanes) ? lanes : [];
-    for (let i = 0; i < laneArr.length; i++) {
-      const lane = laneArr[i];
-      const role = lane.role ?? 'primary';
-      const target = lane.target ?? '(none)';
-      const fb = lane.fallbacks ? ` -> ${lane.fallbacks}` : '';
-      const ctx = lane.contextWindow ? ` [${formatCtx(lane.contextWindow)} ctx]` : '';
-      const cost = (lane.inputPerMillion != null) ? ` ($${lane.inputPerMillion}/$${lane.outputPerMillion})` : '';
-      const roleTag = laneArr.length > 1 ? `[${role}] ` : '';
-      phaseLines.push({ phase: i === 0 ? phaseName : '', text: `${roleTag}${target}${cost}${ctx}${fb}` });
+  if (!preset && localConfig?.catalogs) {
+    // compat shim fallback
+    for (const group of Object.values(localConfig.catalogs)) {
+      if (group?.presets?.[activePresetName]) { preset = group.presets[activePresetName]; break; }
     }
   }
 
-  const isVisible = preset?.hidden !== true && catalog?.enabled !== false;
+  const isActive = localConfig?.profilesMap instanceof Map
+    ? (localConfig.profilesMap.get(activePresetName)?.visible === true)
+    : (activePresetName === (localConfig?.active_profile ?? localConfig?.active_preset));
+
+  if (!preset) {
+    return h(Text, { color: colors.red }, `Profile '${activePresetName}' not found.`);
+  }
+
+  // Detect profile scope: local, global (user-promoted), or builtin
+  const profileEntry = localConfig?.profilesMap?.get(activePresetName);
+  const profileFilePath = profileEntry?.filePath ?? null;
+  const isBuiltin = profileEntry?.builtin === true;
+  const isGlobal = profileFilePath != null && profileFilePath.startsWith(GLOBAL_PROFILES_DIR);
+  const isLocal = profileFilePath != null && !isBuiltin && !isGlobal;
+
+  // Build phase detail lines — supports both simplified {model, fallbacks} and legacy lane array
+  const phaseLines = [];
+  for (const [phaseName, phaseEntry] of Object.entries(preset.phases ?? {})) {
+    if (!Array.isArray(phaseEntry) && typeof phaseEntry === 'object' && phaseEntry !== null) {
+      // Simplified schema: { model, fallbacks?: [] }
+      const model = phaseEntry.model ?? '(none)';
+      const fallbacks = Array.isArray(phaseEntry.fallbacks) ? phaseEntry.fallbacks : [];
+      const fb = fallbacks.length > 0 ? ` → ${fallbacks.join(', ')}` : '';
+      phaseLines.push({ phase: phaseName, text: `${model}${fb}` });
+    } else if (Array.isArray(phaseEntry)) {
+      // Legacy lane array
+      for (let i = 0; i < phaseEntry.length; i++) {
+        const lane = phaseEntry[i];
+        const role = lane.role ?? 'primary';
+        const target = lane.target ?? '(none)';
+        const fb = lane.fallbacks ? ` → ${lane.fallbacks}` : '';
+        const roleTag = phaseEntry.length > 1 ? `[${role}] ` : '';
+        phaseLines.push({ phase: i === 0 ? phaseName : '', text: `${roleTag}${target}${fb}` });
+      }
+    }
+  }
+
+  const isVisible = localConfig?.profilesMap instanceof Map
+    ? (localConfig.profilesMap.get(activePresetName)?.visible === true)
+    : (preset?.hidden !== true);
 
   const actions = [
     { label: 'Manage fallbacks', value: 'fallbacks', description: 'View, add, remove, or promote fallback models per phase.' },
@@ -114,6 +145,8 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
     { label: 'Rename', value: 'rename', description: 'Rename this preset.' },
     { label: 'Copy', value: 'copy', description: 'Clone this preset with a new name.' },
     { label: 'Delete', value: 'delete', description: 'Delete this preset from disk.' },
+    ...(isLocal ? [{ label: '↑ Promote to global', value: 'promote', description: 'Make available in all your projects (~/.config/gsr/profiles/).' }] : []),
+    ...(isGlobal ? [{ label: '↓ Demote to project', value: 'demote', description: 'Move back to this project only.' }] : []),
   ];
 
   // Sub-view: TextInput for copying preset with a new name
@@ -425,6 +458,32 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
             await reloadConfig();
             router.pop();
             showResult(`Preset '${activePresetName}' deleted.`);
+          } catch (err) {
+            showResult(`Error: ${err.message}`);
+          }
+          return;
+        }
+
+        if (value === 'promote') {
+          try {
+            const profileMod = await import('../../../core/profile-io.js');
+            profileMod.promoteProfile(activePresetName, routerDir);
+            await reloadConfig();
+            showResult(`Profile '${activePresetName}' promoted to global.`);
+            router.pop();
+          } catch (err) {
+            showResult(`Error: ${err.message}`);
+          }
+          return;
+        }
+
+        if (value === 'demote') {
+          try {
+            const profileMod = await import('../../../core/profile-io.js');
+            profileMod.demoteProfile(activePresetName, routerDir);
+            await reloadConfig();
+            showResult(`Profile '${activePresetName}' demoted to project.`);
+            router.pop();
           } catch (err) {
             showResult(`Error: ${err.message}`);
           }

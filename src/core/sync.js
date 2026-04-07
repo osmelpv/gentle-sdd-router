@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { createHash } from 'node:crypto';
-import { loadCustomSdds } from './sdd-catalog-io.js';
+import { loadCustomSdds } from './sdd-profile-io.js';
 
 /**
  * Find the contracts directory.
@@ -51,7 +51,7 @@ export function readContracts(contractsDir) {
 }
 
 /**
- * Read catalog-scoped role and phase contracts for a custom SDD.
+ * Read role and phase contracts for a custom SDD.
  * @param {string} catalogDir - Path to router/catalogs/<name>/
  * @param {string} [catalogsDir] - Optional path to router/catalogs/ — used to compute
  *   project-style relative paths (e.g. `catalogs/game-design/contracts/roles/director.md`).
@@ -117,7 +117,7 @@ export function generateSyncManifest(contractsDir, catalogsDir, options = {}) {
     try {
       customSdds = loadCustomSdds(catalogsDir, options);
     } catch {
-      // Non-blocking: catalog load errors don't break the sync
+      // Non-blocking: SDD load errors don't break the sync
       customSdds = [];
     }
   }

@@ -1,9 +1,10 @@
 name: claude
 sdd: agent-orchestrator
 availability: stable
+builtin: true
 complexity: medium
 debug_invoke:
-  preset: sdd-debug-mono
+  profile: gsr-sdd-debug-mono
   trigger: on_issues
   input_from: verify_output
   required_fields:
@@ -11,61 +12,37 @@ debug_invoke:
     - affected_files
     - last_change_files
     - test_baseline
+hidden: true
 phases:
   orchestrator:
-    - target: anthropic/claude-opus
-      kind: lane
-      phase: orchestrator
-      role: primary
-      fallbacks: anthropic/claude-sonnet
-      contextWindow: 200000
+    model: anthropic/claude-opus
+    fallbacks:
+      - anthropic/claude-sonnet
   explore:
-    - target: anthropic/claude-sonnet
-      kind: lane
-      phase: explore
-      role: primary
-      fallbacks: anthropic/claude-haiku
-      contextWindow: 200000
+    model: anthropic/claude-sonnet
+    fallbacks:
+      - anthropic/claude-haiku
   spec:
-    - target: anthropic/claude-opus
-      kind: lane
-      phase: spec
-      role: primary
-      fallbacks: anthropic/claude-sonnet
-      contextWindow: 200000
+    model: anthropic/claude-opus
+    fallbacks:
+      - anthropic/claude-sonnet
   design:
-    - target: anthropic/claude-opus
-      kind: lane
-      phase: design
-      role: primary
-      fallbacks: anthropic/claude-sonnet
-      contextWindow: 200000
+    model: anthropic/claude-opus
+    fallbacks:
+      - anthropic/claude-sonnet
   tasks:
-    - target: anthropic/claude-sonnet
-      kind: lane
-      phase: tasks
-      role: primary
-      fallbacks: anthropic/claude-haiku
-      contextWindow: 200000
+    model: anthropic/claude-sonnet
+    fallbacks:
+      - anthropic/claude-haiku
   apply:
-    - target: anthropic/claude-sonnet
-      kind: lane
-      phase: apply
-      role: primary
-      fallbacks: anthropic/claude-haiku
-      contextWindow: 200000
+    model: anthropic/claude-sonnet
+    fallbacks:
+      - anthropic/claude-haiku
   verify:
-    - target: anthropic/claude-opus
-      kind: lane
-      phase: verify
-      role: judge
-      fallbacks: anthropic/claude-sonnet
-      contextWindow: 200000
+    model: anthropic/claude-opus
+    fallbacks:
+      - anthropic/claude-sonnet
   archive:
-    - target: anthropic/claude-haiku
-      kind: lane
-      phase: archive
-      role: primary
-      fallbacks: anthropic/claude-sonnet
-      contextWindow: 200000
-hidden: true
+    model: anthropic/claude-haiku
+    fallbacks:
+      - anthropic/claude-sonnet

@@ -1,9 +1,10 @@
 name: multiagent
 sdd: agent-orchestrator
 availability: stable
+builtin: true
 complexity: high
 debug_invoke:
-  preset: sdd-debug-multi
+  profile: gsr-sdd-debug-multi
   trigger: on_issues
   input_from: verify_output
   required_fields:
@@ -11,107 +12,37 @@ debug_invoke:
     - affected_files
     - last_change_files
     - test_baseline
+hidden: true
 phases:
   orchestrator:
-    - target: anthropic/claude-opus
-      kind: lane
-      phase: orchestrator
-      role: primary
-      fallbacks: anthropic/claude-sonnet
-      contextWindow: 200000
-    - target: openai/gpt-5
-      kind: lane
-      phase: orchestrator
-      role: judge
-      fallbacks: openai/gpt
+    model: anthropic/claude-opus
+    fallbacks:
+      - anthropic/claude-sonnet
   explore:
-    - target: google/gemini-pro
-      kind: lane
-      phase: explore
-      role: primary
-      fallbacks: google/gemini-flash
-      contextWindow: 2000000
-    - target: anthropic/claude-sonnet
-      kind: lane
-      phase: explore
-      role: radar
-      fallbacks: anthropic/claude-haiku
+    model: google/gemini-pro
+    fallbacks:
+      - google/gemini-flash
   spec:
-    - target: anthropic/claude-opus
-      kind: lane
-      phase: spec
-      role: primary
-      fallbacks: anthropic/claude-sonnet
-      contextWindow: 200000
-    - target: openai/gpt-5
-      kind: lane
-      phase: spec
-      role: judge
-      fallbacks: openai/gpt
+    model: anthropic/claude-opus
+    fallbacks:
+      - anthropic/claude-sonnet
   design:
-    - target: anthropic/claude-opus
-      kind: lane
-      phase: design
-      role: primary
-      fallbacks: anthropic/claude-sonnet
-      contextWindow: 200000
-    - target: openai/gpt-5
-      kind: lane
-      phase: design
-      role: judge
-      fallbacks: openai/gpt
+    model: anthropic/claude-opus
+    fallbacks:
+      - anthropic/claude-sonnet
   tasks:
-    - target: anthropic/claude-sonnet
-      kind: lane
-      phase: tasks
-      role: primary
-      fallbacks: anthropic/claude-haiku
-      contextWindow: 200000
-    - target: openai/gpt
-      kind: lane
-      phase: tasks
-      role: secondary
-      fallbacks: openai/gpt-mini
+    model: anthropic/claude-sonnet
+    fallbacks:
+      - anthropic/claude-haiku
   apply:
-    - target: anthropic/claude-sonnet
-      kind: lane
-      phase: apply
-      role: primary
-      fallbacks: anthropic/claude-haiku
-      contextWindow: 200000
-    - target: openai/gpt-5
-      kind: lane
-      phase: apply
-      role: secondary
-      fallbacks: openai/gpt
+    model: anthropic/claude-sonnet
+    fallbacks:
+      - anthropic/claude-haiku
   verify:
-    - target: anthropic/claude-sonnet
-      kind: lane
-      phase: verify
-      role: primary
-      fallbacks: anthropic/claude-haiku
-      contextWindow: 200000
-    - target: openai/gpt-5
-      kind: lane
-      phase: verify
-      role: judge
-      fallbacks: openai/o3
-      contextWindow: 1000000
-    - target: anthropic/claude-opus
-      kind: lane
-      phase: verify
-      role: radar
-      fallbacks: anthropic/claude-sonnet
+    model: anthropic/claude-sonnet
+    fallbacks:
+      - anthropic/claude-haiku
   archive:
-    - target: google/gemini-flash
-      kind: lane
-      phase: archive
-      role: primary
-      fallbacks: google/gemini-flash
-      contextWindow: 1000000
-    - target: anthropic/claude-haiku
-      kind: lane
-      phase: archive
-      role: radar
-      fallbacks: anthropic/claude-sonnet
-hidden: true
+    model: google/gemini-flash
+    fallbacks:
+      - google/gemini-flash

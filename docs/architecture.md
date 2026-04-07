@@ -41,6 +41,12 @@ src/
 │   ├── unified-sync.js             # Unified sync: contracts + overlay + commands + validate
 │   ├── sdd-catalog-io.js           # Custom SDD create/read/delete in router/catalogs/
 │   ├── sdd-invocation-io.js        # Cross-SDD invocation records in .gsr/invocations/
+│   ├── tribunal-channel.js         # Tribunal debate channel (file-based I/O)
+│   ├── tribunal-io.js              # Tribunal file backend (messages, metadata, compression)
+│   ├── tribunal-context.js         # Context builders for judge/minister/radar delegation
+│   ├── watchdog-context.js         # Heartbeat/monitor context builders
+│   ├── skill-installer.js          # Auto-install skills to detected environments
+│   ├── watchdog.js                 # Filesystem heartbeat backend
 │   ├── sync.js                     # Low-level contract manifest generation (v1/v2/v3)
 │   └── migrations/
 │       ├── index.js                # Migration planner, runner, backup/restore
@@ -205,6 +211,92 @@ Custom SDDs present, no invoke → manifest version: 2
 Any phase has invoke declaration → manifest version: 3
 No custom SDDs → manifest version: 1
 ```
+
+## Tribunal Architecture
+
+The Tribunal system orchestrates structured multi-agent debate for phases that require multiple perspectives.
+
+### Communication flow
+
+```
+Orchestrator
+  |
+  +- delegates to Judge (sub-orchestrator)
+       |
+       +- sends initial prompt to each minister via file channel
+       |
+       +- Minister 1 reads .tribunal/{sdd}/{phase}/inbox-minister-1.json
+       +- Minister 2 reads .tribunal/{sdd}/{phase}/inbox-minister-2.json
+       +- Minister N reads .tribunal/{sdd}/{phase}/inbox-minister-N.json
+       |
+       +- ministers write responses to outbox-minister-{name}.json
+       |
+       +- Judge reads all outbox files, synthesizes, writes next round
+       |
+       +- Radar (optional) reads codebase, writes risk report to radar-report.json
+       |
+       +- Judge reads radar-report.json, feeds targeted questions to ministers
+       |
+       +- After max_rounds or consensus: Judge writes final decision
+```
+
+### File layout
+
+```
+.tribunal/
+  {sdd}/
+    {phase}/
+      inbox-{name}.json         # Judge -> minister messages
+      outbox-{name}.json        # Minister -> judge responses
+      radar-report.json         # Radar -> judge risk analysis
+      heartbeat-{name}.json     # Per-agent liveness signal
+      decision.json             # Final synthesized output
+```
+
+### Round protocol
+
+| Round | Who acts | What happens |
+|-------|----------|--------------|
+| 1 — Independent | All ministers | Respond without seeing each other |
+| 2 — Brainstorming | Judge + ministers | Judge formulates directed questions per dimension |
+| 3 — Comparison | Judge + ministers | Judge presents matrix; ministers evaluate each other |
+| 4 — Synthesis | Judge | Proposes combined response; ministers confirm or defend |
+| Tiebreak | Judge or user | No consensus after max_rounds: judge decides or escalates |
+
+## Watchdog Protocol
+
+Sub-agents and tribunal participants write heartbeat files on a regular schedule. The orchestrator and Judge monitor these to detect and replace dead agents.
+
+### Heartbeat flow
+
+```
+Agent writes heartbeat -> Orchestrator polls -> Stale? -> Read fallback chain -> Spawn replacement
+```
+
+### Orchestrator watchdog
+
+```
+.gsr/watchdog/
+  {taskId}.json     # { agentId, taskId, model, lastSeen, status }
+```
+
+- Written every 15-30 seconds by each sub-agent
+- Monitored by orchestrator on each polling cycle
+- Stale threshold: 90 seconds without update
+- On stale: orchestrator reads `minister_fallbacks` from preset and spawns replacement
+
+### Tribunal heartbeat
+
+```
+.tribunal/{sdd}/{phase}/
+  heartbeat-{name}.json   # { name, role, model, lastSeen }
+```
+
+- Written every 5-15 seconds by each tribunal participant (judge, ministers, radar)
+- Monitored by Judge every 10-20 seconds
+- On stale minister: Judge picks next model from `minister_fallbacks` list
+- On stale radar: Judge continues without it (radar is optional)
+- On stale judge: escalates to orchestrator (orchestrator restarts the tribunal)
 
 ## Key Design Decisions
 

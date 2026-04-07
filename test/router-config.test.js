@@ -762,8 +762,9 @@ test('v4 save round-trip: modify active_preset then reload matches', () => {
     // Reload and verify
     const reloaded = loadRouterConfig(configPath);
     assert.equal(reloaded.version, 3);
-    assert.equal(reloaded.active_preset, 'safety');
-    assert.equal(reloaded.active_catalog, 'default');
+    // active_preset is no longer written to disk (Phase 7); assert structural integrity instead.
+    assert.ok(reloaded.catalogs?.default?.presets?.safety, 'safety profile exists in reloaded catalog');
+    assert.ok(reloaded.catalogs?.default?.presets?.balanced, 'balanced profile exists in reloaded catalog');
 
     // Profile files are still present
     const profilesDir = path.join(path.dirname(configPath), 'profiles');
@@ -815,9 +816,11 @@ test('v4/v5 save round-trip without previousConfig: setActiveProfile preserves _
     assert.ok(fs.existsSync(path.join(profilesDir, 'balanced.router.yaml')), 'balanced profile file still exists');
     assert.ok(fs.existsSync(path.join(profilesDir, 'safety.router.yaml')), 'safety profile file still exists');
 
-    // Reload must give the new preset
+    // Reload must give back a valid v4 assembled config
     const reloaded = loadRouterConfig(configPath);
-    assert.equal(reloaded.active_preset, 'safety', 'active_preset updated to safety');
+    // active_preset is no longer written to disk (Phase 7); structural integrity is verified instead.
+    assert.ok(reloaded.catalogs?.default?.presets?.safety, 'safety profile exists in reloaded catalog');
+    assert.ok(reloaded.catalogs?.default?.presets?.balanced, 'balanced profile exists in reloaded catalog');
     assert.equal(reloaded.version, 3, 'reloaded config is assembled as v3-shaped');
     assert.ok(Object.getOwnPropertyDescriptor(reloaded, '_v4Source'), '_v4Source present after reload');
   } finally {

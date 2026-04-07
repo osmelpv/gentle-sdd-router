@@ -1,9 +1,10 @@
 name: premium
 sdd: agent-orchestrator
 availability: stable
+builtin: true
 complexity: high
 debug_invoke:
-  preset: sdd-debug-mono
+  profile: gsr-sdd-debug-mono
   trigger: on_issues
   input_from: verify_output
   required_fields:
@@ -16,56 +17,56 @@ identity:
   persona: gentleman
 phases:
   orchestrator:
-    - target: anthropic/claude-sonnet-4-6
-      kind: lane
-      phase: orchestrator
-      role: primary
-      fallbacks: openai/gpt-5.3-instant, mistral/mistral-large-3, opencode-go/glm-5
+    model: anthropic/claude-sonnet-4-6
+    fallbacks:
+      - openai/gpt-5.3-instant
+      - mistral/mistral-large-3
+      - opencode-go/glm-5
   explore:
-    - target: opencode-go/glm-5
-      kind: lane
-      phase: explore
-      role: primary
-      fallbacks: mistral/mistral-large-3, mistral/mixtral-8x22b, opencode-go/minimax-m2.5
+    model: opencode-go/glm-5
+    fallbacks:
+      - mistral/mistral-large-3
+      - mistral/mixtral-8x22b
+      - opencode-go/minimax-m2.5
   propose:
-    - target: openai/gpt-5.4-thinking
-      kind: lane
-      phase: propose
-      role: primary
-      fallbacks: openai/gpt-5.3-instant, mistral/mistral-large-3, opencode-go/glm-5
+    model: openai/gpt-5.4-thinking
+    fallbacks:
+      - openai/gpt-5.3-instant
+      - mistral/mistral-large-3
+      - opencode-go/glm-5
   spec:
-    - target: openai/gpt-5.3-instant
-      kind: lane
-      phase: spec
-      role: primary
-      fallbacks: mistral/devstral-medium, opencode-go/glm-5, mistral/mistral-medium-3.1
+    model: openai/gpt-5.3-instant
+    fallbacks:
+      - mistral/devstral-medium
+      - opencode-go/glm-5
+      - mistral/mistral-medium-3.1
   design:
-    - target: google/gemini-3.1-pro
-      kind: lane
-      phase: design
-      role: primary
-      fallbacks: opencode-go/kimi-k2.5, mistral/pixtral-large-latest, openai/gpt-5.4-thinking
+    model: google/gemini-3.1-pro
+    fallbacks:
+      - opencode-go/kimi-k2.5
+      - mistral/pixtral-large-latest
+      - openai/gpt-5.4-thinking
   tasks:
-    - target: google/gemini-3-flash
-      kind: lane
-      phase: tasks
-      role: primary
-      fallbacks: opencode-go/minimax-m2.5, opencode-go/mimo-v2-pro, mistral/mistral-nemo
+    model: google/gemini-3-flash
+    fallbacks:
+      - opencode-go/minimax-m2.5
+      - opencode-go/mimo-v2-pro
+      - mistral/mistral-nemo
   apply:
-    - target: mistral/codestral-latest
-      kind: lane
-      phase: apply
-      role: primary
-      fallbacks: mistral/devstral-2-latest, openai/gpt-5.3-instant, opencode-go/kimi-k2.5
+    model: mistral/codestral-latest
+    fallbacks:
+      - mistral/devstral-2-latest
+      - openai/gpt-5.3-instant
+      - opencode-go/kimi-k2.5
   verify:
-    - target: openai/gpt-5.4-thinking
-      kind: lane
-      phase: verify
-      role: judge
-      fallbacks: openai/gpt-5.3-instant, mistral/codestral-latest, mistral/mistral-large-3
+    model: openai/gpt-5.4-thinking
+    fallbacks:
+      - openai/gpt-5.3-instant
+      - mistral/codestral-latest
+      - mistral/mistral-large-3
   archive:
-    - target: opencode-go/mimo-v2-omni
-      kind: lane
-      phase: archive
-      role: primary
-      fallbacks: opencode-go/big-pickle, opencode/opencode-zen, mistral/mistral-nemo
+    model: opencode-go/mimo-v2-omni
+    fallbacks:
+      - opencode-go/big-pickle
+      - opencode/opencode-zen
+      - mistral/mistral-nemo

@@ -4,7 +4,7 @@ import { findPresetOwner } from './public-preset-metadata.js';
 /**
  * Standard SDD phases. These are the conventional phase names used by
  * gentle-ai and the built-in presets. Custom phases beyond this set
- * are fully supported by the schema — catalogs/presets can define any
+ * are fully supported by the schema — SDD groups/profiles can define any
  * phase name as a routing key.
  */
 const CANONICAL_PHASES = [
@@ -22,35 +22,35 @@ export function setActiveProfile(config, profileName) {
   // v4 assembled configs have version: 3 after assembly, so the v3 path below handles them.
   if (config.version === 3) {
     const requested = profileName.trim();
-    const [catalogNameFromSelector, presetNameFromSelector] = requested.includes('/')
+    const [sddNameFromSelector, presetNameFromSelector] = requested.includes('/')
       ? requested.split('/', 2)
       : [null, requested];
 
-    let catalogName = catalogNameFromSelector?.trim() || null;
+    let sddName = sddNameFromSelector?.trim() || null;
     const presetName = presetNameFromSelector?.trim();
 
     if (!presetName) {
       throw new Error(`Preset "${profileName}" does not exist.`);
     }
 
-    if (catalogName) {
-      if (!config.catalogs?.[catalogName]) {
-        throw new Error(`Source "${catalogName}" does not exist.`);
+    if (sddName) {
+      if (!config.catalogs?.[sddName]) {
+        throw new Error(`Source "${sddName}" does not exist.`);
       }
-      if (!config.catalogs[catalogName].presets?.[presetName]) {
-        throw new Error(`Preset "${presetName}" does not exist in source "${catalogName}".`);
+      if (!config.catalogs[sddName].presets?.[presetName]) {
+        throw new Error(`Preset "${presetName}" does not exist in source "${sddName}".`);
       }
     } else {
       const owner = findPresetOwner(config, presetName);
       if (!owner) {
         throw new Error(`Preset "${presetName}" does not exist.`);
       }
-      catalogName = owner.catalogName;
+      sddName = owner.catalogName;
     }
 
     const newConfig = {
       ...config,
-      active_catalog: catalogName,
+      active_catalog: sddName,
       active_preset: presetName,
       active_profile: presetName,
     };
@@ -65,7 +65,7 @@ export function setActiveProfile(config, profileName) {
             ...originalSource,
             coreConfig: {
               ...(originalSource.coreConfig ?? {}),
-              active_catalog: catalogName,
+              active_catalog: sddName,
               active_preset: presetName,
             },
           }
@@ -109,18 +109,18 @@ export function setPresetMetadata(config, presetName, updates) {
     throw new Error(`Preset "${presetName}" does not exist.`);
   }
 
-  const catalogName = owner.catalogName;
-  const catalog = config.catalogs?.[catalogName];
-  const currentPreset = catalog?.presets?.[presetName];
+  const sddName = owner.catalogName;
+  const sdd = config.catalogs?.[sddName];
+  const currentPreset = sdd?.presets?.[presetName];
 
   const newConfig = {
     ...config,
     catalogs: {
       ...config.catalogs,
-      [catalogName]: {
-        ...catalog,
+      [sddName]: {
+        ...sdd,
         presets: {
-          ...catalog.presets,
+          ...sdd.presets,
           [presetName]: {
             ...currentPreset,
             ...updates,
@@ -313,7 +313,7 @@ function resolveRouterStateV3(config, controllerLabel = 'Gentleman') {
     selectedPresetName: schema.activePresetName,
     resolvedPhases: schema.resolvedPhases,
     rules: schema.selectedPreset?.metadata ?? {},
-    profiles: schema.catalogs.flatMap((catalog) => catalog.presets.map((preset) => `${catalog.name}/${preset.name}`)),
+    profiles: schema.catalogs.flatMap((sdd) => sdd.presets.map((preset) => `${sdd.name}/${preset.name}`)),
     routerSchemaContract: schema,
     compatibilityNotes: schema.compatibilityNotes,
     laneRoles: schema.laneRoles,
@@ -342,9 +342,9 @@ export function listProfiles(config) {
   if (config.version === 3) {
     const schema = normalizeRouterSchemaV3(config);
 
-    return schema.catalogs.flatMap((catalog) => catalog.presets.map((preset) => ({
-      name: `${catalog.name}/${preset.name}`,
-      active: catalog.name === schema.activeCatalogName && preset.name === schema.activePresetName,
+    return schema.catalogs.flatMap((sdd) => sdd.presets.map((preset) => ({
+      name: `${sdd.name}/${preset.name}`,
+      active: sdd.name === schema.activeCatalogName && preset.name === schema.activePresetName,
       phases: preset.phases.map((phase) => phase.name),
     })));
   }

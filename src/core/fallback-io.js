@@ -86,6 +86,57 @@ function writeProfileFile(filePath, content) {
   fs.renameSync(tempPath, filePath);
 }
 
+// ─── Schema helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Detect phase schema format and return a normalized { primary, fallbacks } view.
+ *
+ * Supports both schemas:
+ *   - Simplified (v5+): { model: string, fallbacks?: string[] }
+ *   - Legacy lane array (v3/v4): [{ target, kind, role, fallbacks, ... }]
+ *
+ * @param {object|Array} phaseEntry - raw value from content.phases[phaseName]
+ * @param {number} [laneIndex=0] - only used for lane array format
+ * @returns {{ primary: string, fallbacks: string[], isSimplified: boolean } | null}
+ */
+function resolvePhaseEntry(phaseEntry, laneIndex = 0) {
+  if (!phaseEntry) return null;
+
+  // New simplified format: { model, fallbacks?: [] }
+  if (!Array.isArray(phaseEntry) && typeof phaseEntry === 'object' && 'model' in phaseEntry) {
+    const rawFallbacks = phaseEntry.fallbacks ?? [];
+    // Normalize: handle string, array-of-strings, or array-with-CSV-items (from migration 001)
+    let fallbacks;
+    if (typeof rawFallbacks === 'string') {
+      fallbacks = rawFallbacks.trim() ? rawFallbacks.split(',').map((f) => f.trim()).filter(Boolean) : [];
+    } else if (Array.isArray(rawFallbacks)) {
+      // Each item may itself be a CSV string (artifact of migration 001)
+      fallbacks = rawFallbacks.flatMap((item) =>
+        typeof item === 'string' && item.includes(',')
+          ? item.split(',').map((f) => f.trim()).filter(Boolean)
+          : [item].filter(Boolean)
+      );
+    } else {
+      fallbacks = [];
+    }
+    return { primary: phaseEntry.model ?? '', fallbacks, isSimplified: true };
+  }
+
+  // Legacy lane array format: [{target, kind, role, fallbacks}]
+  if (Array.isArray(phaseEntry)) {
+    const lane = phaseEntry[laneIndex] ?? phaseEntry[0];
+    if (!lane) return null;
+    const normalized = normalizeFallbacks(lane.fallbacks ?? []);
+    return {
+      primary: lane.target ?? '',
+      fallbacks: normalized.map((item) => item.model),
+      isSimplified: false,
+    };
+  }
+
+  return null;
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -101,10 +152,9 @@ export function readLanePrimary(configPath, presetName, phaseName, laneIndex = 0
   const routerDir = path.dirname(configPath);
   const result = findProfileFile(routerDir, presetName);
   if (!result) return '';
-  const lanes = result.content.phases?.[phaseName];
-  if (!Array.isArray(lanes)) return '';
-  const lane = lanes[laneIndex];
-  return lane?.target ?? '';
+  const phaseEntry = result.content.phases?.[phaseName];
+  const resolved = resolvePhaseEntry(phaseEntry, laneIndex);
+  return resolved?.primary ?? '';
 }
 
 export function readFallbackChain(configPath, presetName, phaseName, laneIndex = 0) {
@@ -115,17 +165,16 @@ export function readFallbackChain(configPath, presetName, phaseName, laneIndex =
   }
 
   const { content } = result;
-  const lanes = content.phases?.[phaseName];
-  if (!lanes) {
+  const phaseEntry = content.phases?.[phaseName];
+  if (!phaseEntry) {
     throw new Error(`Phase '${phaseName}' not found in preset '${presetName}'.`);
   }
-  if (!Array.isArray(lanes)) {
-    throw new Error(`Phase '${phaseName}' in preset '${presetName}' is not a lane array.`);
-  }
 
-  const lane = resolveLane(lanes, laneIndex, phaseName);
-  const normalized = normalizeFallbacks(lane.fallbacks ?? []);
-  return normalized.map((item) => item.model);
+  const resolved = resolvePhaseEntry(phaseEntry, laneIndex);
+  if (!resolved) {
+    throw new Error(`Phase '${phaseName}' in preset '${presetName}' has unrecognized format.`);
+  }
+  return resolved.fallbacks;
 }
 
 /**
@@ -146,26 +195,40 @@ export async function writeFallbackChain(configPath, presetName, phaseName, lane
   }
 
   const { filePath, content } = result;
-  const lanes = content.phases?.[phaseName];
-  if (!lanes || !Array.isArray(lanes)) {
+  const phaseEntry = content.phases?.[phaseName];
+  if (!phaseEntry) {
     throw new Error(`Phase '${phaseName}' not found in preset '${presetName}'.`);
   }
 
-  resolveLane(lanes, laneIndex, phaseName); // validate index
+  const resolved = resolvePhaseEntry(phaseEntry, laneIndex);
+  if (!resolved) {
+    throw new Error(`Phase '${phaseName}' in preset '${presetName}' has unrecognized format.`);
+  }
 
-  // Write as CSV string (readable, compact)
-  const newLanes = lanes.map((lane, idx) => {
-    if (idx !== laneIndex) return lane;
-    const updated = { ...lane };
-    if (newChain.length === 0) {
-      delete updated.fallbacks;
-    } else {
-      updated.fallbacks = newChain.join(', ');
-    }
-    return updated;
-  });
+  let newPhaseEntry;
+  if (resolved.isSimplified) {
+    // Simplified format: update {model, fallbacks}
+    newPhaseEntry = {
+      ...phaseEntry,
+      fallbacks: newChain.length > 0 ? newChain : [],
+    };
+  } else {
+    // Legacy lane array: update the specific lane
+    const lanes = phaseEntry;
+    resolveLane(lanes, laneIndex, phaseName); // validate index
+    newPhaseEntry = lanes.map((lane, idx) => {
+      if (idx !== laneIndex) return lane;
+      const updated = { ...lane };
+      if (newChain.length === 0) {
+        delete updated.fallbacks;
+      } else {
+        updated.fallbacks = newChain.join(', ');
+      }
+      return updated;
+    });
+  }
 
-  const newContent = { ...content, phases: { ...content.phases, [phaseName]: newLanes } };
+  const newContent = { ...content, phases: { ...content.phases, [phaseName]: newPhaseEntry } };
   writeProfileFile(filePath, newContent);
 
   // Trigger unifiedSync (non-blocking: warn but don't fail)
@@ -264,25 +327,24 @@ export async function promoteFallback(configPath, presetName, phaseName, laneInd
 
   const { filePath, content } = result;
 
-  // 2. Find the lane (phaseName + laneIndex)
-  const lanes = content.phases?.[phaseName];
-  if (!lanes) {
+  // 2. Find the phase entry (supports both simplified and lane array format)
+  const phaseEntry = content.phases?.[phaseName];
+  if (!phaseEntry) {
     throw new Error(`Phase '${phaseName}' not found in preset '${presetName}'.`);
   }
-  if (!Array.isArray(lanes)) {
-    throw new Error(`Phase '${phaseName}' in preset '${presetName}' is not a lane array.`);
+
+  const resolved = resolvePhaseEntry(phaseEntry, laneIndex);
+  if (!resolved) {
+    throw new Error(`Phase '${phaseName}' in preset '${presetName}' has unrecognized format.`);
   }
 
-  const lane = resolveLane(lanes, laneIndex, phaseName);
-
-  // 3. Get current target + normalized fallbacks array (model strings)
-  const currentTarget = lane.target;
+  // 3. Get current primary + fallbacks array (model strings)
+  const currentTarget = resolved.primary;
   if (!currentTarget) {
-    throw new Error(`Lane ${laneIndex} of phase '${phaseName}' has no target defined.`);
+    throw new Error(`Phase '${phaseName}' has no primary model defined.`);
   }
 
-  const normalized = normalizeFallbacks(lane.fallbacks ?? []);
-  const fallbacks = normalized.map((item) => item.model);
+  const fallbacks = resolved.fallbacks;
 
   // 4. Validate fallbackIndex is in range (1-based)
   if (fallbacks.length === 0) {
@@ -301,17 +363,24 @@ export async function promoteFallback(configPath, presetName, phaseName, laneInd
   // 6. newFallbacks = [currentTarget, ...fallbacks.filter((_, i) => i !== fallbackIndex - 1)]
   const newFallbacks = [currentTarget, ...fallbacks.filter((_, i) => i !== fallbackIndex - 1)];
 
-  // 7. Write back: lane.target = selectedModel, lane.fallbacks = newFallbacks.join(', ')
-  //    (serialize back to CSV string for YAML compatibility)
-  const newLanes = lanes.map((l, idx) => {
-    if (idx !== laneIndex) return l;
-    const updated = { ...l };
-    updated.target = selectedModel;
-    updated.fallbacks = newFallbacks.join(', ');
-    return updated;
-  });
+  // 7. Write back
+  let newPhaseEntry;
+  if (resolved.isSimplified) {
+    // Simplified format: update model + fallbacks
+    newPhaseEntry = { ...phaseEntry, model: selectedModel, fallbacks: newFallbacks };
+  } else {
+    // Legacy lane array: update the specific lane
+    const lanes = phaseEntry;
+    newPhaseEntry = lanes.map((l, idx) => {
+      if (idx !== laneIndex) return l;
+      const updated = { ...l };
+      updated.target = selectedModel;
+      updated.fallbacks = newFallbacks.join(', ');
+      return updated;
+    });
+  }
 
-  const newContent = { ...content, phases: { ...content.phases, [phaseName]: newLanes } };
+  const newContent = { ...content, phases: { ...content.phases, [phaseName]: newPhaseEntry } };
 
   // 8. Save profile file
   writeProfileFile(filePath, newContent);

@@ -1,10 +1,21 @@
 import path from 'node:path';
 import { loadRouterConfig } from '../adapters/opencode/index.js';
-import { loadCustomSdds } from './sdd-catalog-io.js';
+import { loadCustomSdds } from './sdd-profile-io.js';
 import { resolveIdentity } from './agent-identity.js';
 import { getActivePresetOwner } from './public-preset-metadata.js';
 
+/**
+ * Pick the primary lane from a phase entry (lane array OR simplified schema).
+ * Returns an object with at least a `target` field, or null if none found.
+ *
+ * - Lane array format: [{target, role, ...}] → returns the primary/judge lane
+ * - Simplified schema: {model, fallbacks?} → returns {target: model}
+ */
 function pickPrimaryLane(lanes = []) {
+  // Simplified schema: {model: string, fallbacks?: string[]}
+  if (!Array.isArray(lanes) && lanes && typeof lanes === 'object' && typeof lanes.model === 'string') {
+    return { target: lanes.model };
+  }
   if (!Array.isArray(lanes) || lanes.length === 0) return null;
   return lanes.find((lane) => lane.role === 'primary')
     ?? lanes.find((lane) => lane.role === 'judge')

@@ -1,11 +1,11 @@
 /**
- * SDD Catalog IO — CRUD and validation for custom SDD definitions
+ * SDD Profile IO — CRUD and validation for custom SDD definitions
  *
- * Catalog layout:
+ * SDD layout:
  *   router/catalogs/<name>/
  *     sdd.yaml                  — SDD definition
- *     contracts/roles/          — catalog-scoped role contracts
- *     contracts/phases/         — catalog-scoped phase contracts
+ *     contracts/roles/          — SDD-scoped role contracts
+ *     contracts/phases/         — SDD-scoped phase contracts
  *     profiles/                 — optional routing presets for this SDD
  *
  * GSR boundary: this module is report-only, non-executing.
@@ -247,16 +247,17 @@ function normalizeInvoke(raw, phaseName, filePath) {
     throw new Error(`[${filePath}] Phase '${phaseName}' invoke must be a mapping.`);
   }
 
-  // catalog is required and must be a slug
-  if (!raw.catalog || typeof raw.catalog !== 'string' || !raw.catalog.trim()) {
+  // sdd is required and must be a slug (invoke.catalog accepted as deprecated alias)
+  const invokeTarget = raw.sdd || raw.catalog;
+  if (!invokeTarget || typeof invokeTarget !== 'string' || !invokeTarget.trim()) {
     throw new Error(
-      `[${filePath}] Phase '${phaseName}' invoke.catalog is required.`
+      `[${filePath}] Phase '${phaseName}' invoke.sdd is required.`
     );
   }
-  if (!SLUG_RE.test(raw.catalog)) {
+  if (!SLUG_RE.test(invokeTarget)) {
     throw new Error(
-      `[${filePath}] Phase '${phaseName}' invoke.catalog must be a slug ` +
-      `(lowercase letters, digits, hyphens): "${raw.catalog}".`
+      `[${filePath}] Phase '${phaseName}' invoke.sdd must be a slug ` +
+      `(lowercase letters, digits, hyphens): "${invokeTarget}".`
     );
   }
 
@@ -343,9 +344,9 @@ function normalizeInvoke(raw, phaseName, filePath) {
     });
   }
 
+  const resolvedSdd = typeof raw.sdd === 'string' && raw.sdd.trim() ? raw.sdd : (raw.catalog ?? '');
   return {
-    catalog: raw.catalog,
-    sdd: typeof raw.sdd === 'string' && raw.sdd.trim() ? raw.sdd : raw.catalog,
+    sdd: resolvedSdd,
     payload_from: raw.payload_from,
     await: awaitValue,
     result_field: typeof raw.result_field === 'string' ? raw.result_field : null,
@@ -452,7 +453,7 @@ function detectCycles(phases, filePath) {
 /**
  * Load all custom SDD definitions from the catalogs directory.
  * Returns an empty array if the directory does not exist.
- * Throws if any catalog has an invalid sdd.yaml.
+ * Throws if any SDD has an invalid sdd.yaml.
  *
  * @param {string} catalogsDir - Path to router/catalogs/
  * @returns {SddDefinition[]}
@@ -545,7 +546,7 @@ export function loadCustomSdd(catalogsDir, name) {
 // ─── createCustomSdd ─────────────────────────────────────────────────────────
 
 /**
- * Scaffold a new custom SDD catalog directory with an sdd.yaml and
+ * Scaffold a new custom SDD directory with an sdd.yaml and
  * empty contracts/ subdirectories.
  *
  * @param {string} catalogsDir - Path to router/catalogs/
@@ -602,7 +603,7 @@ export function createCustomSdd(catalogsDir, name, description) {
 // ─── deleteCustomSdd ─────────────────────────────────────────────────────────
 
 /**
- * Delete a custom SDD catalog directory and all its contents.
+ * Delete a custom SDD directory and all its contents.
  *
  * @param {string} catalogsDir - Path to router/catalogs/
  * @param {string} name - SDD name to delete
@@ -631,7 +632,7 @@ export function deleteCustomSdd(catalogsDir, name) {
  * Only creates the file if it does not already exist (never overwrites).
  *
  * @param {string} catalogsDir - Path to router/catalogs/
- * @param {string} sddName - SDD catalog name
+ * @param {string} sddName - SDD name
  * @param {string} phaseName - Phase name
  * @param {{ intent?: string, agents?: number, judge?: boolean, radar?: boolean, input?: string, output?: string }} phaseConfig - Phase configuration
  * @returns {{ created: boolean, path: string }}
@@ -702,11 +703,11 @@ ${outputContract}
  * GSR boundary: invoke fields are stored as plain data — never evaluated.
  *
  * @param {string} catalogsDir - Path to router/catalogs/
- * @param {string} sddName - SDD catalog name (slug)
+ * @param {string} sddName - SDD name (slug)
  * @param {string} phaseName - Phase to add invoke to
  * @param {object} invokeConfig - Invoke configuration object
- * @param {string} invokeConfig.catalog - Target catalog slug (required)
- * @param {string} [invokeConfig.sdd] - Target SDD slug (defaults to catalog)
+ * @param {string} invokeConfig.sdd - Target SDD slug (required; invoke.catalog accepted as deprecated alias)
+ * @param {string} [invokeConfig.catalog] - Deprecated alias for invokeConfig.sdd
  * @param {string} [invokeConfig.trigger] - Trigger mode: on_issues | always | never | manual
  * @param {string} [invokeConfig.input_from] - Where to read input from
  * @param {string[]} [invokeConfig.required_fields] - Required field names
@@ -719,15 +720,20 @@ export function addPhaseInvoke(catalogsDir, sddName, phaseName, invokeConfig) {
     throw new Error(`SDD '${sddName}' not found at ${join(catalogsDir, sddName)}.`);
   }
 
-  // Validate invoke config
-  const { catalog, sdd: sddSlug, trigger, input_from, required_fields } = invokeConfig ?? {};
+  // Validate invoke config.
+  // NEW API: invokeConfig.sdd = target SDD to invoke (canonical)
+  // DEPRECATED API: invokeConfig.catalog = target SDD (old name); invokeConfig.sdd = sub-SDD override (ignored now)
+  // When called via runPhaseInvoke, catalog=first-part, sdd=second-part of --target <catalog>/<sdd>
+  // → treat catalog (first part) as the authoritative SDD target, ignore sdd override.
+  const { catalog: catalogAlias, sdd: sddSlug, trigger, input_from, required_fields } = invokeConfig ?? {};
+  const catalog = sddSlug || catalogAlias;  // sddSlug (dispatched SDD target) wins; fall back to catalogAlias
 
   if (!catalog || typeof catalog !== 'string' || !catalog.trim()) {
-    throw new Error(`addPhaseInvoke: invoke.catalog is required.`);
+    throw new Error(`addPhaseInvoke: invoke.sdd is required.`);
   }
   if (!SLUG_RE.test(catalog)) {
     throw new Error(
-      `addPhaseInvoke: invoke.catalog must be a slug (lowercase letters, digits, hyphens): "${catalog}".`
+      `addPhaseInvoke: invoke.sdd must be a slug (lowercase letters, digits, hyphens): "${catalog}".`
     );
   }
 
@@ -760,8 +766,7 @@ export function addPhaseInvoke(catalogsDir, sddName, phaseName, invokeConfig) {
   const payloadFrom = invokeConfig.payload_from ?? 'output';
 
   const invokeBlock = {
-    catalog: catalog.trim(),
-    sdd: sddSlug && sddSlug.trim() ? sddSlug.trim() : catalog.trim(),
+    sdd: catalog.trim(),
     payload_from: VALID_PAYLOAD_FROM_VALUES.has(payloadFrom) ? payloadFrom : 'output',
   };
 
@@ -802,7 +807,7 @@ export function addPhaseInvoke(catalogsDir, sddName, phaseName, invokeConfig) {
  *
  * @param {string} type - 'roles' or 'phases'
  * @param {string} name - Contract name (without .md)
- * @param {string} sddName - SDD catalog name
+ * @param {string} sddName - SDD name
  * @param {string} catalogsDir - Path to router/catalogs/
  * @param {string} globalContractsDir - Path to router/contracts/
  * @returns {{ content: string, checksum: string, source: string } | null}
@@ -913,11 +918,11 @@ export function validateSddFull(catalogsDir, name) {
   for (const [phaseName, phase] of Object.entries(sdd.phases)) {
     if (!phase.invoke) continue;
 
-    const targetCatalog = phase.invoke.catalog;
-    const targetCatalogDir = join(catalogsDir, targetCatalog);
+    const targetSdd = phase.invoke.sdd ?? phase.invoke.catalog;
+    const targetCatalogDir = join(catalogsDir, targetSdd);
     if (!existsSync(targetCatalogDir)) {
       invokeWarnings.push(
-        `Phase '${phaseName}' invokes catalog '${targetCatalog}' which does not exist in router/catalogs/`
+        `Phase '${phaseName}' invokes SDD '${targetSdd}' which does not exist in router/catalogs/`
       );
     } else {
       validInvokes++;
@@ -981,8 +986,7 @@ export function listDeclaredInvocations(catalogsDir, sddName) {
 
     const entry = {
       phase: phaseName,
-      catalog: phase.invoke.catalog,
-      sdd: phase.invoke.sdd,
+      sdd: phase.invoke.sdd ?? phase.invoke.catalog,
       await: phase.invoke.await,
       on_failure: phase.invoke.on_failure,
     };

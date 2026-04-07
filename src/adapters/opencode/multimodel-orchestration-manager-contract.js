@@ -77,7 +77,7 @@ function normalizeSchemaFacts(source) {
 
 function createDefaultBrowseProjection(schemaFacts) {
   return createMultimodelBrowseContract(schemaFacts, {
-    catalog: schemaFacts.activeCatalogName,
+    catalog: schemaFacts.activeCatalogName,  // 'catalog' key required by multimodel selector API
     preset: schemaFacts.activePresetName,
   });
 }
@@ -92,18 +92,18 @@ function createDefaultCompareProjection(schemaFacts, browseProjection) {
 }
 
 function selectComparisonSelector(schemaFacts, browseProjection) {
-  const selectedCatalog = schemaFacts.catalogs?.find((catalog) => catalog.name === browseProjection?.catalog?.name)
+  const selectedSdd = schemaFacts.catalogs?.find((sdd) => sdd.name === browseProjection?.catalog?.name)
     ?? schemaFacts.selectedCatalog
     ?? schemaFacts.catalogs?.[0]
     ?? null;
   const selectedPresetName = browseProjection?.preset?.name ?? schemaFacts.activePresetName ?? schemaFacts.selectedPreset?.name ?? null;
-  const alternatives = selectedCatalog?.presets?.filter((preset) => preset.name !== selectedPresetName) ?? [];
+  const alternatives = selectedSdd?.presets?.filter((preset) => preset.name !== selectedPresetName) ?? [];
 
   if (alternatives.length === 0) {
     return null;
   }
 
-  return buildSelectorText(selectedCatalog.name, alternatives[0].name);
+  return buildSelectorText(selectedSdd.name, alternatives[0].name);
 }
 
 function collectPhasePlans(schemaFacts, compareProjection, planId) {
@@ -125,7 +125,7 @@ function collectPhasePlans(schemaFacts, compareProjection, planId) {
       kind: 'split-unit',
       splitId,
       phase: phaseName,
-      subject: `${schemaFacts.activeCatalogName ?? 'catalog'}/${schemaFacts.activePresetName ?? 'preset'}:${phaseName}`,
+      subject: `${schemaFacts.activeCatalogName ?? 'sdd'}/${schemaFacts.activePresetName ?? 'preset'}:${phaseName}`,
       dependencyRefs: index > 0 && !phaseParallelSafe ? [`${planId}:split:${index}:${phaseEntries[index - 1][0]}`] : [],
       dispatchRefs: [],
       laneRoles: Array.from(phaseRoles),
@@ -415,12 +415,12 @@ function laneRoleRank(role) {
   return 5;
 }
 
-function buildSelectorText(catalogName, presetName) {
-  if (catalogName && presetName) {
-    return `${catalogName}/${presetName}`;
+function buildSelectorText(sddName, presetName) {
+  if (sddName && presetName) {
+    return `${sddName}/${presetName}`;
   }
 
-  return catalogName ?? presetName ?? null;
+  return sddName ?? presetName ?? null;
 }
 
 function collectLabels(entry) {

@@ -109,7 +109,7 @@ export function SddListScreen({
             try {
               const pathMod = await import('node:path');
               const fsMod = await import('node:fs');
-              const { deleteCustomSdd } = await import('../../../core/sdd-catalog-io.js');
+              const { deleteCustomSdd } = await import('../../../core/sdd-profile-io.js');
               const catalogsDir = pathMod.join(pathMod.dirname(configPath), 'catalogs');
               
               deleteCustomSdd(catalogsDir, selectedSddName);
@@ -159,7 +159,7 @@ export function SddListScreen({
         
         try {
           const pathMod = await import('node:path');
-          const { deleteCustomSdd } = await import('../../../core/sdd-catalog-io.js');
+          const { deleteCustomSdd } = await import('../../../core/sdd-profile-io.js');
           const catalogsDir = pathMod.join(pathMod.dirname(configPath), 'catalogs');
           
           deleteCustomSdd(catalogsDir, value);

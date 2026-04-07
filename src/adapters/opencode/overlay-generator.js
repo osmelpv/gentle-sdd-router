@@ -6,6 +6,28 @@ import { resolvePersona } from '../../core/controller.js';
 import { resolveIdentity } from '../../core/agent-identity.js';
 import { normalizeFallbacks } from '../../core/router-v4-io.js';
 
+// ── Skill Content Loader ───────────────────────────────────────────────────────
+
+/**
+ * Load skill content from router/skills/{skillName}.md.
+ * Returns a fallback instruction string when the file is not found.
+ *
+ * @param {string} skillName - Skill name without extension (e.g. 'tribunal-judge')
+ * @returns {string}
+ */
+function loadSkillContent(skillName) {
+  try {
+    const moduleDir = dirname(fileURLToPath(import.meta.url));
+    const skillPath = resolve(moduleDir, '..', '..', '..', 'router', 'skills', `${skillName}.md`);
+    if (existsSync(skillPath)) {
+      return readFileSync(skillPath, 'utf8').trim();
+    }
+  } catch {
+    // graceful degradation
+  }
+  return `Load the ${skillName} skill for instructions.`;
+}
+
 const OPENCODE_CONFIG_PATH = join(homedir(), '.config', 'opencode', 'opencode.json');
 
 // ── Fallback Protocol ─────────────────────────────────────────────────────────
@@ -90,6 +112,10 @@ export function mapPermissions(permissions) {
  * Extract the orchestrator primary lane target model from a preset.
  * Returns null if no orchestrator phase is present.
  *
+ * Handles both:
+ *   - Simplified schema: phases.orchestrator = { model: 'anthropic/...', fallbacks?: [...] }
+ *   - Lane array schema: phases.orchestrator = [{ target: 'anthropic/...', kind: 'lane', ... }]
+ *
  * @param {object} preset - A preset from the assembled config (catalogs[name].presets[name])
  * @returns {string|null}
  */
@@ -100,7 +126,12 @@ function getOrchestratorTarget(preset) {
   const orchestrator = phases.orchestrator;
   if (!orchestrator) return null;
 
-  // Phases in assembled (non-normalized) config are arrays of lane objects.
+  // Simplified schema: { model: '...', fallbacks?: [...] }
+  if (!Array.isArray(orchestrator) && typeof orchestrator === 'object' && typeof orchestrator.model === 'string') {
+    return orchestrator.model;
+  }
+
+  // Lane array schema: [{ target: '...', kind: 'lane', ... }]
   if (Array.isArray(orchestrator) && orchestrator.length > 0) {
     return orchestrator[0].target ?? null;
   }
@@ -110,8 +141,15 @@ function getOrchestratorTarget(preset) {
 
 /**
  * Generate OpenCode overlay from a loaded (assembled) router config.
- * Each preset that has an orchestrator phase becomes a gsr-{name} agent entry.
- * Presets without an orchestrator phase are skipped with a warning.
+ *
+ * When `config.profilesMap` is present (v4-assembled config):
+ *   Only profiles with `visible === true` in profilesMap generate a gsr-{name} agent entry.
+ *   Profiles with visible: false (or absent) are silently skipped.
+ *
+ * When `config.profilesMap` is absent (v3 config or test fixtures):
+ *   Falls back to old behavior — iterates over catalogs, skipping disabled catalogs.
+ *
+ * Presets without an orchestrator phase are skipped with a warning (both modes).
  *
  * Each generated entry includes:
  *   - prompt: resolved identity prompt (via resolveIdentity fallback chain)
@@ -132,21 +170,210 @@ export function generateOpenCodeOverlay(config, options = {}) {
   // Router-level identity overrides: config.identity.overrides.<agentName>
   const routerOverrides = config?.identity?.overrides ?? {};
 
-  for (const [catalogName, catalog] of Object.entries(catalogs)) {
-    // Only include presets from enabled catalogs in the overlay
-    if (catalog.enabled === false) {
-      continue;
-    }
-    const presets = catalog.presets ?? {};
+  // ── Determine iteration mode ────────────────────────────────────────────────
+  // v4-assembled config has profilesMap (Map<name, {visible, builtin, content}>).
+  // When present, use visible flag as the gate. When absent, fall back to SDD-enabled gate.
 
-    for (const [presetName, preset] of Object.entries(presets)) {
+  const hasProfilesMap = config.profilesMap instanceof Map;
+
+  if (hasProfilesMap) {
+    // v4 mode: iterate over profiles that have visible === true
+    const profilesMap = config.profilesMap;
+
+    for (const [profileName, profileEntry] of profilesMap.entries()) {
+      if (profileEntry.visible !== true) continue; // skip non-visible profiles
+
+      // Fetch preset data from SDD groups (where phase data lives after assembly)
+      let preset = null;
+      for (const sdd of Object.values(catalogs)) {
+        if (sdd.presets?.[profileName]) {
+          preset = sdd.presets[profileName];
+          break;
+        }
+      }
+      // Fallback: use profileEntry.content directly (simplified schema)
+      if (!preset) {
+        preset = profileEntry.content ?? {};
+        // Strip the 'name' field if present (it's not part of the preset spec)
+        if (preset.name) {
+          const { name: _n, ...rest } = preset;
+          preset = rest;
+        }
+      }
+
+      const presetName = profileName;
+      buildAgentEntry(presetName, preset, agents, warnings, persona, cwd, routerOverrides);
+    }
+  } else {
+    // v3 / fallback mode: iterate over SDD groups with enabled-flag gate
+    for (const [sddName, sdd] of Object.entries(catalogs)) {
+      // Only include presets from enabled SDD groups in the overlay
+      if (sdd.enabled === false) {
+        continue;
+      }
+      const presets = sdd.presets ?? {};
+
+      for (const [presetName, preset] of Object.entries(presets)) {
+        buildAgentEntry(presetName, preset, agents, warnings, persona, cwd, routerOverrides);
+      }
+    }
+  }
+
+  return { agent: agents, warnings };
+}
+
+/**
+ * Collect tribunal configuration from all phases of a preset.
+ *
+ * Iterates all phases looking for `tribunal.enabled === true`.
+ * Returns a normalized tribunal config:
+ *   - judge: { model } (from first enabled phase that has one)
+ *   - ministers: Array<{ model }> — length = max across all enabled phases
+ *   - radar: { model, enabled } | null (from first enabled phase with radar.enabled)
+ *   - maxRounds: number (from first enabled phase, default 4)
+ *   - hasAny: boolean
+ *
+ * Design D10: profile-scoped sub-agents (not per-phase).
+ *
+ * @param {object} preset
+ * @returns {{ hasAny: boolean, judge: object|null, ministers: object[], radar: object|null, maxRounds: number }}
+ */
+function collectTribunalConfig(preset) {
+  const phases = preset.phases ?? {};
+  let judge = null;
+  let ministers = [];
+  let radar = null;
+  let maxRounds = 4;
+  let hasAny = false;
+
+  for (const phaseValue of Object.values(phases)) {
+    // Tribunal config lives in object-form phases: { lanes?, tribunal?, judge?, ministers?, radar? }
+    if (!phaseValue || Array.isArray(phaseValue) || typeof phaseValue !== 'object') continue;
+
+    const tribunal = phaseValue.tribunal;
+    if (!tribunal || tribunal.enabled !== true) continue;
+
+    hasAny = true;
+
+    // judge: first occurrence wins
+    if (!judge && phaseValue.judge && typeof phaseValue.judge.model === 'string' && phaseValue.judge.model.trim()) {
+      judge = { model: phaseValue.judge.model.trim() };
+    }
+
+    // ministers: take max count across phases
+    if (Array.isArray(phaseValue.ministers) && phaseValue.ministers.length > ministers.length) {
+      ministers = phaseValue.ministers.slice();
+    }
+
+    // radar: first enabled occurrence wins
+    if (!radar && phaseValue.radar && phaseValue.radar.enabled === true && typeof phaseValue.radar.model === 'string') {
+      radar = { model: phaseValue.radar.model.trim(), enabled: true };
+    }
+
+    // maxRounds: first enabled occurrence wins
+    if (maxRounds === 4 && tribunal.max_rounds && Number.isInteger(tribunal.max_rounds) && tribunal.max_rounds > 0) {
+      maxRounds = tribunal.max_rounds;
+    }
+  }
+
+  return { hasAny, judge, ministers, radar, maxRounds };
+}
+
+/**
+ * Build tribunal sub-agent entries (judge, ministers, radar) for a profile.
+ *
+ * Design decisions (D10 from design.md):
+ *   - Named `gsr-{profile}-judge`, `gsr-{profile}-minister-1`, `gsr-{profile}-radar`
+ *   - hidden: true — advisory agents, not for sidebar display
+ *   - tools: read-only — sub-agents are advisory, not executing
+ *   - _gsr_generated: true — unified-sync can manage these
+ *   - systemPrompt: skill content from router/skills/
+ *
+ * @param {string} profileName
+ * @param {object} tribunalConfig - Output of collectTribunalConfig()
+ * @param {object} agents - mutated in place
+ */
+function buildTribunalSubAgents(profileName, tribunalConfig, agents) {
+  const { judge, ministers, radar } = tribunalConfig;
+
+  // Per-role tool permissions:
+  //   Judge:    needs edit (metadata files), write (channel), bash (sleep/polling), delegate (ministers)
+  //   Minister: needs write (channel), bash (sleep/polling), read (channel) — no edit
+  //   Radar:    needs write (findings), bash (grep/find investigation), read (channel) — no edit
+  const TRIBUNAL_TOOLS = {
+    judge:    { read: true, edit: true,  write: true,  bash: true,  delegate: true,  delegation_read: true,  delegation_list: true },
+    minister: { read: true, edit: false, write: true,  bash: true,  delegate: false, delegation_read: false, delegation_list: false },
+    radar:    { read: true, edit: false, write: true,  bash: true,  delegate: false, delegation_read: false, delegation_list: false },
+  };
+
+  // Heartbeat reference appended to all tribunal sub-agent prompts
+  const HEARTBEAT_SKILL_REF = '\n\n## Heartbeat Protocol\nLoad the watchdog-heartbeat skill and follow the heartbeat protocol. Write heartbeats to .gsr/watchdog/ every 15-30 seconds.';
+
+  // Judge agent
+  if (judge) {
+    const judgeKey = `${GSR_AGENT_PREFIX}${profileName}-judge`;
+    agents[judgeKey] = {
+      model: judge.model,
+      description: `Tribunal judge for ${profileName}`,
+      hidden: true,
+      tools: { ...TRIBUNAL_TOOLS.judge },
+      systemPrompt: loadSkillContent('tribunal-judge') + HEARTBEAT_SKILL_REF,
+      _gsr_generated: true,
+    };
+  }
+
+  // Minister agents
+  for (let i = 0; i < ministers.length; i++) {
+    const minister = ministers[i];
+    const ministerKey = `${GSR_AGENT_PREFIX}${profileName}-minister-${i + 1}`;
+    const model = (minister && typeof minister.model === 'string') ? minister.model : 'unknown/model';
+    agents[ministerKey] = {
+      model,
+      description: `Tribunal minister ${i + 1} for ${profileName}`,
+      hidden: true,
+      tools: { ...TRIBUNAL_TOOLS.minister },
+      systemPrompt: loadSkillContent('gsr-usage') + HEARTBEAT_SKILL_REF,
+      _gsr_generated: true,
+    };
+  }
+
+  // Radar agent (only when radar.enabled === true)
+  if (radar && radar.enabled === true) {
+    const radarKey = `${GSR_AGENT_PREFIX}${profileName}-radar`;
+    agents[radarKey] = {
+      model: radar.model,
+      description: `Tribunal radar for ${profileName}`,
+      hidden: true,
+      tools: { ...TRIBUNAL_TOOLS.radar },
+      systemPrompt: loadSkillContent('tribunal-radar') + HEARTBEAT_SKILL_REF,
+      _gsr_generated: true,
+    };
+  }
+}
+
+/**
+ * Build one agent entry for a given preset and push it into `agents` (or `warnings` if invalid).
+ *
+ * Handles both:
+ *   - Simplified schema: phases[name] = { model: '...', fallbacks?: [...] }
+ *   - Lane array schema: phases[name] = [{ target: '...', kind: 'lane', ... }]
+ *
+ * @param {string} presetName
+ * @param {object} preset
+ * @param {object} agents - mutated in place
+ * @param {string[]} warnings - mutated in place
+ * @param {string} persona
+ * @param {string} cwd
+ * @param {object} routerOverrides
+ */
+function buildAgentEntry(presetName, preset, agents, warnings, persona, cwd, routerOverrides) {
       const orchestratorTarget = getOrchestratorTarget(preset);
 
       if (!orchestratorTarget) {
         warnings.push(
           `Profile "${presetName}" has no orchestrator phase with a target — skipped from overlay.`
         );
-        continue;
+        return;
       }
 
       const agentName = `${GSR_AGENT_PREFIX}${presetName}`;
@@ -159,12 +386,21 @@ export function generateOpenCodeOverlay(config, options = {}) {
       const agentOverride = routerOverrides[agentName] ?? {};
       let resolvedPrompt = agentOverride.prompt ?? identity.prompt;
 
-      // Task 4: Build _gsr_fallbacks map keyed by phase name (preliminary pass to check if any fallbacks exist)
+      // Build _gsr_fallbacks map keyed by phase name (preliminary pass to check if any fallbacks exist)
       // We need this BEFORE the protocol injection to gate the injection
       const preCheckPhases = preset.phases ?? {};
-      const presetHasFallbacks = Object.values(preCheckPhases).some((lanes) => {
-        if (!Array.isArray(lanes) || lanes.length === 0) return false;
-        const primaryLane = lanes[0];
+      const presetHasFallbacks = Object.values(preCheckPhases).some((phaseValue) => {
+        // Simplified schema: { model, fallbacks? }
+        if (!Array.isArray(phaseValue) && typeof phaseValue === 'object' && phaseValue !== null) {
+          const rawFallbacks = phaseValue.fallbacks;
+          if (!rawFallbacks) return false;
+          if (Array.isArray(rawFallbacks)) return rawFallbacks.length > 0;
+          if (typeof rawFallbacks === 'string') return rawFallbacks.trim().length > 0;
+          return false;
+        }
+        // Lane array schema: [{ target, fallbacks?, ... }]
+        if (!Array.isArray(phaseValue) || phaseValue.length === 0) return false;
+        const primaryLane = phaseValue[0];
         if (!primaryLane || typeof primaryLane !== 'object') return false;
         const rawFallbacks = primaryLane.fallbacks;
         if (!rawFallbacks) return false;
@@ -173,7 +409,7 @@ export function generateOpenCodeOverlay(config, options = {}) {
         return false;
       });
 
-      // Task 5: Inject fallback protocol into prompt ONLY when preset has fallbacks (design D2)
+      // Inject fallback protocol into prompt ONLY when preset has fallbacks (design D2)
       if (FALLBACK_PROTOCOL_TEXT && presetHasFallbacks && !resolvedPrompt.includes('GSR Fallback Protocol')) {
         resolvedPrompt = resolvedPrompt + '\n\n' + FALLBACK_PROTOCOL_TEXT;
       }
@@ -187,15 +423,24 @@ export function generateOpenCodeOverlay(config, options = {}) {
       // Build _gsr_fallbacks map keyed by phase name.
       // Each entry is Array<{model: string, on: string[]}> — preserves on-conditions
       // for error-type-aware fallback selection by the orchestrator.
-      // Backward compat: CSV string → {model, on: ["any"]} via normalizeFallbacks().
+      // Handles both simplified schema and lane array schema.
       const gsrFallbacks = {};
       const phases = preset.phases ?? {};
-      for (const [phaseName, lanes] of Object.entries(phases)) {
-        if (!Array.isArray(lanes) || lanes.length === 0) continue;
-        const primaryLane = lanes[0];
-        if (!primaryLane || typeof primaryLane !== 'object') continue;
+      for (const [phaseName, phaseValue] of Object.entries(phases)) {
+        let rawFallbacks;
 
-        const rawFallbacks = primaryLane.fallbacks;
+        if (!Array.isArray(phaseValue) && typeof phaseValue === 'object' && phaseValue !== null) {
+          // Simplified schema: { model, fallbacks? }
+          rawFallbacks = phaseValue.fallbacks;
+        } else if (Array.isArray(phaseValue) && phaseValue.length > 0) {
+          // Lane array schema: take primary lane
+          const primaryLane = phaseValue[0];
+          if (!primaryLane || typeof primaryLane !== 'object') continue;
+          rawFallbacks = primaryLane.fallbacks;
+        } else {
+          continue;
+        }
+
         if (rawFallbacks !== undefined) {
           // normalizeFallbacks always returns Array<{model, on}> — use it as the source of truth
           const normalized = normalizeFallbacks(rawFallbacks);
@@ -224,10 +469,13 @@ export function generateOpenCodeOverlay(config, options = {}) {
       }
 
       agents[agentName] = entry;
-    }
-  }
 
-  return { agent: agents, warnings };
+      // Generate tribunal sub-agents (judge, ministers, radar) when profile has tribunal config.
+      // Design D10: profile-scoped, not per-phase. Additive — orchestrator entry unchanged.
+      const tribunalConfig = collectTribunalConfig(preset);
+      if (tribunalConfig.hasAny) {
+        buildTribunalSubAgents(presetName, tribunalConfig, agents);
+      }
 }
 
 /**

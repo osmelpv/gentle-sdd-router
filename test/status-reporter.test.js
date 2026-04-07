@@ -814,3 +814,202 @@ describe('getSimpleStatus — identity label display', () => {
     );
   });
 });
+
+// ── getUnifiedStatus — Profiles section (Phase 6) ────────────────────────────
+
+/** Config with profilesMap and visibleProfiles (v4 assembled shape) */
+const configWithProfiles = {
+  version: 3,
+  active_catalog: 'default',
+  active_sdd: 'agent-orchestrator',
+  active_preset: 'local-hybrid',
+  active_profile: 'local-hybrid',
+  activation_state: 'active',
+  catalogs: {
+    default: {
+      enabled: true,
+      sdd: 'agent-orchestrator',
+      presets: {
+        'local-hybrid': {
+          phases: {
+            orchestrator: [{ target: 'anthropic/claude-sonnet-4-6' }],
+            explore: [{ target: 'opencode/nemotron-3-super-free' }],
+          },
+        },
+        multivendor: {
+          phases: {
+            orchestrator: [{ target: 'anthropic/claude-opus' }],
+          },
+        },
+      },
+    },
+  },
+  profilesMap: new Map([
+    ['local-hybrid', {
+      filePath: 'router/profiles/local-hybrid.router.yaml',
+      catalogName: 'default',
+      sddName: 'agent-orchestrator',
+      visible: true,
+      builtin: false,
+      content: {
+        name: 'local-hybrid',
+        phases: {
+          orchestrator: [{ target: 'anthropic/claude-sonnet-4-6' }],
+          explore: [{ target: 'opencode/nemotron-3-super-free' }],
+        },
+      },
+    }],
+    ['multivendor', {
+      filePath: 'router/profiles/multivendor.router.yaml',
+      catalogName: 'default',
+      sddName: 'agent-orchestrator',
+      visible: false,
+      builtin: false,
+      content: {
+        name: 'multivendor',
+        phases: {
+          orchestrator: [{ target: 'anthropic/claude-opus' }],
+        },
+      },
+    }],
+  ]),
+  visibleProfiles: ['local-hybrid'],
+};
+
+/** Config where no profiles are visible */
+const configNoVisibleProfiles = {
+  ...configWithProfiles,
+  visibleProfiles: [],
+  profilesMap: new Map([
+    ['local-hybrid', { ...configWithProfiles.profilesMap.get('local-hybrid'), visible: false }],
+    ['multivendor', { ...configWithProfiles.profilesMap.get('multivendor'), visible: false }],
+  ]),
+};
+
+describe('getUnifiedStatus — Profiles section', () => {
+  test('includes "Profiles:" label in output', () => {
+    const result = getUnifiedStatus(configWithProfiles, { manifestExists: true });
+    assert.ok(result.includes('Profiles'), `should include Profiles label. Got:\n${result.slice(0, 800)}`);
+  });
+
+  test('shows visibleCount / totalCount format', () => {
+    const result = getUnifiedStatus(configWithProfiles, { manifestExists: true });
+    // 1 visible, 2 total
+    assert.ok(
+      result.includes('1') && result.includes('2'),
+      `should show visible/total counts. Got:\n${result.slice(0, 800)}`
+    );
+  });
+
+  test('shows visible profile name in sub-rows', () => {
+    const result = getUnifiedStatus(configWithProfiles, { manifestExists: true });
+    assert.ok(
+      result.includes('local-hybrid'),
+      `should show visible profile name. Got:\n${result.slice(0, 800)}`
+    );
+  });
+
+  test('shows orchestrator model for visible profile', () => {
+    const result = getUnifiedStatus(configWithProfiles, { manifestExists: true });
+    assert.ok(
+      result.includes('claude-sonnet-4-6') || result.includes('anthropic/claude-sonnet-4-6'),
+      `should show orchestrator model. Got:\n${result.slice(0, 800)}`
+    );
+  });
+
+  test('shows 0 visible when no profiles are visible', () => {
+    const result = getUnifiedStatus(configNoVisibleProfiles, { manifestExists: true });
+    assert.ok(
+      result.includes('0'),
+      `should show 0 visible count. Got:\n${result.slice(0, 800)}`
+    );
+  });
+
+  test('does not contain "Catalog:" label', () => {
+    const result = getUnifiedStatus(configWithProfiles, { manifestExists: true });
+    assert.ok(
+      !result.includes('Catalog:'),
+      `should NOT contain "Catalog:" label. Got:\n${result.slice(0, 800)}`
+    );
+  });
+
+  test('does not contain "active_preset" string', () => {
+    const result = getUnifiedStatus(configWithProfiles, { manifestExists: true });
+    assert.ok(
+      !result.includes('active_preset'),
+      `should NOT contain "active_preset". Got:\n${result.slice(0, 800)}`
+    );
+  });
+});
+
+// ── TRIANGULATE: 2 visible profiles ──────────────────────────────────────────
+
+describe('getUnifiedStatus — Profiles section (triangulate: 2 visible)', () => {
+  const configTwoVisible = {
+    version: 3,
+    active_catalog: 'default',
+    active_sdd: 'agent-orchestrator',
+    active_preset: 'local-hybrid',
+    active_profile: 'local-hybrid',
+    activation_state: 'active',
+    catalogs: {
+      default: {
+        enabled: true,
+        sdd: 'agent-orchestrator',
+        presets: {
+          'local-hybrid': { phases: { orchestrator: [{ target: 'anthropic/claude-sonnet-4-6' }] } },
+          multivendor: { phases: { orchestrator: [{ target: 'anthropic/claude-opus' }] } },
+          cheap: { phases: { orchestrator: [{ target: 'opencode/qwen3-free' }] } },
+        },
+      },
+    },
+    profilesMap: new Map([
+      ['local-hybrid', {
+        filePath: 'test', catalogName: 'default', sddName: 'agent-orchestrator', visible: true, builtin: false,
+        content: { name: 'local-hybrid', phases: { orchestrator: [{ target: 'anthropic/claude-sonnet-4-6' }] } },
+      }],
+      ['multivendor', {
+        filePath: 'test', catalogName: 'default', sddName: 'agent-orchestrator', visible: true, builtin: false,
+        content: { name: 'multivendor', phases: { orchestrator: [{ target: 'anthropic/claude-opus' }] } },
+      }],
+      ['cheap', {
+        filePath: 'test', catalogName: 'default', sddName: 'agent-orchestrator', visible: false, builtin: false,
+        content: { name: 'cheap', phases: { orchestrator: [{ target: 'opencode/qwen3-free' }] } },
+      }],
+    ]),
+    visibleProfiles: ['local-hybrid', 'multivendor'],
+  };
+
+  test('shows 2 visible / 3 total when 2 of 3 profiles are visible', () => {
+    const result = getUnifiedStatus(configTwoVisible, { manifestExists: true });
+    const profilesSection = result.slice(result.indexOf('PROFILES'));
+    assert.ok(
+      profilesSection.includes('2 visible / 3 total'),
+      `should show "2 visible / 3 total". Got profiles section:\n${profilesSection.slice(0, 400)}`
+    );
+  });
+
+  test('shows both visible profile names in sub-rows', () => {
+    const result = getUnifiedStatus(configTwoVisible, { manifestExists: true });
+    assert.ok(result.includes('local-hybrid'), `should include local-hybrid. Got:\n${result.slice(0, 800)}`);
+    assert.ok(result.includes('multivendor'), `should include multivendor. Got:\n${result.slice(0, 800)}`);
+  });
+
+  test('shows orchestrator model for each visible profile', () => {
+    const result = getUnifiedStatus(configTwoVisible, { manifestExists: true });
+    assert.ok(result.includes('claude-sonnet-4-6'), `should include claude-sonnet-4-6. Got:\n${result.slice(0, 800)}`);
+    assert.ok(result.includes('claude-opus'), `should include claude-opus. Got:\n${result.slice(0, 800)}`);
+  });
+
+  test('does not show hidden profile "cheap" in sub-rows (visible check mark only for visible)', () => {
+    const result = getUnifiedStatus(configTwoVisible, { manifestExists: true });
+    // The PROFILES section should not show cheap since it's not in visibleProfiles
+    const profilesSection = result.slice(result.indexOf('PROFILES'));
+    const routesStart = profilesSection.indexOf('ROUTES');
+    const profilesContent = profilesSection.slice(0, routesStart > -1 ? routesStart : undefined);
+    assert.ok(
+      !profilesContent.includes('cheap'),
+      `should NOT show hidden profile in sub-rows. Got profiles section:\n${profilesContent}`
+    );
+  });
+});

@@ -161,8 +161,8 @@ export async function deployGsrCommandsClaudeCode(commandsSourceDir, targetDir) 
   let skipped = 0;
   const errors = [];
 
-  // Catalog commands are eliminated
-  const SKIP_FILES = new Set(['gsr-catalog-disable.md', 'gsr-catalog-enable.md', 'gsr-catalog-list.md', 'gsr-catalog-use.md']);
+  // Legacy catalog commands no longer exist — skip set kept empty but preserved for safety
+  const SKIP_FILES = new Set([]);
   // Commands handled by TUI plugin slash registration → deploy as -manual
   const RENAME_MAP = { 'gsr.md': 'gsr-manual.md', 'gsr-fallback.md': 'gsr-fallback-manual.md' };
 

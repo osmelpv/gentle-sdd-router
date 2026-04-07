@@ -1,0 +1,27 @@
+name: gsr-sdd-debug-mono
+sdd: sdd-debug
+availability: stable
+identity:
+  inherit_agents_md: true
+  persona: gentleman
+phases:
+  orchestrator:
+    model: openai/gpt-5.4
+    fallbacks:
+      - anthropic/claude-sonnet-4
+      - google/gemini-2.5-pro
+  analyze-area:
+    model: openai/gpt-5.4
+    fallbacks:
+      - anthropic/claude-sonnet-4
+      - google/gemini-2.5-pro
+  implant-logs:
+    model: openai/gpt-5.4
+    fallbacks:
+      - anthropic/claude-sonnet-4
+      - google/gemini-2.5-pro
+  apply-fixes:
+    model: openai/gpt-5.4
+    fallbacks:
+      - anthropic/claude-sonnet-4
+      - google/gemini-2.5-pro

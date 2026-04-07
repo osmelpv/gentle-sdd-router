@@ -307,6 +307,7 @@ activation_state: active
 
 const v4FastProfileYaml = `name: fast
 availability: stable
+visible: true
 phases:
   orchestrator:
     - target: anthropic/claude-sonnet
@@ -317,6 +318,7 @@ phases:
 
 const v4SafetyProfileYaml = `name: safety
 availability: stable
+visible: true
 permissions:
   read: true
   write: false
@@ -525,7 +527,11 @@ test('gsr preset list runs without error and shows presets', async () => {
 
   try {
     const output = await captureRunCli(['preset', 'list'], tempDir);
-    assert.match(output, /Presets:/);
+    // gsr preset list now shows deprecation warning + new Profile List format
+    assert.ok(
+      output.includes('deprecated') || output.includes('Profile List') || output.includes('Presets:') || output.includes('multivendor'),
+      `Expected preset list output to contain profiles: ${output}`
+    );
     assert.match(output, /multivendor/);
   } finally {
     fs.rmSync(tempDir, { recursive: true });

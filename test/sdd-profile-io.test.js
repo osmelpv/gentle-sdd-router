@@ -18,7 +18,7 @@ import {
   scaffoldPhaseContract,
   validateSddFull,
   listDeclaredInvocations,
-} from '../src/core/sdd-catalog-io.js';
+} from '../src/core/sdd-profile-io.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -597,7 +597,7 @@ describe('validateSddYaml — invoke field', () => {
     };
     const result = validateSddYaml(parsed, '<test>');
     const invoke = result.phases.concept.invoke;
-    assert.equal(invoke.catalog, 'art-production');
+    assert.equal(invoke.sdd, 'art-production');
     assert.equal(invoke.sdd, 'art-production'); // defaults to catalog
     assert.equal(invoke.await, true);
     assert.equal(invoke.payload_from, 'output');
@@ -633,7 +633,7 @@ describe('validateSddYaml — invoke field', () => {
     assert.equal(result.phases.concept.invoke.await, true);
   });
 
-  test('throws when invoke.catalog is an invalid slug', () => {
+  test('throws when invoke.sdd is an invalid slug', () => {
     const parsed = {
       name: 'my-sdd',
       version: 1,
@@ -675,7 +675,7 @@ describe('validateSddYaml — invoke field', () => {
     assert.throws(() => validateSddYaml(parsed, '<test>'), /await|boolean/i);
   });
 
-  test('throws when invoke.catalog is missing', () => {
+  test('throws when invoke.sdd is missing', () => {
     const parsed = {
       name: 'my-sdd',
       version: 1,
@@ -1270,7 +1270,7 @@ phases:
     }
   });
 
-  test('each invocation entry has phase, catalog, sdd, and on_failure fields', () => {
+  test('each invocation entry has phase, sdd, and on_failure fields', () => {
     const tmp = makeTempDir();
     try {
       const catalogsDir = path.join(tmp, 'catalogs');
@@ -1281,8 +1281,8 @@ phases:
       const result = listDeclaredInvocations(catalogsDir, 'game-design');
       const levelDesign = result.find(r => r.phase === 'level-design');
       assert.ok(levelDesign, 'level-design entry must exist');
-      assert.equal(levelDesign.catalog, 'art-production', 'catalog must match');
-      assert.equal(levelDesign.sdd, 'asset-pipeline', 'sdd must match');
+      assert.equal(levelDesign.sdd, 'asset-pipeline', 'sdd must match dispatched SDD target');
+      assert.ok(!('catalog' in levelDesign), 'catalog field must not exist in result');
       assert.equal(levelDesign.on_failure, 'block', 'on_failure must be block');
     } finally {
       cleanup(tmp);

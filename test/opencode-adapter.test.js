@@ -370,7 +370,8 @@ test('install creates a starter v4 router when the config is missing', () => {
   assert.equal(report.installRouteProposalContract.policy.nonExecuting, true);
   // Assembled v4 config is v3-shaped after loadRouterConfig
   assert.equal(config.activation_state, 'inactive');
-  assert.equal(config.active_preset, 'multivendor');
+  // active_preset is no longer written to disk (Phase 7); profile exists in catalog instead.
+  assert.ok(config.catalogs?.default?.presets?.multivendor, 'multivendor preset in catalog');
   assert.equal(config.metadata.installation_contract.source_of_truth, 'router/router.yaml');
   assert.equal(config.metadata.installation_contract.runtime_execution, false);
   // v4 uses catalogs/presets structure
@@ -379,7 +380,10 @@ test('install creates a starter v4 router when the config is missing', () => {
   assert.ok(phaseKeys.includes('apply'));
   assert.ok(phaseKeys.includes('verify'));
   assert.equal(phaseKeys.length, 8);
-  assert.equal(config.catalogs.default.presets.multivendor.phases.orchestrator[0].target, 'anthropic/claude-opus');
+  // Phase 7: phases in simplified schema {model, fallbacks}
+  const orchPhase = config.catalogs.default.presets.multivendor.phases.orchestrator;
+  const orchModel = Array.isArray(orchPhase) ? orchPhase[0]?.target : orchPhase?.model;
+  assert.equal(orchModel, 'anthropic/claude-opus');
 });
 
 test('install leaves a fresh router in the requested activation state', () => {

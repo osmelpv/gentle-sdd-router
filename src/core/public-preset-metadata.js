@@ -9,8 +9,8 @@ function scopeFromFilePath(filePath) {
   return filePath.startsWith(PLUGIN_ROOT) ? 'global' : 'project';
 }
 
-function publicSddLabelFromCatalogName(catalogName) {
-  return catalogName === 'default' ? 'agent-orchestrator' : catalogName;
+function publicSddLabelFromSddName(sddName) {
+  return sddName === 'default' ? 'agent-orchestrator' : sddName;
 }
 
 export function getPublicPresetMetadata(config) {
@@ -18,17 +18,17 @@ export function getPublicPresetMetadata(config) {
   const activePreset = config?.active_preset ?? config?.active_profile ?? null;
   const sourceMap = config?._v4Source?.profileMap ?? new Map();
 
-  for (const [catalogName, catalog] of Object.entries(config?.catalogs ?? {})) {
-    for (const [presetName, preset] of Object.entries(catalog?.presets ?? {})) {
+  for (const [sddName, sddGroup] of Object.entries(config?.catalogs ?? {})) {
+    for (const [presetName, preset] of Object.entries(sddGroup?.presets ?? {})) {
       const sourceInfo = sourceMap.get(presetName);
       const filePath = sourceInfo?.filePath ?? null;
       rows.push({
         name: presetName,
-        sdd: preset?.sdd ?? sourceInfo?.sddName ?? publicSddLabelFromCatalogName(catalogName),
+        sdd: preset?.sdd ?? sourceInfo?.sddName ?? publicSddLabelFromSddName(sddName),
         scope: scopeFromFilePath(filePath),
-        visibility: preset.hidden === true || catalog?.enabled === false ? 'hidden' : 'visible',
+        visibility: preset.hidden === true || sddGroup?.enabled === false ? 'hidden' : 'visible',
         phases: Object.keys(preset?.phases ?? {}).length,
-        legacyCatalogName: catalogName,
+        legacyCatalogName: sddName,
         filePath,
         preset,
       });
@@ -47,11 +47,11 @@ export function getActivePublicPresetMetadata(config) {
 
 export function findPresetOwner(config, presetName) {
   if (!presetName) return null;
-  for (const [catalogName, catalog] of Object.entries(config?.catalogs ?? {})) {
-    if (catalog?.presets?.[presetName]) {
+  for (const [sddName, sddGroup] of Object.entries(config?.catalogs ?? {})) {
+    if (sddGroup?.presets?.[presetName]) {
       return {
-        catalogName,
-        preset: catalog.presets[presetName],
+        catalogName: sddName,
+        preset: sddGroup.presets[presetName],
       };
     }
   }

@@ -1,4 +1,4 @@
-import { loadCustomSdd } from './sdd-catalog-io.js';
+import { loadCustomSdd } from './sdd-profile-io.js';
 
 /**
  * Canonical SDD phase list — the universal phase ordering for the pipeline.
@@ -27,7 +27,7 @@ export const PHASE_METADATA = {
     alwaysMono: false,
     defaultExecution: 'sequential',
     fixedRoles: ['agent'],
-    optionalRoles: ['judge', 'radar'],
+    optionalRoles: ['judge', 'radar', 'minister'],
     judgeContract: 'Validate delegation decisions and context management.',
   },
   explore: {
@@ -35,15 +35,16 @@ export const PHASE_METADATA = {
     alwaysMono: false,
     defaultExecution: 'parallel',
     fixedRoles: ['agent', 'agent'],
-    optionalRoles: ['judge', 'radar', 'risk-detector', 'security-auditor'],
+    optionalRoles: ['judge', 'radar', 'minister', 'risk-detector', 'security-auditor'],
     judgeContract: 'Synthesize explorations. Fuse unique findings. Discard redundancy. Use anonymous brainstorming.',
+    tribunalHint: 'Radar is especially useful for codebase mapping. Ministers debate competing exploration findings.',
   },
   propose: {
     description: 'Structures a formal proposal from exploration: scope, risk, approach.',
     alwaysMono: false,
     defaultExecution: 'sequential',
     fixedRoles: ['agent'],
-    optionalRoles: ['judge'],
+    optionalRoles: ['judge', 'minister'],
     judgeContract: 'Evaluate proposal clarity, scope definition, and feasibility.',
   },
   spec: {
@@ -51,7 +52,7 @@ export const PHASE_METADATA = {
     alwaysMono: false,
     defaultExecution: 'parallel',
     fixedRoles: ['agent', 'agent'],
-    optionalRoles: ['judge', 'investigator', 'security-auditor'],
+    optionalRoles: ['judge', 'minister', 'investigator', 'security-auditor'],
     judgeContract: 'Choose most verifiable spec. Eliminate ambiguity. Ensure line coherence. Cross-reference external research.',
   },
   design: {
@@ -59,7 +60,7 @@ export const PHASE_METADATA = {
     alwaysMono: false,
     defaultExecution: 'parallel',
     fixedRoles: ['agent', 'agent'],
-    optionalRoles: ['judge', 'radar'],
+    optionalRoles: ['judge', 'radar', 'minister'],
     judgeContract: 'Choose architecture that fits existing patterns AND spec requirements.',
   },
   tasks: {
@@ -83,7 +84,7 @@ export const PHASE_METADATA = {
     alwaysMono: false,
     defaultExecution: 'parallel',
     fixedRoles: ['agent', 'agent'],
-    optionalRoles: ['judge', 'radar', 'risk-detector', 'security-auditor'],
+    optionalRoles: ['judge', 'radar', 'minister', 'risk-detector', 'security-auditor'],
     judgeContract: 'Confirmed if 2+ sabuesos agree. Suspect if only 1. Escalate contradictions.',
   },
   debug: {
@@ -93,7 +94,7 @@ export const PHASE_METADATA = {
     trigger: 'on-failure',
     depends_on: 'verify',
     fixedRoles: ['agent', 'agent'],
-    optionalRoles: ['judge', 'radar'],
+    optionalRoles: ['judge', 'radar', 'minister'],
     judgeContract: 'Validate root cause diagnosis. Is this the cause or a symptom?',
   },
   archive: {
@@ -107,23 +108,45 @@ export const PHASE_METADATA = {
 };
 
 /**
- * Load phase metadata for a given SDD catalog.
+ * Role recommendations for tribunal configuration.
+ * Advisory hints for profile authors selecting models per role.
+ */
+export const ROLE_RECOMMENDATIONS = {
+  judge: {
+    hint: 'Reasoning model recommended',
+    preferred: ['anthropic/claude-opus', 'openai/o3', 'openai/gpt-5'],
+    reason: 'Judge needs strong reasoning to synthesize debate',
+  },
+  radar: {
+    hint: 'High context window recommended',
+    preferred: ['google/gemini-1.5-pro-2M', 'anthropic/claude-3-5-sonnet'],
+    reason: 'Radar needs to read large codebases',
+  },
+  minister: {
+    hint: 'Task-specialized model recommended',
+    preferred: [], // varies by phase
+    reason: 'Ministers should excel at the specific phase task',
+  },
+};
+
+/**
+ * Load phase metadata for a given SDD.
  *
  * - If sddName is null, undefined, or 'default': returns PHASE_METADATA (canonical behavior).
- * - Otherwise: loads the custom SDD from catalogsDir and builds a phase metadata map from sdd.yaml.
+ * - Otherwise: loads the custom SDD from sddsDir and builds a phase metadata map from sdd.yaml.
  *
- * @param {string|null|undefined} sddName - SDD catalog name, or null/undefined/'default' for canonical
- * @param {string} catalogsDir - Path to router/catalogs/
+ * @param {string|null|undefined} sddName - SDD name, or null/undefined/'default' for canonical
+ * @param {string} sddsDir - Path to router/catalogs/ (custom SDDs directory)
  * @returns {Record<string, PhaseMetadataEntry>}
  */
-export function loadPhaseMetadataForCatalog(sddName, catalogsDir) {
+export function loadPhaseMetadataForSdd(sddName, sddsDir) {
   // Default fallback: return canonical metadata unchanged
   if (!sddName || sddName === 'default') {
     return PHASE_METADATA;
   }
 
   // Load the custom SDD definition (throws if not found)
-  const sdd = loadCustomSdd(catalogsDir, sddName);
+  const sdd = loadCustomSdd(sddsDir, sddName);
 
   // Build phase metadata map from sdd.yaml phases
   const result = {};
@@ -151,3 +174,6 @@ export function loadPhaseMetadataForCatalog(sddName, catalogsDir) {
 
   return result;
 }
+
+/** @deprecated Use loadPhaseMetadataForSdd instead */
+export const loadPhaseMetadataForCatalog = loadPhaseMetadataForSdd;

@@ -1,9 +1,10 @@
 name: ollama
 sdd: agent-orchestrator
 availability: stable
+builtin: true
 complexity: medium
 debug_invoke:
-  preset: sdd-debug-mono
+  profile: gsr-sdd-debug-mono
   trigger: on_issues
   input_from: verify_output
   required_fields:
@@ -11,61 +12,37 @@ debug_invoke:
     - affected_files
     - last_change_files
     - test_baseline
+hidden: true
 phases:
   orchestrator:
-    - target: ollama/qwen3.5
-      kind: lane
-      phase: orchestrator
-      role: primary
-      fallbacks: ollama/qwen3
-      contextWindow: 131072
+    model: ollama/qwen3.5
+    fallbacks:
+      - ollama/qwen3
   explore:
-    - target: ollama/qwen3.5
-      kind: lane
-      phase: explore
-      role: primary
-      fallbacks: ollama/deepseek-r1
-      contextWindow: 131072
+    model: ollama/qwen3.5
+    fallbacks:
+      - ollama/deepseek-r1
   spec:
-    - target: ollama/qwen3.5
-      kind: lane
-      phase: spec
-      role: primary
-      fallbacks: ollama/qwen3
-      contextWindow: 131072
+    model: ollama/qwen3.5
+    fallbacks:
+      - ollama/qwen3
   design:
-    - target: ollama/qwen3.5
-      kind: lane
-      phase: design
-      role: primary
-      fallbacks: ollama/qwq
-      contextWindow: 131072
+    model: ollama/qwen3.5
+    fallbacks:
+      - ollama/qwq
   tasks:
-    - target: ollama/qwen3
-      kind: lane
-      phase: tasks
-      role: primary
-      fallbacks: ollama/qwen3.5
-      contextWindow: 32768
+    model: ollama/qwen3
+    fallbacks:
+      - ollama/qwen3.5
   apply:
-    - target: ollama/qwen3-coder
-      kind: lane
-      phase: apply
-      role: primary
-      fallbacks: ollama/devstral
-      contextWindow: 131072
+    model: ollama/qwen3-coder
+    fallbacks:
+      - ollama/devstral
   verify:
-    - target: ollama/qwq
-      kind: lane
-      phase: verify
-      role: judge
-      fallbacks: ollama/deepseek-r1
-      contextWindow: 131072
+    model: ollama/qwq
+    fallbacks:
+      - ollama/deepseek-r1
   archive:
-    - target: ollama/qwen3
-      kind: lane
-      phase: archive
-      role: primary
-      fallbacks: ollama/qwen3.5
-      contextWindow: 32768
-hidden: true
+    model: ollama/qwen3
+    fallbacks:
+      - ollama/qwen3.5

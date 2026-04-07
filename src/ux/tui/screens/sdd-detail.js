@@ -58,7 +58,7 @@ export function SddDetailScreen({
         const pathMod = await import('node:path');
         const fsMod = await import('node:fs');
         const catalogsDir = pathMod.join(pathMod.dirname(configPath), 'catalogs');
-        const { loadCustomSdd } = await import('../../../core/sdd-catalog-io.js');
+        const { loadCustomSdd } = await import('../../../core/sdd-profile-io.js');
         const loaded = loadCustomSdd(catalogsDir, selectedSdd);
         setSdd(loaded);
 

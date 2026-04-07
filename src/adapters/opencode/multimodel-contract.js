@@ -12,14 +12,14 @@ export const DEFAULT_MULTIMODEL_VISIBILITY = Object.freeze({
 export function createMultimodelBrowseContract(source, selector, visibilityPolicy = DEFAULT_MULTIMODEL_VISIBILITY) {
   const schema = normalizeMultimodelSchema(source);
   const selection = resolveMultimodelSelection(schema, selector);
-  const projected = projectShareableMultimodelMetadata(selection.catalog, selection.preset, visibilityPolicy);
+  const projected = projectShareableMultimodelMetadata(selection.sdd, selection.preset, visibilityPolicy);
 
   return {
     kind: 'multimodel-browse-contract',
     contractVersion: MULTIMODEL_CONTRACT_VERSION,
     schemaVersion: schema.version ?? schema.sourceVersion ?? 3,
     selector: selection.selector,
-    resolvedSelector: `${selection.catalog.name}/${selection.preset.name}`,
+    resolvedSelector: `${selection.sdd.name}/${selection.preset.name}`,
     ...projected,
   };
 }
@@ -28,8 +28,8 @@ export function createMultimodelCompareContract(source, leftSelector, rightSelec
   const schema = normalizeMultimodelSchema(source);
   const leftSelection = resolveMultimodelSelection(schema, leftSelector);
   const rightSelection = resolveMultimodelSelection(schema, rightSelector);
-  const left = projectShareableMultimodelMetadata(leftSelection.catalog, leftSelection.preset, visibilityPolicy);
-  const right = projectShareableMultimodelMetadata(rightSelection.catalog, rightSelection.preset, visibilityPolicy);
+  const left = projectShareableMultimodelMetadata(leftSelection.sdd, leftSelection.preset, visibilityPolicy);
+  const right = projectShareableMultimodelMetadata(rightSelection.sdd, rightSelection.preset, visibilityPolicy);
 
   return {
     kind: 'multimodel-compare-contract',
@@ -37,8 +37,8 @@ export function createMultimodelCompareContract(source, leftSelector, rightSelec
     schemaVersion: schema.version ?? schema.sourceVersion ?? 3,
     leftSelector: leftSelection.selector,
     rightSelector: rightSelection.selector,
-    leftResolvedSelector: `${leftSelection.catalog.name}/${leftSelection.preset.name}`,
-    rightResolvedSelector: `${rightSelection.catalog.name}/${rightSelection.preset.name}`,
+    leftResolvedSelector: `${leftSelection.sdd.name}/${leftSelection.preset.name}`,
+    rightResolvedSelector: `${rightSelection.sdd.name}/${rightSelection.preset.name}`,
     left,
     right,
     differences: diffProjectedMetadata(left, right),
@@ -47,12 +47,12 @@ export function createMultimodelCompareContract(source, leftSelector, rightSelec
   };
 }
 
-export function projectShareableMultimodelMetadata(catalog, preset, visibilityPolicy = DEFAULT_MULTIMODEL_VISIBILITY) {
+export function projectShareableMultimodelMetadata(sdd, preset, visibilityPolicy = DEFAULT_MULTIMODEL_VISIBILITY) {
   const visibility = normalizeVisibilityPolicy(visibilityPolicy);
-  const catalogLabels = visibility.labels ? collectLabels(catalog) : [];
+  const sddLabels = visibility.labels ? collectLabels(sdd) : [];
   const presetAliases = visibility.labels ? normalizeStringList(preset?.aliases) : [];
-  const pricing = extractPricing(catalog, preset);
-  const guidance = extractGuidance(catalog, preset);
+  const pricing = extractPricing(sdd, preset);
+  const guidance = extractGuidance(sdd, preset);
   const laneSummary = visibility.guidance ? summarizeLaneSummary(preset) : [];
 
   return {
@@ -62,13 +62,13 @@ export function projectShareableMultimodelMetadata(catalog, preset, visibilityPo
       nonExecution: true,
     },
     catalog: {
-      name: catalog?.name ?? null,
+      name: sdd?.name ?? null,
       visibility: {
         availability: visibility.availability,
         labels: visibility.labels,
       },
-      availability: visibility.availability ? normalizeAvailability(catalog?.availability) : null,
-      labels: catalogLabels,
+      availability: visibility.availability ? normalizeAvailability(sdd?.availability) : null,
+      labels: sddLabels,
     },
     preset: {
       name: preset?.name ?? null,
@@ -97,70 +97,70 @@ export function projectShareableMultimodelMetadata(catalog, preset, visibilityPo
 function resolveMultimodelSelection(schema, selector) {
   const selectorInfo = normalizeSelector(selector);
   const catalogs = schema.catalogs ?? [];
-  const explicitCatalog = selectorInfo.catalogSelector
-    ? findCatalogBySelector(catalogs, selectorInfo.catalogSelector)
-    : findCatalogBySelector(catalogs, selectorInfo.presetSelector);
-  const catalog = selectorInfo.catalogSelector
-    ? resolveCatalog(catalogs, selectorInfo.catalogSelector, schema.selectedCatalogName)
-    : (explicitCatalog ?? resolveCatalog(catalogs, null, schema.selectedCatalogName));
+  const explicitSdd = selectorInfo.catalogSelector
+    ? findSddBySelector(catalogs, selectorInfo.catalogSelector)
+    : findSddBySelector(catalogs, selectorInfo.presetSelector);
+  const sdd = selectorInfo.catalogSelector
+    ? resolveSdd(catalogs, selectorInfo.catalogSelector, schema.selectedCatalogName)
+    : (explicitSdd ?? resolveSdd(catalogs, null, schema.selectedCatalogName));
   const presetSelector = selectorInfo.catalogSelector
     ? selectorInfo.presetSelector
-    : (explicitCatalog ? null : selectorInfo.presetSelector);
-  const preset = resolvePreset(catalog, presetSelector, schema.selectedPresetName, selectorInfo.selector === null);
+    : (explicitSdd ? null : selectorInfo.presetSelector);
+  const preset = resolvePreset(sdd, presetSelector, schema.selectedPresetName, selectorInfo.selector === null);
 
   return {
-    selector: selectorInfo.selector ?? `${catalog.name}/${preset.name}`,
-    catalog,
+    selector: selectorInfo.selector ?? `${sdd.name}/${preset.name}`,
+    sdd,
     preset,
   };
 }
 
-function resolveCatalog(catalogs, selector, activeCatalogName) {
+function resolveSdd(catalogs, selector, activeSddName) {
   if (!Array.isArray(catalogs) || catalogs.length === 0) {
-    throw new Error('multimodel browse/compare requires at least one catalog in the normalized schema.');
+    throw new Error('multimodel browse/compare requires at least one SDD in the normalized schema.');
   }
 
-  const activeCatalog = catalogs.find((catalog) => catalog.name === activeCatalogName) ?? catalogs[0];
+  const activeSdd = catalogs.find((sdd) => sdd.name === activeSddName) ?? catalogs[0];
   if (!selector) {
-    return activeCatalog;
+    return activeSdd;
   }
 
-  const match = catalogs.find((catalog) => matchesSelector(catalog, selector));
+  const match = catalogs.find((sdd) => matchesSelector(sdd, selector));
   if (!match) {
-    throw new Error(`Could not resolve multimodel catalog selector "${selector}".`);
+    throw new Error(`Could not resolve multimodel SDD selector "${selector}".`);
   }
 
   return match;
 }
 
-function findCatalogBySelector(catalogs, selector) {
+function findSddBySelector(catalogs, selector) {
   if (!selector) {
     return null;
   }
 
-  return catalogs.find((catalog) => matchesSelector(catalog, selector)) ?? null;
+  return catalogs.find((sdd) => matchesSelector(sdd, selector)) ?? null;
 }
 
-function resolvePreset(catalog, selector, activePresetName, preferActivePreset = false) {
-  if (!Array.isArray(catalog?.presets) || catalog.presets.length === 0) {
-    throw new Error(`Catalog "${catalog?.name ?? 'unknown'}" does not contain any presets.`);
+function resolvePreset(sdd, selector, activePresetName, preferActivePreset = false) {
+  if (!Array.isArray(sdd?.presets) || sdd.presets.length === 0) {
+    throw new Error(`SDD "${sdd?.name ?? 'unknown'}" does not contain any presets.`);
   }
 
   if (!selector) {
     if (preferActivePreset) {
-      const activePreset = catalog.presets.find((preset) => preset.name === activePresetName);
+      const activePreset = sdd.presets.find((preset) => preset.name === activePresetName);
       if (activePreset) {
         return activePreset;
       }
     }
 
-    return catalog.presets.find((preset) => isNonEmptyString(catalog.defaultPreset) && preset.name === catalog.defaultPreset)
-      ?? catalog.presets[0];
+    return sdd.presets.find((preset) => isNonEmptyString(sdd.defaultPreset) && preset.name === sdd.defaultPreset)
+      ?? sdd.presets[0];
   }
 
-  const match = catalog.presets.find((preset) => matchesSelector(preset, selector));
+  const match = sdd.presets.find((preset) => matchesSelector(preset, selector));
   if (!match) {
-    throw new Error(`Could not resolve multimodel preset selector "${selector}" in catalog "${catalog.name}".`);
+    throw new Error(`Could not resolve multimodel preset selector "${selector}" in SDD "${sdd.name}".`);
   }
 
   return match;
@@ -264,8 +264,8 @@ function diffProjectedMetadata(left, right) {
   return paths.map((path) => projectFieldValue(left, right, path)).filter(Boolean);
 }
 
-function extractPricing(catalog, preset) {
-  const sources = [preset?.metadata?.pricing, catalog?.metadata?.pricing, preset?.metadata?.price, catalog?.metadata?.price];
+function extractPricing(sdd, preset) {
+  const sources = [preset?.metadata?.pricing, sdd?.metadata?.pricing, preset?.metadata?.price, sdd?.metadata?.price];
 
   for (const source of sources) {
     if (!isObject(source)) {
@@ -281,8 +281,8 @@ function extractPricing(catalog, preset) {
   return { band: null, currency: null };
 }
 
-function extractGuidance(catalog, preset) {
-  const source = isObject(preset?.guidance) ? preset.guidance : (isObject(catalog?.guidance) ? catalog.guidance : null);
+function extractGuidance(sdd, preset) {
+  const source = isObject(preset?.guidance) ? preset.guidance : (isObject(sdd?.guidance) ? sdd.guidance : null);
 
   if (!source) {
     return {

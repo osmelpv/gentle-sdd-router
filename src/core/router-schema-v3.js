@@ -1,6 +1,6 @@
 const DEFAULT_CATALOG_NAME = 'legacy';
 const DEFAULT_PRESET_NAME = 'default';
-const ALLOWED_LANE_ROLES = new Set(['primary', 'secondary', 'tertiary', 'judge', 'radar']);
+const ALLOWED_LANE_ROLES = new Set(['primary', 'secondary', 'tertiary', 'judge', 'radar', 'minister']);
 const EXECUTION_HINT_FIELDS = new Set([
   'execute',
   'execution',
@@ -487,6 +487,11 @@ function validatePreset(catalogName, presetName, preset) {
 }
 
 function validatePhaseLanes(catalogName, presetName, phaseName, lanes) {
+  // Simplified schema: {model: string, fallbacks?: string[]} — accepted as valid, no lane array required.
+  if (isObject(lanes) && isNonEmptyString(lanes.model)) {
+    return; // simplified schema is valid
+  }
+
   const laneList = Array.isArray(lanes) ? lanes : lanes?.lanes;
 
   if (!Array.isArray(laneList) || laneList.length === 0) {
@@ -494,6 +499,93 @@ function validatePhaseLanes(catalogName, presetName, phaseName, lanes) {
   }
 
   laneList.forEach((lane, index) => validateLane(catalogName, presetName, phaseName, lane, index));
+
+  // Validate tribunal-specific fields (SPEC-TRIBUNAL-003)
+  if (isObject(lanes)) {
+    validateTribunalFields(catalogName, presetName, phaseName, lanes);
+  }
+}
+
+function validateTribunalFields(catalogName, presetName, phaseName, phaseConfig) {
+  const context = `Catalog "${catalogName}" preset "${presetName}" phase "${phaseName}"`;
+  const tribunal = phaseConfig.tribunal;
+
+  // No tribunal block — backward compat, nothing to validate
+  if (tribunal === undefined) {
+    return;
+  }
+
+  if (!isObject(tribunal)) {
+    throw new Error(`${context} tribunal must be an object when present.`);
+  }
+
+  if (tribunal.enabled !== undefined && typeof tribunal.enabled !== 'boolean') {
+    throw new Error(`${context} tribunal.enabled must be a boolean.`);
+  }
+
+  if (tribunal.max_rounds !== undefined) {
+    if (!Number.isInteger(tribunal.max_rounds) || tribunal.max_rounds <= 0) {
+      throw new Error(`${context} tribunal.max_rounds must be a positive integer.`);
+    }
+  }
+
+  const maxRounds = tribunal.max_rounds ?? 4;
+
+  if (tribunal.escalate_after !== undefined) {
+    if (!Number.isInteger(tribunal.escalate_after) || tribunal.escalate_after <= 0) {
+      throw new Error(`${context} tribunal.escalate_after must be a positive integer.`);
+    }
+
+    if (tribunal.escalate_after > maxRounds) {
+      throw new Error(`${context} tribunal.escalate_after must be <= tribunal.max_rounds (${maxRounds}).`);
+    }
+  }
+
+  // Only validate minister/judge requirements when tribunal is explicitly enabled
+  if (tribunal.enabled !== true) {
+    return;
+  }
+
+  // judge.model must be a non-empty string when tribunal enabled
+  if (!isObject(phaseConfig.judge) || !isNonEmptyString(phaseConfig.judge.model)) {
+    throw new Error(`${context} requires judge.model as a non-empty string when tribunal.enabled is true.`);
+  }
+
+  // ministers must be an array with at least 2 entries when tribunal enabled
+  if (!Array.isArray(phaseConfig.ministers) || phaseConfig.ministers.length < 2) {
+    throw new Error(`${context} requires at least 2 ministers when tribunal.enabled is true.`);
+  }
+
+  for (let i = 0; i < phaseConfig.ministers.length; i++) {
+    const minister = phaseConfig.ministers[i];
+    if (!isObject(minister) || !isNonEmptyString(minister.model)) {
+      throw new Error(`${context} ministers[${i}].model must be a non-empty string.`);
+    }
+  }
+
+  // radar is optional — validate if present
+  if (phaseConfig.radar !== undefined) {
+    if (!isObject(phaseConfig.radar)) {
+      throw new Error(`${context} radar must be an object when present.`);
+    }
+
+    if (phaseConfig.radar.model !== undefined && !isNonEmptyString(phaseConfig.radar.model)) {
+      throw new Error(`${context} radar.model must be a non-empty string when present.`);
+    }
+
+    if (phaseConfig.radar.enabled !== undefined && typeof phaseConfig.radar.enabled !== 'boolean') {
+      throw new Error(`${context} radar.enabled must be a boolean when present.`);
+    }
+  }
+
+  // judge_fallbacks and minister_fallbacks: arrays of strings, optional
+  if (phaseConfig.judge_fallbacks !== undefined) {
+    validateStringList(phaseConfig.judge_fallbacks, `${context} judge_fallbacks`);
+  }
+
+  if (phaseConfig.minister_fallbacks !== undefined) {
+    validateStringList(phaseConfig.minister_fallbacks, `${context} minister_fallbacks`);
+  }
 }
 
 function validateLane(catalogName, presetName, phaseName, lane, index) {

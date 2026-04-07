@@ -509,7 +509,7 @@ export function createOpenCodeSessionSyncContract(source = {}) {
         : { kind: 'opencode-session-snapshot-diff', changed: false, changedFields: [], previousRebindToken: null, nextRebindToken: null },
       rebindRequired: false,
       preservedSnapshot: Boolean(preservedSnapshot),
-      syncTriggers: ['config', 'catalog', 'preset', 'profile'],
+      syncTriggers: ['config', 'sdd', 'preset', 'profile'],
       exposure: createOpenCodeSlashCommandManifest(state, source.configPath ?? null),
     };
   }
@@ -534,7 +534,7 @@ export function createOpenCodeSessionSyncContract(source = {}) {
     nonExecuting: true,
     configPath: source.configPath ?? null,
     reason: diff.changed
-      ? 'Config, catalog, preset, or profile data changed; rebind the host slash-command registry in place.'
+      ? 'Config, SDD, preset, or profile data changed; rebind the host slash-command registry in place.'
       : 'The active host session bindings are already current.',
     configFingerprint: currentSnapshot.configFingerprint,
     rebindToken: currentSnapshot.rebindToken,
@@ -567,17 +567,17 @@ export function createTokenBudgetHint(config, state) {
   if (!presetName) return null;
 
   // v5 format: presets directly on config
-  // v4 format: presets under catalogs[catalogName].presets
+  // v4 format: presets under catalogs[sddName].presets
   let preset = config.presets?.[presetName];
 
   // Fallback to v4 format if not found in v5
   if (!preset) {
     if (!config?.catalogs) return null;
-    const catalogName = state.selectedCatalogName ?? null;
-    if (!catalogName) return null;
-    const catalog = config.catalogs[catalogName];
-    if (!catalog) return null;
-    preset = catalog.presets?.[presetName];
+    const sddName = state.selectedCatalogName ?? null;
+    if (!sddName) return null;
+    const sdd = config.catalogs[sddName];
+    if (!sdd) return null;
+    preset = sdd.presets?.[presetName];
   }
 
   if (!preset?.phases) return null;
@@ -609,14 +609,14 @@ export function createTokenBudgetHint(config, state) {
 
   if (!hasAnyBudgetData) return null;
 
-  // Resolve catalog name for backward compatibility
-  const resolvedCatalogName = state?.selectedCatalogName 
+  // Resolve SDD name for backward compatibility
+  const resolvedSddName = state?.selectedCatalogName 
     ?? (config.active_catalog ?? 'default');
 
   return {
     kind: 'token-budget-hint',
     contractVersion: TOKEN_BUDGET_HINT_VERSION,
-    catalogName: resolvedCatalogName,
+    catalogName: resolvedSddName,
     presetName,
     phases,
     policy: {

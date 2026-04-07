@@ -587,6 +587,36 @@ export async function buildTuiPluginStep(opts) {
   return stepSkipped('tui-build', 'tui.tsx loaded directly by OpenCode — no pre-compilation needed');
 }
 
+// ── Step 5b: Skills installer ─────────────────────────────────────────────
+
+/**
+ * Install GSR skill files to detected AI environments (non-blocking step).
+ *
+ * @param {object} opts
+ * @param {boolean} opts.dryRun
+ * @param {string} [opts.configPath]
+ */
+async function runSkillsStep({ dryRun, configPath }) {
+  if (dryRun) {
+    return stepOk('skills', { dryRun: true, installed: 0, skipped: 0 });
+  }
+
+  try {
+    const { installSkills } = await import('./skill-installer.js');
+    const routerDir = configPath ? path.dirname(configPath) : undefined;
+    const result = installSkills({ routerDir });
+    return stepOk('skills', {
+      installed: result.installed,
+      skipped: result.skipped,
+      environments: result.environments,
+      errors: result.errors,
+    });
+  } catch (err) {
+    // Non-blocking: skill install failure never fails the sync pipeline
+    return stepSkipped('skills', `Skill install skipped: ${err.message}`);
+  }
+}
+
 // ── Main pipeline ─────────────────────────────────────────────────────────
 
 /**
@@ -705,6 +735,10 @@ export async function unifiedSync(options = {}) {
   // Step 5: commands (Claude Code)
   const claudeCodeStep = await runCommandsClaudeCodeStep({ dryRun, claudeCommandsDir });
   steps.push(claudeCodeStep);
+
+  // Step 5b: skills — install GSR skill files to detected AI environments (non-blocking)
+  const skillsStep = await runSkillsStep({ dryRun, configPath });
+  steps.push(skillsStep);
 
   // Step 6: validate
   const validateStep = await runValidateStep({

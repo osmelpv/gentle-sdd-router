@@ -62,7 +62,7 @@ describe('addPhaseInvoke', () => {
       const catalogsDir = path.join(tmp, 'catalogs');
       writeFile(catalogsDir, 'game-design/sdd.yaml', BASE_SDD_YAML);
 
-      const { addPhaseInvoke } = await import('../src/core/sdd-catalog-io.js');
+      const { addPhaseInvoke } = await import('../src/core/sdd-profile-io.js');
       addPhaseInvoke(catalogsDir, 'game-design', 'level-design', {
         catalog: 'art-production',
         sdd: 'asset-pipeline',
@@ -72,11 +72,11 @@ describe('addPhaseInvoke', () => {
       });
 
       // Read back and verify
-      const { loadCustomSdd } = await import('../src/core/sdd-catalog-io.js');
+      const { loadCustomSdd } = await import('../src/core/sdd-profile-io.js');
       const sdd = loadCustomSdd(catalogsDir, 'game-design');
       const invoke = sdd.phases['level-design'].invoke;
       assert.ok(invoke, 'invoke block must exist on level-design phase');
-      assert.equal(invoke.catalog, 'art-production');
+      assert.equal(invoke.sdd, 'asset-pipeline');
     } finally {
       cleanup(tmp);
     }
@@ -88,7 +88,7 @@ describe('addPhaseInvoke', () => {
       const catalogsDir = path.join(tmp, 'catalogs');
       writeFile(catalogsDir, 'game-design/sdd.yaml', BASE_SDD_YAML);
 
-      const { addPhaseInvoke } = await import('../src/core/sdd-catalog-io.js');
+      const { addPhaseInvoke } = await import('../src/core/sdd-profile-io.js');
       addPhaseInvoke(catalogsDir, 'game-design', 'level-design', {
         catalog: 'art-production',
         sdd: 'asset-pipeline',
@@ -101,7 +101,7 @@ describe('addPhaseInvoke', () => {
         path.join(catalogsDir, 'game-design', 'sdd.yaml'),
         'utf8'
       );
-      assert.ok(raw.includes('art-production'), 'YAML must include catalog');
+      assert.ok(raw.includes('asset-pipeline'), 'YAML must include dispatched SDD target');
       assert.ok(raw.includes('always'), 'YAML must include trigger');
     } finally {
       cleanup(tmp);
@@ -114,7 +114,7 @@ describe('addPhaseInvoke', () => {
       const catalogsDir = path.join(tmp, 'catalogs');
       fs.mkdirSync(catalogsDir, { recursive: true });
 
-      const { addPhaseInvoke } = await import('../src/core/sdd-catalog-io.js');
+      const { addPhaseInvoke } = await import('../src/core/sdd-profile-io.js');
       assert.throws(
         () => addPhaseInvoke(catalogsDir, 'nonexistent', 'concept', {
           catalog: 'art-production',
@@ -133,7 +133,7 @@ describe('addPhaseInvoke', () => {
       const catalogsDir = path.join(tmp, 'catalogs');
       writeFile(catalogsDir, 'game-design/sdd.yaml', BASE_SDD_YAML);
 
-      const { addPhaseInvoke } = await import('../src/core/sdd-catalog-io.js');
+      const { addPhaseInvoke } = await import('../src/core/sdd-profile-io.js');
       assert.throws(
         () => addPhaseInvoke(catalogsDir, 'game-design', 'nonexistent-phase', {
           catalog: 'art-production',
@@ -152,7 +152,7 @@ describe('addPhaseInvoke', () => {
       const catalogsDir = path.join(tmp, 'catalogs');
       writeFile(catalogsDir, 'game-design/sdd.yaml', BASE_SDD_YAML);
 
-      const { addPhaseInvoke } = await import('../src/core/sdd-catalog-io.js');
+      const { addPhaseInvoke } = await import('../src/core/sdd-profile-io.js');
       assert.throws(
         () => addPhaseInvoke(catalogsDir, 'game-design', 'level-design', {
           catalog: 'art-production',
@@ -171,7 +171,7 @@ describe('addPhaseInvoke', () => {
       const catalogsDir = path.join(tmp, 'catalogs');
       writeFile(catalogsDir, 'game-design/sdd.yaml', BASE_SDD_YAML);
 
-      const { addPhaseInvoke } = await import('../src/core/sdd-catalog-io.js');
+      const { addPhaseInvoke } = await import('../src/core/sdd-profile-io.js');
       assert.throws(
         () => addPhaseInvoke(catalogsDir, 'game-design', 'level-design', {
           catalog: 'Art Production',
@@ -190,7 +190,7 @@ describe('addPhaseInvoke', () => {
       const catalogsDir = path.join(tmp, 'catalogs');
       writeFile(catalogsDir, 'game-design/sdd.yaml', BASE_SDD_YAML);
 
-      const { addPhaseInvoke, loadCustomSdd } = await import('../src/core/sdd-catalog-io.js');
+      const { addPhaseInvoke, loadCustomSdd } = await import('../src/core/sdd-profile-io.js');
 
       // First invoke
       addPhaseInvoke(catalogsDir, 'game-design', 'level-design', {
@@ -205,7 +205,7 @@ describe('addPhaseInvoke', () => {
       });
 
       const sdd = loadCustomSdd(catalogsDir, 'game-design');
-      assert.equal(sdd.phases['level-design'].invoke.catalog, 'sound-design',
+      assert.equal(sdd.phases['level-design'].invoke.sdd, 'sound-design',
         'Second call must overwrite the first'
       );
     } finally {
@@ -219,7 +219,7 @@ describe('addPhaseInvoke', () => {
       const catalogsDir = path.join(tmp, 'catalogs');
       writeFile(catalogsDir, 'game-design/sdd.yaml', BASE_SDD_YAML);
 
-      const { addPhaseInvoke, loadCustomSdd } = await import('../src/core/sdd-catalog-io.js');
+      const { addPhaseInvoke, loadCustomSdd } = await import('../src/core/sdd-profile-io.js');
       addPhaseInvoke(catalogsDir, 'game-design', 'level-design', {
         catalog: 'art-production',
         trigger: 'on_issues',
@@ -240,7 +240,7 @@ describe('addPhaseInvoke', () => {
       const catalogsDir = path.join(tmp, 'catalogs');
       writeFile(catalogsDir, 'game-design/sdd.yaml', BASE_SDD_YAML);
 
-      const { addPhaseInvoke, loadCustomSdd } = await import('../src/core/sdd-catalog-io.js');
+      const { addPhaseInvoke, loadCustomSdd } = await import('../src/core/sdd-profile-io.js');
       addPhaseInvoke(catalogsDir, 'game-design', 'level-design', {
         catalog: 'art-production',
         trigger: 'on_issues',
@@ -316,7 +316,7 @@ describe('runPhaseInvoke', () => {
         path.join(catalogsDir, 'game-design', 'sdd.yaml'),
         'utf8'
       );
-      assert.ok(raw.includes('art-production'), 'sdd.yaml must contain invoke catalog');
+      assert.ok(raw.includes('asset-pipeline'), 'sdd.yaml must contain dispatched SDD target');
     } finally {
       cleanup(tmp);
     }

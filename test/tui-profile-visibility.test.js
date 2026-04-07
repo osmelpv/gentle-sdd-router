@@ -4,23 +4,23 @@ import { describe, test } from 'node:test';
 
 describe('TUI preset visibility flow', () => {
   test('presets list does not update parent state during render', () => {
-    const sourcePath = new URL('../src/ux/tui/screens/presets-list.js', import.meta.url).pathname;
+    const sourcePath = new URL('../src/ux/tui/screens/profiles-list.js', import.meta.url).pathname;
     const source = fs.readFileSync(sourcePath, 'utf8');
 
     assert.equal(
       source.includes('useState(() => {'),
       false,
-      'presets-list.js should use effects, not useState initializers, for render-adjacent updates'
+      'profiles-list.js should use effects, not useState initializers, for render-adjacent updates'
     );
   });
 
   test('presets list reloads config after toggling visibility', () => {
-    const sourcePath = new URL('../src/ux/tui/screens/presets-list.js', import.meta.url).pathname;
+    const sourcePath = new URL('../src/ux/tui/screens/profiles-list.js', import.meta.url).pathname;
     const source = fs.readFileSync(sourcePath, 'utf8');
 
     assert.ok(
       source.includes('mod.loadRouterConfig(configPath)'),
-      'presets-list.js must reload the exact current configPath after toggling visibility'
+      'profiles-list.js must reload the exact current configPath after toggling visibility'
     );
   });
 
