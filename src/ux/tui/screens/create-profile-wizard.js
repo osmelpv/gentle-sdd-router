@@ -7,7 +7,7 @@ import { SplitPanelPicker } from '../components/split-panel-picker.js';
 import { PhaseComposer } from '../components/phase-composer.js';
 import { Menu } from '../components/menu.js';
 import { colors } from '../theme.js';
-import { CANONICAL_PHASES, PHASE_METADATA, loadPhaseMetadataForCatalog } from '../../../core/phases.js';
+import { CANONICAL_PHASES, PHASE_METADATA, ROLE_RECOMMENDATIONS, loadPhaseMetadataForCatalog } from '../../../core/phases.js';
 import { profileNameExists } from '../../../core/profile-io.js';
 
 const h = React.createElement;
@@ -79,6 +79,14 @@ const initialState = {
   pickingFallback: false, // true after SET_FALLBACK to show "add another?" menu
   saving: false,
   error: null,
+  // Tribunal configuration (for multiagent profile types)
+  tribunal: {
+    enabled: false,
+    judge: { model: '' },
+    ministers: [{ model: '' }, { model: '' }], // minimum 2
+    radar: { model: '', enabled: false },
+    max_rounds: 4,
+  },
 };
 
 /**
@@ -186,6 +194,7 @@ function makeReducer(phasesList) {
       case 'GO_TO_STEP': return { ...state, step: action.value };
       case 'SET_SAVING': return { ...state, saving: true };
       case 'SET_ERROR': return { ...state, error: action.value, saving: false };
+      case 'SET_TRIBUNAL': return { ...state, tribunal: { ...state.tribunal, ...action.value } };
       case 'BACK': {
         if (state.step === 1) return state; // can't go back from step 1
         // Step 15 = SDD selector (between step 1 and step 2)
@@ -524,6 +533,19 @@ export function CreateProfileWizard({ configPath, router, setDescription, showRe
     lines.push(`Profile: ${state.name}`);
     lines.push(`Type: ${PROFILE_TYPES.find(t => t.value === state.type)?.label ?? state.type}`);
     lines.push('');
+
+    // Show tribunal configuration hints for multiagent types
+    const isMultiagent = state.type === 'multi-agent' || state.type === 'multi-full';
+    if (isMultiagent) {
+      lines.push('  Tribunal config:');
+      lines.push(`    Judge role: ${ROLE_RECOMMENDATIONS.judge.hint}`);
+      lines.push(`    Minister role: ${ROLE_RECOMMENDATIONS.minister.hint}`);
+      if (state.type === 'multi-full') {
+        lines.push(`    Radar role: ${ROLE_RECOMMENDATIONS.radar.hint}`);
+      }
+      lines.push(`    Max rounds: ${state.tribunal.max_rounds}`);
+      lines.push('');
+    }
 
     for (const phaseName of phasesList) {
       const lanes = state.phases[phaseName] || [];

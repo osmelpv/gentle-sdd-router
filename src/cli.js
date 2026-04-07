@@ -89,6 +89,8 @@ const COMMANDS_ALLOWED_WITHOUT_INSTALL = new Set([
   // 'status' handles missing config gracefully and is always useful
   'status',
   'sync',
+  // 'skill-install' installs skill files independently of project config
+  'skill-install',
 ]);
 
 function safeDiscoverConfigPath() {
@@ -236,6 +238,8 @@ export async function runCli(argv) {
       return runInspect(rest);
     case 'setup':
       return runSetup(rest);
+    case 'skill-install':
+      return runSkillInstall(rest);
 
     // === Top-level (stay at root) ===
     case 'status':
@@ -4068,6 +4072,53 @@ export async function runFallbackPromote(args) {
   process.stdout.write(`✓ Demoted:  ${demoted} → fallback #1\n`);
   process.stdout.write('New chain:\n');
   process.stdout.write(formatFallbackList(newFallbacks) + '\n');
+}
+
+/**
+ * Install GSR skill files to detected AI environments.
+ * gsr skill-install [--global]
+ *
+ * @param {string[]} args - CLI args after 'skill-install'
+ */
+export async function runSkillInstall(args) {
+  const global = args.includes('--global');
+
+  try {
+    const { installSkills, detectEnvironments } = await import('./core/skill-installer.js');
+
+    const environments = detectEnvironments();
+    if (environments.length === 0) {
+      process.stdout.write('No AI environments detected. Supported: OpenCode, Claude Code.\n');
+      return;
+    }
+
+    process.stdout.write(`Detected environments: ${environments.map(e => e.name).join(', ')}\n`);
+
+    const configPath = safeDiscoverConfigPathFromCwd();
+    const routerDir = configPath ? path.dirname(configPath) : undefined;
+
+    const result = installSkills({ global, routerDir });
+
+    if (result.errors.length > 0) {
+      for (const err of result.errors) {
+        process.stdout.write(`Warning: ${err}\n`);
+      }
+    }
+
+    if (result.installed === 0 && result.skipped === 0) {
+      process.stdout.write('No skill files found to install.\n');
+      return;
+    }
+
+    if (result.installed > 0) {
+      process.stdout.write(`Installed ${result.installed} skill file(s) to: ${result.environments.join(', ')}\n`);
+    }
+    if (result.skipped > 0) {
+      process.stdout.write(`${result.skipped} skill file(s) already up to date.\n`);
+    }
+  } catch (err) {
+    process.stdout.write(`Skill install failed: ${err.message}\n`);
+  }
 }
 
 export { resetIdentityCache };

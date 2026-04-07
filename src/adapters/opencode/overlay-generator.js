@@ -6,6 +6,28 @@ import { resolvePersona } from '../../core/controller.js';
 import { resolveIdentity } from '../../core/agent-identity.js';
 import { normalizeFallbacks } from '../../core/router-v4-io.js';
 
+// ── Skill Content Loader ───────────────────────────────────────────────────────
+
+/**
+ * Load skill content from router/skills/{skillName}.md.
+ * Returns a fallback instruction string when the file is not found.
+ *
+ * @param {string} skillName - Skill name without extension (e.g. 'tribunal-judge')
+ * @returns {string}
+ */
+function loadSkillContent(skillName) {
+  try {
+    const moduleDir = dirname(fileURLToPath(import.meta.url));
+    const skillPath = resolve(moduleDir, '..', '..', '..', 'router', 'skills', `${skillName}.md`);
+    if (existsSync(skillPath)) {
+      return readFileSync(skillPath, 'utf8').trim();
+    }
+  } catch {
+    // graceful degradation
+  }
+  return `Load the ${skillName} skill for instructions.`;
+}
+
 const OPENCODE_CONFIG_PATH = join(homedir(), '.config', 'opencode', 'opencode.json');
 
 // ── Fallback Protocol ─────────────────────────────────────────────────────────
@@ -201,6 +223,135 @@ export function generateOpenCodeOverlay(config, options = {}) {
 }
 
 /**
+ * Collect tribunal configuration from all phases of a preset.
+ *
+ * Iterates all phases looking for `tribunal.enabled === true`.
+ * Returns a normalized tribunal config:
+ *   - judge: { model } (from first enabled phase that has one)
+ *   - ministers: Array<{ model }> — length = max across all enabled phases
+ *   - radar: { model, enabled } | null (from first enabled phase with radar.enabled)
+ *   - maxRounds: number (from first enabled phase, default 4)
+ *   - hasAny: boolean
+ *
+ * Design D10: profile-scoped sub-agents (not per-phase).
+ *
+ * @param {object} preset
+ * @returns {{ hasAny: boolean, judge: object|null, ministers: object[], radar: object|null, maxRounds: number }}
+ */
+function collectTribunalConfig(preset) {
+  const phases = preset.phases ?? {};
+  let judge = null;
+  let ministers = [];
+  let radar = null;
+  let maxRounds = 4;
+  let hasAny = false;
+
+  for (const phaseValue of Object.values(phases)) {
+    // Tribunal config lives in object-form phases: { lanes?, tribunal?, judge?, ministers?, radar? }
+    if (!phaseValue || Array.isArray(phaseValue) || typeof phaseValue !== 'object') continue;
+
+    const tribunal = phaseValue.tribunal;
+    if (!tribunal || tribunal.enabled !== true) continue;
+
+    hasAny = true;
+
+    // judge: first occurrence wins
+    if (!judge && phaseValue.judge && typeof phaseValue.judge.model === 'string' && phaseValue.judge.model.trim()) {
+      judge = { model: phaseValue.judge.model.trim() };
+    }
+
+    // ministers: take max count across phases
+    if (Array.isArray(phaseValue.ministers) && phaseValue.ministers.length > ministers.length) {
+      ministers = phaseValue.ministers.slice();
+    }
+
+    // radar: first enabled occurrence wins
+    if (!radar && phaseValue.radar && phaseValue.radar.enabled === true && typeof phaseValue.radar.model === 'string') {
+      radar = { model: phaseValue.radar.model.trim(), enabled: true };
+    }
+
+    // maxRounds: first enabled occurrence wins
+    if (maxRounds === 4 && tribunal.max_rounds && Number.isInteger(tribunal.max_rounds) && tribunal.max_rounds > 0) {
+      maxRounds = tribunal.max_rounds;
+    }
+  }
+
+  return { hasAny, judge, ministers, radar, maxRounds };
+}
+
+/**
+ * Build tribunal sub-agent entries (judge, ministers, radar) for a profile.
+ *
+ * Design decisions (D10 from design.md):
+ *   - Named `gsr-{profile}-judge`, `gsr-{profile}-minister-1`, `gsr-{profile}-radar`
+ *   - hidden: true — advisory agents, not for sidebar display
+ *   - tools: read-only — sub-agents are advisory, not executing
+ *   - _gsr_generated: true — unified-sync can manage these
+ *   - systemPrompt: skill content from router/skills/
+ *
+ * @param {string} profileName
+ * @param {object} tribunalConfig - Output of collectTribunalConfig()
+ * @param {object} agents - mutated in place
+ */
+function buildTribunalSubAgents(profileName, tribunalConfig, agents) {
+  const { judge, ministers, radar } = tribunalConfig;
+
+  // Per-role tool permissions:
+  //   Judge:    needs edit (metadata files), write (channel), bash (sleep/polling), delegate (ministers)
+  //   Minister: needs write (channel), bash (sleep/polling), read (channel) — no edit
+  //   Radar:    needs write (findings), bash (grep/find investigation), read (channel) — no edit
+  const TRIBUNAL_TOOLS = {
+    judge:    { read: true, edit: true,  write: true,  bash: true,  delegate: true,  delegation_read: true,  delegation_list: true },
+    minister: { read: true, edit: false, write: true,  bash: true,  delegate: false, delegation_read: false, delegation_list: false },
+    radar:    { read: true, edit: false, write: true,  bash: true,  delegate: false, delegation_read: false, delegation_list: false },
+  };
+
+  // Heartbeat reference appended to all tribunal sub-agent prompts
+  const HEARTBEAT_SKILL_REF = '\n\n## Heartbeat Protocol\nLoad the watchdog-heartbeat skill and follow the heartbeat protocol. Write heartbeats to .gsr/watchdog/ every 15-30 seconds.';
+
+  // Judge agent
+  if (judge) {
+    const judgeKey = `${GSR_AGENT_PREFIX}${profileName}-judge`;
+    agents[judgeKey] = {
+      model: judge.model,
+      description: `Tribunal judge for ${profileName}`,
+      hidden: true,
+      tools: { ...TRIBUNAL_TOOLS.judge },
+      systemPrompt: loadSkillContent('tribunal-judge') + HEARTBEAT_SKILL_REF,
+      _gsr_generated: true,
+    };
+  }
+
+  // Minister agents
+  for (let i = 0; i < ministers.length; i++) {
+    const minister = ministers[i];
+    const ministerKey = `${GSR_AGENT_PREFIX}${profileName}-minister-${i + 1}`;
+    const model = (minister && typeof minister.model === 'string') ? minister.model : 'unknown/model';
+    agents[ministerKey] = {
+      model,
+      description: `Tribunal minister ${i + 1} for ${profileName}`,
+      hidden: true,
+      tools: { ...TRIBUNAL_TOOLS.minister },
+      systemPrompt: loadSkillContent('gsr-usage') + HEARTBEAT_SKILL_REF,
+      _gsr_generated: true,
+    };
+  }
+
+  // Radar agent (only when radar.enabled === true)
+  if (radar && radar.enabled === true) {
+    const radarKey = `${GSR_AGENT_PREFIX}${profileName}-radar`;
+    agents[radarKey] = {
+      model: radar.model,
+      description: `Tribunal radar for ${profileName}`,
+      hidden: true,
+      tools: { ...TRIBUNAL_TOOLS.radar },
+      systemPrompt: loadSkillContent('tribunal-radar') + HEARTBEAT_SKILL_REF,
+      _gsr_generated: true,
+    };
+  }
+}
+
+/**
  * Build one agent entry for a given preset and push it into `agents` (or `warnings` if invalid).
  *
  * Handles both:
@@ -318,6 +469,13 @@ function buildAgentEntry(presetName, preset, agents, warnings, persona, cwd, rou
       }
 
       agents[agentName] = entry;
+
+      // Generate tribunal sub-agents (judge, ministers, radar) when profile has tribunal config.
+      // Design D10: profile-scoped, not per-phase. Additive — orchestrator entry unchanged.
+      const tribunalConfig = collectTribunalConfig(preset);
+      if (tribunalConfig.hasAny) {
+        buildTribunalSubAgents(presetName, tribunalConfig, agents);
+      }
 }
 
 /**

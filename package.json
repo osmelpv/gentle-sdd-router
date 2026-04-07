@@ -58,7 +58,8 @@
   },
   "scripts": {
     "test": "node --test",
-    "build:tui": "echo 'tui.tsx is loaded directly by OpenCode — no build needed'"
+    "build:tui": "echo 'tui.tsx is loaded directly by OpenCode — no build needed'",
+    "postinstall": "node bin/postinstall-skills.js"
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",

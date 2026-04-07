@@ -134,12 +134,20 @@ export function SddPhaseEditor({
       };
       fsMod.writeFileSync(sddYamlPath, stringifyYaml(updatedSdd), 'utf8');
 
-      // Auto-generate contract if it doesn't already exist
+      // Auto-generate contract if it doesn't already exist.
+      // Tribunal fields (judge, radar, ministers) default to disabled so the
+      // contract scaffold is conservative. Users can add tribunal config
+      // to sdd.yaml manually or via the profile wizard.
       scaffoldPhaseContract(catalogsDir, selectedSdd, newPhaseName, {
         intent,
         agents: 1,
         judge: false,
         radar: false,
+        tribunal: {
+          enabled: false,
+          max_rounds: 4,
+          escalate_after: 4,
+        },
       });
 
       // Keep project-local sdd-* agents in sync whenever phases change.
