@@ -74,6 +74,8 @@ export {
   deleteCatalog,
   getCatalogDisplayName,
   setCatalogEnabled,
+  toggleProfileVisibility,
+  setProfileVisibility,
 } from './core/profile-io.js';
 
 export {

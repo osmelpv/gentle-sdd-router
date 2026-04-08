@@ -397,36 +397,23 @@ export function ProfileDetailScreen({ config: propConfig, configPath: propConfig
 
         if (value === 'toggle-visibility') {
           try {
-            const newHidden = isVisible;
-            appendTuiDebug('profile_detail_toggle_start', {
-              preset: activePresetName,
-              fromVisible: isVisible,
-              toHidden: newHidden,
-              configPath: localConfigPath,
-            });
-            const nextConfig = mod.setPresetMetadata(localConfig, activePresetName, { hidden: newHidden });
-            mod.saveRouterConfig(nextConfig, localConfigPath, localConfig);
+            const pathMod = await import('node:path');
+            const routerDir = pathMod.dirname(localConfigPath);
+            const profileMod = await import('../../../core/profile-io.js');
+
+            const { visible } = profileMod.toggleProfileVisibility(activePresetName, routerDir);
 
             const freshConfig = mod.loadRouterConfig(localConfigPath);
-            const freshPreset = freshConfig?.catalogs?.[selectedCatalog || activeOwner?.catalogName || freshConfig?.active_catalog || 'default']?.presets?.[activePresetName];
-            appendTuiDebug('profile_detail_toggle_reloaded', {
-              preset: activePresetName,
-              hiddenInFreshConfig: freshPreset?.hidden,
-            });
             setLocalConfig(freshConfig);
             if (setConfig) setConfig(freshConfig);
-            
+
             try {
               await unifiedSync({ configPath: localConfigPath });
-              showResult(`Preset '${activePresetName}' is now ${newHidden ? 'hidden' : 'visible'}. OpenCode updated.`);
+              showResult(`Profile '${activePresetName}' is now ${visible ? 'visible' : 'hidden'}. OpenCode updated.`);
             } catch (syncErr) {
               showResult(`Saved. Sync failed: ${syncErr.message} — run 'gsr sync' manually.`);
             }
           } catch (err) {
-            appendTuiDebug('profile_detail_toggle_error', {
-              preset: activePresetName,
-              error: err,
-            });
             showResult(`Error: ${err.message}`);
           }
           return;

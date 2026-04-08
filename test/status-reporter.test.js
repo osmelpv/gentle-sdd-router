@@ -785,6 +785,107 @@ describe('getUnifiedStatus', () => {
   });
 });
 
+// ── getUnifiedStatus — Skills section ────────────────────────────────────────
+
+describe('getUnifiedStatus — Skills section', () => {
+  test('shows SKILLS section when routerDir has .md files in skills/', async () => {
+    const { mkdtempSync, writeFileSync, mkdirSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { tmpdir } = await import('node:os');
+    const tmp = mkdtempSync(join(tmpdir(), 'gsr-skills-test-'));
+    const skillsDir = join(tmp, 'skills');
+    mkdirSync(skillsDir);
+    writeFileSync(join(skillsDir, 'sdd-apply.md'), '# skill');
+    writeFileSync(join(skillsDir, 'sdd-spec.md'), '# skill');
+    const result = getUnifiedStatus(minConfig, { manifestExists: true, routerDir: tmp });
+    assert.ok(result.includes('SKILLS'), `should show SKILLS section. Got:\n${result}`);
+    assert.ok(result.includes('2 skills'), `should show 2 skills count. Got:\n${result}`);
+    assert.ok(result.includes('- sdd-apply'), `should list skill name. Got:\n${result}`);
+  });
+
+  test('does NOT show SKILLS section when skills dir is empty or missing', () => {
+    const result = getUnifiedStatus(minConfig, { manifestExists: true, routerDir: '/nonexistent-dir-xyz' });
+    assert.ok(!result.includes('SKILLS'), `should NOT show SKILLS when none. Got:\n${result}`);
+  });
+
+  test('does NOT show SKILLS section when routerDir is not provided', () => {
+    const result = getUnifiedStatus(minConfig, { manifestExists: true });
+    assert.ok(!result.includes('SKILLS'), `should NOT show SKILLS when no routerDir. Got:\n${result}`);
+  });
+});
+
+// ── getUnifiedStatus — Tribunal section ──────────────────────────────────────
+
+describe('getUnifiedStatus — Tribunal section', () => {
+  test('shows TRIBUNAL section when active preset has tribunal-enabled phases', () => {
+    const configWithTribunal = {
+      version: 3,
+      active_catalog: 'default',
+      active_preset: 'tribunal-test',
+      activation_state: 'active',
+      catalogs: {
+        default: {
+          enabled: true,
+          presets: {
+            'tribunal-test': {
+              phases: {
+                orchestrator: [{ target: 'anthropic/claude-opus' }],
+                verify: {
+                  tribunal: { enabled: true },
+                  ministers: ['minister-a', 'minister-b'],
+                  radar: { enabled: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+    const result = getUnifiedStatus(configWithTribunal, { manifestExists: true });
+    assert.ok(result.includes('TRIBUNAL'), `should show TRIBUNAL section. Got:\n${result}`);
+    assert.ok(result.includes('verify'), `should show phase name. Got:\n${result}`);
+    assert.ok(result.includes('2 ministers'), `should show minister count. Got:\n${result}`);
+    assert.ok(result.includes('+ radar'), `should show radar. Got:\n${result}`);
+  });
+
+  test('does NOT show TRIBUNAL section when no tribunal phases exist', () => {
+    const result = getUnifiedStatus(minConfig, { manifestExists: true });
+    assert.ok(!result.includes('TRIBUNAL'), `should NOT show TRIBUNAL. Got:\n${result}`);
+  });
+});
+
+// ── getUnifiedStatus — Version field ─────────────────────────────────────────
+
+describe('getUnifiedStatus — Version field in CONFIGURATION', () => {
+  test('shows Version in CONFIGURATION when options.version is provided', () => {
+    const result = getUnifiedStatus(minConfig, { manifestExists: true, version: '1.2.3' });
+    assert.ok(result.includes('Version'), `should show Version label. Got:\n${result}`);
+    assert.ok(result.includes('1.2.3'), `should show version value. Got:\n${result}`);
+  });
+
+  test('does NOT show Version line when options.version is not provided', () => {
+    const result = getUnifiedStatus(minConfig, { manifestExists: true });
+    // Version should not appear in CONFIGURATION (no version line)
+    const configSection = result.slice(result.indexOf('CONFIGURATION'), result.indexOf('PRESET'));
+    assert.ok(!configSection.includes('1.2.3'), `should NOT show version when not provided. Got:\n${configSection}`);
+  });
+});
+
+// ── getSimpleStatus — Version field ──────────────────────────────────────────
+
+describe('getSimpleStatus — Version field', () => {
+  test('shows Version when options.version is provided', () => {
+    const result = getSimpleStatus(minConfig, { manifestExists: true, version: '0.2.0' });
+    assert.ok(result.includes('Version'), `should show Version label. Got:\n${result}`);
+    assert.ok(result.includes('0.2.0'), `should show version value. Got:\n${result}`);
+  });
+
+  test('does NOT show Version when options.version is not provided', () => {
+    const result = getSimpleStatus(minConfig, { manifestExists: true });
+    assert.ok(!result.includes('0.2.0'), `should NOT show version when not provided. Got:\n${result}`);
+  });
+});
+
 // ── getPublicPresetMetadata active field removed tests ────────────────────────
 
 describe('getPublicPresetMetadata — active field removed', () => {

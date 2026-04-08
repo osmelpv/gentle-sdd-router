@@ -52,9 +52,10 @@ export function getHomeMenuItems(config) {
 
   return [
     { label: 'Status', value: 'status', description: 'View current router status: active preset, sync state, and whether the host is ready.' },
-    { label: `Presets (${presetCount})`, value: 'presets', description: 'Browse and manage routing presets. Activate/deactivate, view details.' },
+    { label: `Profiles (${presetCount})`, value: 'presets', description: 'Browse and manage routing presets. Activate/deactivate, view details.' },
     { label: `Custom SDDs (${sddCount})`, value: 'sdd-list', description: 'Create and manage custom SDD workflows (phases, role contracts).' },
-    { label: 'Manage', value: 'manage', description: 'Switch presets, activate/deactivate routing, browse metadata, check migrations.' },
+    { label: 'Manage', value: 'manage', description: 'Switch presets, activate/deactivate routing, browse metadata.' },
+    { label: 'Update', value: 'update', description: 'Check for pending config migrations and apply updates.' },
     { label: 'Settings', value: 'settings', description: 'Apply OpenCode overlay or uninstall gsr from this project.' },
     { label: 'Exit', value: 'exit', description: 'Close the interface.' },
   ];
@@ -63,11 +64,30 @@ export function getHomeMenuItems(config) {
 /** Static fallback for tests and cases where config is not available. */
 export const HOME_MENU_ITEMS = getHomeMenuItems(null);
 
-export function HomeScreen({ router, setDescription, exit, config }) {
+export function HomeScreen({ router, setDescription, exit, config, configPath, showResult }) {
   const items = getHomeMenuItems(config);
 
-  const handleSelect = (value) => {
+  const handleSelect = async (value) => {
     if (value === 'exit') { exit(); return; }
+    if (value === 'update') {
+      // Direct to migrations check — same logic as manage.js "update" handler
+      try {
+        const path = await import('node:path');
+        const mod = await import('../../../core/migrations/index.js');
+        const routerDir = path.dirname(configPath);
+        const plan = mod.planMigrations(routerDir);
+        if (plan.pending.length === 0) {
+          showResult(`Config is up to date (version ${plan.currentVersion}).`);
+        } else {
+          // Navigate to manage screen and let the user click "Check migrations" to apply
+          router.push('manage');
+          showResult(`${plan.pending.length} pending migration(s). Go to Manage → Check migrations to apply.`);
+        }
+      } catch (err) {
+        showResult(`Error checking migrations: ${err.message}`);
+      }
+      return;
+    }
     router.push(value);
   };
 

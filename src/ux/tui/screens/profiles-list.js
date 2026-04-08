@@ -114,53 +114,28 @@ export function ProfilesScreen({ config, configPath, router, setDescription, sho
     if (value === '__none__') return;
 
     const preset = presets.find(p => p.label === value);
-    if (!preset) {
-      appendTuiDebug('presets_toggle_missing_preset', { value });
-      return;
-    }
-
-    const newHiddenValue = preset.isVisible;
+    if (!preset) return;
+    if (preset.isReadOnly) return;
 
     try {
-      appendTuiDebug('presets_toggle_start', {
-        preset: preset.label,
-        fromVisible: preset.isVisible,
-        toHidden: newHiddenValue,
-        configPath,
-      });
-      
-      const mod = await import('../../../router-config.js');
-      const nextConfig = mod.setPresetMetadata(config, preset.label, { hidden: newHiddenValue });
-      mod.saveRouterConfig(nextConfig, configPath, config);
+      const pathMod = await import('node:path');
+      const routerDir = pathMod.dirname(configPath);
+      const profileMod = await import('../../../core/profile-io.js');
 
-      // Reload the exact config file backing the current TUI session.
+      const { visible } = profileMod.toggleProfileVisibility(value, routerDir);
+
+      // Reload config
+      const mod = await import('../../../router-config.js');
       const freshConfig = mod.loadRouterConfig(configPath);
-      const freshPreset = freshConfig?.profilesMap?.get(preset.label)?.content;
-      appendTuiDebug('presets_toggle_reloaded', {
-        preset: preset.label,
-        hiddenInFreshConfig: freshPreset?.hidden,
-        sddName: preset.sddName,
-        freshActivePreset: freshConfig?.active_preset ?? null,
-      });
-      if (setConfig) {
-        appendTuiDebug('presets_toggle_set_config', {
-          preset: preset.label,
-          hiddenInFreshConfig: freshPreset?.hidden,
-        });
-        setConfig(freshConfig);
-      }
+      if (setConfig) setConfig(freshConfig);
 
       try {
         await unifiedSync({ configPath });
-        setLastMessage(`Preset '${preset.label}' is now ${newHiddenValue ? 'hidden' : 'visible'}. OpenCode updated.`);
+        setLastMessage(`Profile '${value}' is now ${visible ? 'visible' : 'hidden'}. OpenCode updated.`);
       } catch (syncErr) {
         setLastMessage(`Saved. Sync failed: ${syncErr.message} — run 'gsr sync' manually.`);
       }
     } catch (err) {
-      appendTuiDebug('presets_toggle_error', {
-        preset: preset.label,
-        error: err,
-      });
       setLastMessage(`Error: ${err.message}`);
     }
   };
@@ -408,19 +383,26 @@ function PresetMenu({ items, onSelect, onToggleVisibility, onDelete, setDescript
       }
 
       // Wide form: table with columns
-      const name = item.label.padEnd(30).slice(0, 30);
-      const phaseCount = Object.keys(item.phases ?? {}).length;
-      // Derive type from item properties (global = 'built-in', project = 'custom')
-      const type = (item.scope ?? 'project').padEnd(12).slice(0, 12);
-      const phases = String(phaseCount).padEnd(8).slice(0, 8);
-      const visibility = (item.tag ?? 'visible').padEnd(10).slice(0, 10);
+      const name = item.label.padEnd(22).slice(0, 22);
+
+      // Get phase count from profilesMap (not from item.phases which doesn't exist)
+      const profileEntry = profilesMap.get(item.label);
+      const pCount = profileEntry ? Object.keys(profileEntry.content?.phases ?? {}).length : 0;
+      const phases = String(pCount).padEnd(8).slice(0, 8);
+
+      // Scope: builtin / global / project / gentle-ai
+      const scopeStr = (item.scope ?? 'project').padEnd(10).slice(0, 10);
+
+      // Visibility: separate from scope — always show visible/hidden
+      const visStr = item.isReadOnly ? 'read-only' : (item.isVisible ? 'visible' : 'hidden');
+      const visibility = visStr.padEnd(10).slice(0, 10);
 
       return h(Box, { key: item.label, flexDirection: 'row' },
         h(Text, { color, bold: isSelected }, prefix),
         h(Text, { color, bold: isSelected }, name),
-        h(Text, { color: isSelected ? color : colors.subtext }, type),
+        h(Text, { color: isSelected ? color : colors.subtext }, scopeStr),
         h(Text, { color: isSelected ? color : colors.subtext }, phases),
-        h(Text, { color: isSelected ? color : colors.subtext }, visibility),
+        h(Text, { color: item.isVisible ? colors.green : colors.overlay }, visibility),
       );
     }),
   );

@@ -316,6 +316,9 @@ export function getSimpleStatus(config, options = {}) {
   const lines = [header, ''];
 
   // ── Fields ─────────────────────────────────────────────────────────────────
+  if (options.version) {
+    lines.push(`${padLabel('Version', LABEL_WIDTH)}${options.version}`);
+  }
   lines.push(`${padLabel('Preset', LABEL_WIDTH)}${presetName} (${phaseCount} phases)`);
   lines.push(`${padLabel('SDD', LABEL_WIDTH)}${sddLabel}`);
   if (publicPreset?.scope) {
@@ -526,6 +529,8 @@ export function getVerboseStatus(config, options = {}) {
   return lines.join('\n');
 }
 import os from 'node:os';
+import { join } from 'node:path';
+import { readdirSync } from 'node:fs';
 import { getPublicPresetMetadata, getActivePublicPresetMetadata } from './public-preset-metadata.js';
 
 // ── detectEnvironment ─────────────────────────────────────────────────────────
@@ -623,6 +628,10 @@ export function getUnifiedStatus(config, options = {}) {
 
   const manifestState = manifestExists ? `v3 (.sync-manifest.json)` : 'not synced';
   lines.push(`  ${padLabel('Manifest', LABEL_WIDTH)}${manifestState}`);
+  const pkgVersion = options.version ?? null;
+  if (pkgVersion) {
+    lines.push(`  ${padLabel('Version', LABEL_WIDTH)}${pkgVersion}`);
+  }
   lines.push('');
 
   // ── PRESET section ─────────────────────────────────────────────────────────
@@ -667,6 +676,26 @@ export function getUnifiedStatus(config, options = {}) {
   }
   lines.push('');
 
+  // ── SKILLS section ────────────────────────────────────────────────────────
+  const skillsDir = options.routerDir ? join(options.routerDir, 'skills') : null;
+  let skillCount = 0;
+  let skillNames = [];
+  if (skillsDir) {
+    try {
+      const entries = readdirSync(skillsDir).filter(f => f.endsWith('.md'));
+      skillCount = entries.length;
+      skillNames = entries.map(f => f.replace('.md', ''));
+    } catch { /* no skills dir */ }
+  }
+  if (skillCount > 0) {
+    lines.push('SKILLS');
+    lines.push(`  ${padLabel('Installed', LABEL_WIDTH)}${skillCount} skills`);
+    for (const name of skillNames) {
+      lines.push(`    - ${name}`);
+    }
+    lines.push('');
+  }
+
   // ── ROUTES section ─────────────────────────────────────────────────────────
   lines.push('ROUTES');
   if (preset?.phases && Object.keys(preset.phases).length > 0) {
@@ -683,6 +712,29 @@ export function getUnifiedStatus(config, options = {}) {
     lines.push('  (no phases defined)');
   }
   lines.push('');
+
+  // ── TRIBUNAL section ─────────────────────────────────────────────────────
+  // Show which phases have tribunal enabled
+  const tribunalPhases = [];
+  if (preset?.phases) {
+    for (const [phaseName, phaseConfig] of Object.entries(preset.phases)) {
+      // phaseConfig might be a lanes array or have tribunal sibling
+      // In v4/v5, tribunal is at the phase level alongside lanes
+      if (phaseConfig?.tribunal?.enabled) {
+        const ministerCount = Array.isArray(phaseConfig.ministers) ? phaseConfig.ministers.length : 0;
+        const hasRadar = phaseConfig.radar?.enabled === true;
+        tribunalPhases.push({ name: phaseName, ministerCount, hasRadar });
+      }
+    }
+  }
+  if (tribunalPhases.length > 0) {
+    lines.push('TRIBUNAL');
+    for (const tp of tribunalPhases) {
+      const radarStr = tp.hasRadar ? ' + radar' : '';
+      lines.push(`  ${tp.name.padEnd(18)}${tp.ministerCount} ministers${radarStr}`);
+    }
+    lines.push('');
+  }
 
   // ── SDDS section ───────────────────────────────────────────────────────────
   const publicPresets = getPublicPresetMetadata(config);

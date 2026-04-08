@@ -977,6 +977,69 @@ export function setSddEnabled(sddName, enabled, routerDir) {
  */
 export const setCatalogEnabled = setSddEnabled;
 
+// === VISIBILITY TOGGLE ===
+
+/**
+ * Toggle the visibility of a profile in its YAML file.
+ * Works with v4/v5 multi-file profiles.
+ *
+ * @param {string} profileName - Profile name
+ * @param {string} routerDir - Path to router/ directory
+ * @returns {{ visible: boolean, filePath: string }}
+ */
+export function toggleProfileVisibility(profileName, routerDir) {
+  const profilesDir = join(routerDir, 'profiles');
+  const filePath = join(profilesDir, `${profileName}.router.yaml`);
+
+  if (!existsSync(filePath)) {
+    throw new Error(`Profile file not found: ${filePath}`);
+  }
+
+  const raw = readFileSync(filePath, 'utf8');
+  const content = parseYaml(raw);
+
+  // Toggle: if visible is true, set to false.
+  // If visible is missing or false, set to true.
+  const wasVisible = content.visible === true;
+  content.visible = !wasVisible;
+
+  // Atomic write
+  const yaml = stringifyYaml(content);
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tempPath, yaml, 'utf8');
+  renameSync(tempPath, filePath);
+
+  return { visible: content.visible, filePath };
+}
+
+/**
+ * Set visibility explicitly for a profile.
+ *
+ * @param {string} profileName
+ * @param {boolean} visible
+ * @param {string} routerDir
+ * @returns {{ visible: boolean, filePath: string }}
+ */
+export function setProfileVisibility(profileName, visible, routerDir) {
+  const profilesDir = join(routerDir, 'profiles');
+  const filePath = join(profilesDir, `${profileName}.router.yaml`);
+
+  if (!existsSync(filePath)) {
+    throw new Error(`Profile file not found: ${filePath}`);
+  }
+
+  const raw = readFileSync(filePath, 'utf8');
+  const content = parseYaml(raw);
+  content.visible = visible;
+
+  const yaml = stringifyYaml(content);
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tempPath, yaml, 'utf8');
+  renameSync(tempPath, filePath);
+
+  return { visible, filePath };
+}
+
 // === PROFILE LOADER (canonical name) ===
 
 /**

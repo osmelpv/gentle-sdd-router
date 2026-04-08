@@ -100,6 +100,37 @@ describe('StatusScreen — component export', () => {
   });
 });
 
+// ── HomeScreen — Update menu item ─────────────────────────────────────────
+
+describe('HomeScreen — Update menu item', () => {
+  test('HOME_MENU_ITEMS contains an Update entry with value "update"', async () => {
+    const { HOME_MENU_ITEMS } = await import('../src/ux/tui/screens/home.js');
+    const updateItem = HOME_MENU_ITEMS.find(i => i.value === 'update');
+    assert.ok(updateItem, 'Should have an Update menu item with value "update"');
+    assert.equal(updateItem.label, 'Update', 'Update item label should be "Update"');
+  });
+
+  test('Update item appears before Exit item', async () => {
+    const { HOME_MENU_ITEMS } = await import('../src/ux/tui/screens/home.js');
+    const updateIdx = HOME_MENU_ITEMS.findIndex(i => i.value === 'update');
+    const exitIdx = HOME_MENU_ITEMS.findIndex(i => i.value === 'exit');
+    assert.ok(updateIdx !== -1, 'Update item should exist');
+    assert.ok(exitIdx !== -1, 'Exit item should exist');
+    assert.ok(updateIdx < exitIdx, `Update (${updateIdx}) should come before Exit (${exitIdx})`);
+  });
+
+  test('Update item description mentions migrations or updates', async () => {
+    const { HOME_MENU_ITEMS } = await import('../src/ux/tui/screens/home.js');
+    const updateItem = HOME_MENU_ITEMS.find(i => i.value === 'update');
+    assert.ok(updateItem, 'Should have an Update menu item');
+    const lower = updateItem.description.toLowerCase();
+    assert.ok(
+      lower.includes('migration') || lower.includes('update'),
+      `Update description should mention migrations or updates. Got: "${updateItem.description}"`
+    );
+  });
+});
+
 // ── Home screen description update ────────────────────────────────────────
 
 describe('HomeScreen — Status item description is user-friendly', () => {
