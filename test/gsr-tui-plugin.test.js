@@ -281,6 +281,55 @@ describe('readGsrFallbackData — output parsing', () => {
   });
 });
 
+// ── getActivePreset — preset name extraction ──────────────────────────────────
+
+// getActivePreset is extracted to helpers so it can be tested without spawning
+// a real `gsr status` process. We import it directly from helpers.
+
+const { getActivePreset } =
+  await import('../src/adapters/opencode/gsr-tui-plugin-helpers.js');
+
+describe('getActivePreset — getUnifiedStatus output format', () => {
+  test('returns preset name from unified status output (not "Active")', () => {
+    // Real output from getUnifiedStatus:
+    //   PRESET
+    //     Active          local-hybrid (9 phases, SDD: ...)
+    const raw = [
+      'PRESET',
+      '  Active          local-hybrid (9 phases, SDD: enabled)',
+      '',
+      'PHASES',
+    ].join('\n');
+    const result = getActivePreset(raw);
+    assert.equal(result, 'local-hybrid', 'Should return preset name, not "Active"');
+  });
+
+  test('regression guard: does NOT return "Active" for getUnifiedStatus output', () => {
+    const raw = 'PRESET\n  Active          local-hybrid (9 phases, SDD: enabled)\n';
+    const result = getActivePreset(raw);
+    assert.notEqual(result, 'Active', 'Must never return "Active" as the preset name');
+  });
+
+  test('returns preset name from getSimpleStatus fallback format', () => {
+    // Fallback format from getSimpleStatus:
+    //   Preset      local-hybrid (9 phases)
+    const raw = 'Preset      local-hybrid (9 phases)\n';
+    const result = getActivePreset(raw);
+    assert.equal(result, 'local-hybrid');
+  });
+
+  test('returns "default" when output has no recognizable preset line', () => {
+    const result = getActivePreset('No preset info here\n');
+    assert.equal(result, 'default');
+  });
+
+  test('handles preset name with hyphens and dots', () => {
+    const raw = 'PRESET\n  Active          my-preset.v2 (5 phases)\n';
+    const result = getActivePreset(raw);
+    assert.equal(result, 'my-preset.v2');
+  });
+});
+
 // ── readGsrFallbackData — error handling ─────────────────────────────────────
 
 describe('readGsrFallbackData — error handling (gsr not in PATH)', () => {

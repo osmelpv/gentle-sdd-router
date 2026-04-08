@@ -19,11 +19,12 @@
 export {
   parseGsrFallbackList,
   readGsrFallbackData,
+  getActivePreset,
   getAutoFallbackSetting,
   setAutoFallbackSetting,
 } from './gsr-tui-plugin-helpers.js';
 
-import { parseGsrFallbackList } from './gsr-tui-plugin-helpers.js';
+import { parseGsrFallbackList, getActivePreset } from './gsr-tui-plugin-helpers.js';
 
 // ── Main TUI Plugin ───────────────────────────────────────────────────────────
 
@@ -41,28 +42,25 @@ const tui = async (api, options) => {
   const readFallbackData = async () => {
     const { execSync } = require('child_process');
     try {
-      const raw = execSync('gsr fallback list 2>/dev/null', { encoding: 'utf8' });
+      // Bug 1 fix: get active preset first — CLI requires preset name
+      const statusRaw = execSync('gsr status 2>/dev/null', { encoding: 'utf8' });
+      const preset = getActivePreset(statusRaw);
+      const raw = execSync(`gsr fallback list ${preset} 2>/dev/null`, { encoding: 'utf8' });
       return parseGsrFallbackList(raw);
     } catch {
       return { phases: [] };
     }
   };
 
-  const getActivePreset = () => {
-    const { execSync } = require('child_process');
-    try {
-      const raw = execSync('gsr status 2>/dev/null', { encoding: 'utf8' });
-      // Format: "Preset      local-hybrid (9 phases)"
-      const match = raw.match(/Preset\s+(\S+)/i);
-      return match?.[1] || 'default';
-    } catch {
-      return 'default';
-    }
-  };
+  // getActivePreset is now a pure helper imported from gsr-tui-plugin-helpers.js.
+  // Bug 2 fix: the old closure-local version used /Preset\s+(\S+)/i which matched
+  // "Active" in getUnifiedStatus output instead of the real preset name.
+  // The imported pure function handles both output formats correctly.
 
   const executePromote = async (phase, index) => {
     const { execSync } = require('child_process');
-    const preset = getActivePreset();
+    const statusRaw = execSync('gsr status 2>/dev/null', { encoding: 'utf8' });
+    const preset = getActivePreset(statusRaw);
     try {
       execSync(`gsr fallback promote ${preset} ${phase.name} ${index} 2>&1`, { encoding: 'utf8' });
       execSync('gsr sync 2>&1', { encoding: 'utf8' });

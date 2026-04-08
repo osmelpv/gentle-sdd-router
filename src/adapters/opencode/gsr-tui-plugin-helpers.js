@@ -65,16 +65,47 @@ export function parseGsrFallbackList(output) {
 }
 
 /**
+ * Parse the active preset name from `gsr status` output.
+ *
+ * Supports two output formats:
+ *   - getUnifiedStatus: "PRESET\n  Active          local-hybrid (9 phases, ...)"
+ *   - getSimpleStatus:  "Preset      local-hybrid (9 phases)"
+ *
+ * @param {string} raw - output string from `gsr status`
+ * @returns {string} preset name, or 'default' if not found
+ */
+export function getActivePreset(raw) {
+  // getUnifiedStatus format: "  Active          local-hybrid (9 phases, ...)"
+  const unifiedMatch = raw.match(/^\s+Active\s+(\S+)/m);
+  if (unifiedMatch) return unifiedMatch[1];
+
+  // getSimpleStatus fallback format: "Preset      local-hybrid (9 phases)"
+  // Case-sensitive: the real format starts with capital "Preset" at line start.
+  const simpleMatch = raw.match(/^Preset\s+(\S+)/m);
+  if (simpleMatch) return simpleMatch[1];
+
+  return 'default';
+}
+
+/**
  * Read fallback data via `gsr fallback list`. Exported for testing.
  *
- * @param {string} [presetName] - optional preset (legacy compat — gsr uses active preset)
+ * Gets the active preset first via `gsr status`, then calls
+ * `gsr fallback list <preset>` — the CLI requires a preset name.
+ *
+ * @param {string} [presetName] - explicit preset name (optional; auto-detected if omitted)
  * @returns {Promise<{ phases: Array<{ name: string, primary: string, fallbacks: string[] }> }>}
  */
 export async function readGsrFallbackData(presetName) {
   const { execSync } = _require('child_process');
-  const cmd = presetName
-    ? `gsr fallback list ${presetName} 2>/dev/null`
-    : 'gsr fallback list 2>/dev/null';
+
+  let preset = presetName;
+  if (!preset) {
+    const statusRaw = execSync('gsr status 2>/dev/null', { encoding: 'utf8' });
+    preset = getActivePreset(statusRaw);
+  }
+
+  const cmd = `gsr fallback list ${preset} 2>/dev/null`;
   const raw = execSync(cmd, { encoding: 'utf8' });
   return parseGsrFallbackList(raw);
 }
