@@ -110,6 +110,50 @@ export async function readGsrFallbackData(presetName) {
   return parseGsrFallbackList(raw);
 }
 
+/**
+ * Parse the text output of `gsr profile list` into a list of profile names.
+ *
+ * Expected output format (per gsr CLI runProfileList):
+ *   Profile List
+ *   ────────────────────────────────────────────────────
+ *     cheap                agent-orchestrator   hidden     builtin
+ *     local-hybrid         agent-orchestrator   visible    builtin
+ *     ...
+ *     ── gentle-ai ──
+ *     sdd-orchestrator     (gentle-ai)          -          gentle-ai
+ *
+ * Rules:
+ *   - Skip the "Profile List" header line
+ *   - Skip separator lines (────...)
+ *   - Skip empty lines
+ *   - The gentle-ai section separator "── gentle-ai ──" is skipped
+ *   - Each data line starts with 2 spaces then a profile name followed by spaces
+ *   - Extract only the first token (profile name) from each data line
+ *
+ * @param {string} raw - raw text output from `gsr profile list`
+ * @returns {{ profiles: string[] }}
+ */
+export function parseProfileListOutput(raw) {
+  const profiles = [];
+  for (const line of raw.split('\n')) {
+    // Must start with at least 2 spaces (data lines indent with 2 spaces)
+    if (!line.startsWith('  ')) continue;
+    const content = line.trim();
+    // Skip empty trimmed lines
+    if (!content) continue;
+    // Skip separator lines that start with ─ or contain only dashes/special chars
+    if (/^─/.test(content)) continue;
+    // Skip the "── gentle-ai ──" section header (contains ──)
+    if (/^──/.test(content)) continue;
+    // Skip the "Profile List" header (shouldn't occur at 2-space indent, but guard anyway)
+    if (content === 'Profile List') continue;
+    // Extract the first word (profile name)
+    const m = content.match(/^(\S+)/);
+    if (m) profiles.push(m[1]);
+  }
+  return { profiles };
+}
+
 // ── Auto-fallback helpers (exported for testing) ──────────────────────────────
 
 /**

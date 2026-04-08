@@ -4,6 +4,16 @@ import type { TuiPlugin, TuiPluginModule } from "@opencode-ai/plugin/tui";
 
 const id = "gentle-sdd-router";
 
+// ── Debug guard ───────────────────────────────────────────────────────────────
+// Logs to .sdd-debug.log in the process CWD — never to stdout/stderr (would
+// break OpenCode TUI). Remove only when .sdd-debug.log is no longer needed.
+function dbg(label: string, data: any) {
+  try {
+    const line = JSON.stringify({ t: Date.now(), label, data }) + "\n";
+    require("fs").appendFileSync(".sdd-debug.log", line);
+  } catch {}
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function runSafe(cmd: string, fallback = ""): string {
@@ -11,27 +21,58 @@ function runSafe(cmd: string, fallback = ""): string {
     const { spawnSync } = require("child_process");
     const [bin, ...args] = cmd.trim().split(/\s+/);
     const result = spawnSync(bin, args, { encoding: "utf8", timeout: 8000 });
+    dbg("runSafe", { cmd, stdout: (result.stdout || "").slice(0, 500), status: result.status });
     if (result.error || result.status !== 0) return fallback;
     return (result.stdout || "").trim();
   } catch { return fallback; }
 }
 
 /**
- * Parse `gsr preset list` output into preset names and active indicator.
- * Format: "Active preset: X\nPresets:\n  name1 (N phases) ...\n  name2 ..."
+ * Parse `gsr profile list` output into profile names and detect active preset.
+ *
+ * New format (gsr profile list):
+ *   Profile List
+ *   ────────────────────────────────────────────────────
+ *     cheap                agent-orchestrator   hidden     builtin
+ *     local-hybrid         agent-orchestrator   visible    builtin
+ *     ...
+ *     ── gentle-ai ──
+ *     sdd-orchestrator     (gentle-ai)          -          gentle-ai
+ *
+ * Active preset is determined from `gsr status` output:
+ *   PRESET
+ *     Active          local-hybrid (9 phases, SDD: enabled)
  */
 function parsePresetList(): { presets: string[]; active: string } {
-  const out = runSafe("gsr preset list");
-  const activeMatch = out.match(/Active preset:\s*(\S+)/i);
-  const active = activeMatch?.[1] || "default";
+  // Use gsr profile list (gsr preset list is deprecated)
+  const out = runSafe("gsr profile list");
   const presets: string[] = [];
   for (const line of out.split("\n")) {
-    const trimmed = line.trim();
-    // Skip headers/labels — preset lines start with a name followed by (N phases)
-    const m = trimmed.match(/^(\S+)\s+\(\d+ phases?\)/);
+    // Data lines start with at least 2 spaces
+    if (!line.startsWith("  ")) continue;
+    const content = line.trim();
+    if (!content) continue;
+    // Skip separator lines (─...) and gentle-ai section headers (──...)
+    if (/^─/.test(content)) continue;
+    if (/^──/.test(content)) continue;
+    if (content === "Profile List") continue;
+    const m = content.match(/^(\S+)/);
     if (m) presets.push(m[1]);
   }
-  return { presets, active };
+
+  // Detect active preset from gsr status
+  const statusOut = runSafe("gsr status");
+  dbg("parsePresetList", { profileListRaw: out.slice(0, 500), statusRaw: statusOut.slice(0, 300), presets });
+
+  // Format: "  Active          local-hybrid (9 phases, SDD: ...)"
+  const unifiedMatch = statusOut.match(/^\s+Active\s+(\S+)/m);
+  if (unifiedMatch) return { presets, active: unifiedMatch[1] };
+
+  // Fallback: "Preset      local-hybrid (9 phases)"
+  const simpleMatch = statusOut.match(/^Preset\s+(\S+)/m);
+  if (simpleMatch) return { presets, active: simpleMatch[1] };
+
+  return { presets, active: "default" };
 }
 
 function parseGsrFallbackList(output: string) {
@@ -274,6 +315,7 @@ const tui: TuiPlugin = async (api, options) => {
 
   const showPresetPicker = () => {
     const { presets, active } = parsePresetList();
+    dbg("showPresetPicker", { presetsLength: presets.length, active });
 
     if (presets.length === 0) {
       api.ui.toast({ message: "No presets found. Run `gsr install` first.", variant: "error" });

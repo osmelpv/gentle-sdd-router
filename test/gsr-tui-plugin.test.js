@@ -330,6 +330,94 @@ describe('getActivePreset — getUnifiedStatus output format', () => {
   });
 });
 
+// ── parseProfileListOutput — profile list parsing ────────────────────────────
+
+// RED: parseProfileListOutput is not yet exported from gsr-tui-plugin-helpers.js
+// These tests will fail until the function is implemented.
+
+const { parseProfileListOutput } =
+  await import('../src/adapters/opencode/gsr-tui-plugin-helpers.js');
+
+describe('parseProfileListOutput — gsr profile list output parsing', () => {
+  test('parses profile names from standard gsr profile list output', () => {
+    // Real output format from gsr profile list:
+    //   Profile List
+    //   ────────────────────────────────────────────────────
+    //     cheap                agent-orchestrator   hidden     builtin
+    //     local-hybrid         agent-orchestrator   visible    builtin
+    const raw = [
+      'Profile List',
+      '────────────────────────────────────────────────────',
+      '  cheap                agent-orchestrator   hidden     builtin',
+      '  local-hybrid         agent-orchestrator   visible    builtin',
+      '  multivendor          agent-orchestrator   hidden     builtin',
+    ].join('\n');
+    const result = parseProfileListOutput(raw);
+    assert.deepEqual(result.profiles, ['cheap', 'local-hybrid', 'multivendor']);
+  });
+
+  test('returns empty array when no profiles found', () => {
+    const raw = 'Profile List\n────────────────────────────────────────────────────\nNo profiles found.\n';
+    const result = parseProfileListOutput(raw);
+    assert.deepEqual(result.profiles, []);
+  });
+
+  test('excludes the gentle-ai separator line from profile list', () => {
+    const raw = [
+      'Profile List',
+      '────────────────────────────────────────────────────',
+      '  local-hybrid         agent-orchestrator   visible    builtin',
+      '  ── gentle-ai ──',
+      '  sdd-orchestrator     (gentle-ai)          -          gentle-ai',
+    ].join('\n');
+    const result = parseProfileListOutput(raw);
+    assert.deepEqual(result.profiles, ['local-hybrid', 'sdd-orchestrator']);
+  });
+
+  test('excludes header and separator lines — returns only profile name entries', () => {
+    const raw = [
+      'Profile List',
+      '────────────────────────────────────────────────────',
+      '  premium              agent-orchestrator   hidden     builtin',
+      '  safety               agent-orchestrator   hidden     builtin',
+    ].join('\n');
+    const result = parseProfileListOutput(raw);
+    assert.equal(result.profiles.length, 2);
+    assert.ok(result.profiles.includes('premium'));
+    assert.ok(result.profiles.includes('safety'));
+    assert.ok(!result.profiles.includes('Profile List'));
+    assert.ok(!result.profiles.includes('────────────────────────────────────────────────────'));
+  });
+
+  test('handles full output with all real profiles correctly', () => {
+    // Mirrors actual gsr profile list output from the project
+    const raw = [
+      'Profile List',
+      '────────────────────────────────────────────────────',
+      '  cheap                agent-orchestrator   hidden     builtin',
+      '  claude               agent-orchestrator   hidden     builtin',
+      '  free                 agent-orchestrator   hidden     builtin',
+      '  heavyweight          agent-orchestrator   hidden     builtin',
+      '  local-hybrid         agent-orchestrator   visible    builtin',
+      '  mixto                agent-orchestrator   hidden     builtin',
+      '  multiagent           agent-orchestrator   hidden     builtin',
+      '  multivendor          agent-orchestrator   hidden     builtin',
+      '  ollama               agent-orchestrator   hidden     builtin',
+      '  openai               agent-orchestrator   hidden     builtin',
+      '  premium              agent-orchestrator   hidden     builtin',
+      '  safety               agent-orchestrator   hidden     builtin',
+      '  ── gentle-ai ──',
+      '  sdd-orchestrator     (gentle-ai)          -          gentle-ai',
+    ].join('\n');
+    const result = parseProfileListOutput(raw);
+    assert.equal(result.profiles.length, 13);
+    assert.ok(result.profiles.includes('local-hybrid'));
+    assert.ok(result.profiles.includes('sdd-orchestrator'));
+    assert.ok(!result.profiles.includes('Profile List'));
+    assert.ok(!result.profiles.includes('── gentle-ai ──'));
+  });
+});
+
 // ── readGsrFallbackData — error handling ─────────────────────────────────────
 
 describe('readGsrFallbackData — error handling (gsr not in PATH)', () => {
