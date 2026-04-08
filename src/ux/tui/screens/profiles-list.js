@@ -42,6 +42,7 @@ export function ProfilesScreen({ config, configPath, router, setDescription, sho
       displayLabel,
       tag,
       scope,
+      phaseCount,
       description: `${isActive ? '(currently active)' : 'Select to view details'}. ${phaseCount} phases. ${scope}. ${isVisible ? 'Visible in TAB cycling.' : 'Hidden from TAB cycling.'}`,
       sddName,
       isActive,
@@ -385,10 +386,8 @@ function PresetMenu({ items, onSelect, onToggleVisibility, onDelete, setDescript
       // Wide form: table with columns
       const name = item.label.padEnd(22).slice(0, 22);
 
-      // Get phase count from profilesMap (not from item.phases which doesn't exist)
-      const profileEntry = profilesMap.get(item.label);
-      const pCount = profileEntry ? Object.keys(profileEntry.content?.phases ?? {}).length : 0;
-      const phases = String(pCount).padEnd(8).slice(0, 8);
+      // Phase count is included in the item by ProfilesScreen
+      const phases = String(item.phaseCount ?? 0).padEnd(8).slice(0, 8);
 
       // Scope: builtin / global / project / gentle-ai
       const scopeStr = (item.scope ?? 'project').padEnd(10).slice(0, 10);
