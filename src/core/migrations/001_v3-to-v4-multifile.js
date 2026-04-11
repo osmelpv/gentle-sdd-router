@@ -14,13 +14,15 @@ export const migration = {
   },
 
   apply(config, _context) {
+    const sanitizedConfig = sanitizeOptionalV3Selectors(config);
+
     // Normalize to a v3-schema view (handles both v1 and v3 input)
-    const normalized = normalizeRouterSchemaV3(config);
+    const normalized = normalizeRouterSchemaV3(sanitizedConfig);
 
     // Extract active preset/catalog from the original config (prefer raw values)
     const active_preset =
-      config.active_preset ??
-      config.active_profile ??
+      sanitizedConfig.active_preset ??
+      sanitizedConfig.active_profile ??
       normalized.activePresetName ??
       null;
 
@@ -55,6 +57,96 @@ export const migration = {
     return { coreConfig, profiles };
   },
 };
+
+function sanitizeOptionalV3Selectors(config) {
+  if (!config || typeof config !== 'object') {
+    return config;
+  }
+
+  const next = JSON.parse(JSON.stringify(config));
+  for (const key of ['active_catalog', 'active_preset', 'active_profile']) {
+    if (!(key in next)) {
+      continue;
+    }
+
+    const value = next[key];
+    if (typeof value !== 'string') {
+      delete next[key];
+      continue;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      delete next[key];
+      continue;
+    }
+
+    next[key] = trimmed;
+  }
+
+  normalizeV3PhaseObjects(next);
+
+  return next;
+}
+
+function normalizeV3PhaseObjects(config) {
+  if (config.version !== 3 || !config.catalogs || typeof config.catalogs !== 'object') {
+    return;
+  }
+
+  for (const catalog of Object.values(config.catalogs)) {
+    if (!catalog || typeof catalog !== 'object' || !catalog.presets || typeof catalog.presets !== 'object') {
+      continue;
+    }
+
+    for (const preset of Object.values(catalog.presets)) {
+      if (!preset || typeof preset !== 'object' || !preset.phases || typeof preset.phases !== 'object') {
+        continue;
+      }
+
+      for (const [phaseName, phaseValue] of Object.entries(preset.phases)) {
+        if (Array.isArray(phaseValue) || !phaseValue || typeof phaseValue !== 'object') {
+          continue;
+        }
+
+        const model = typeof phaseValue.model === 'string' ? phaseValue.model.trim() : '';
+        if (!model) {
+          continue;
+        }
+
+        const lane = {
+          target: model,
+          phase: phaseName,
+          role: 'primary',
+        };
+        const fallbacks = normalizeFallbacks(phaseValue.fallbacks);
+        if (fallbacks.length > 0) {
+          lane.fallbacks = fallbacks;
+        }
+
+        preset.phases[phaseName] = [lane];
+      }
+    }
+  }
+}
+
+function normalizeFallbacks(value) {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item) => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  }
+
+  return [];
+}
 
 /**
  * Convert a normalized preset object back into the v3 wire format

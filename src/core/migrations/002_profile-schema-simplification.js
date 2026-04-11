@@ -39,7 +39,7 @@ export const migration = {
    */
   canApply(coreConfig, profilesArray = []) {
     // Condition 1: active_preset is present and non-empty
-    if (typeof coreConfig.active_preset === 'string' && coreConfig.active_preset.length > 0) {
+    if (typeof coreConfig.active_preset === 'string' && coreConfig.active_preset.trim().length > 0) {
       return true;
     }
 
@@ -65,7 +65,10 @@ export const migration = {
     const updatedCore = JSON.parse(JSON.stringify(coreConfig));
     const inputProfiles = JSON.parse(JSON.stringify(profilesArray));
 
-    const activePreset = updatedCore.active_preset ?? null;
+    const activePreset =
+      typeof updatedCore.active_preset === 'string'
+        ? updatedCore.active_preset.trim()
+        : null;
 
     // Step 2: Set visible:true on the profile matching active_preset
     if (activePreset) {
