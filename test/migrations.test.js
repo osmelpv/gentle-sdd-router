@@ -459,7 +459,40 @@ profiles:
           role: primary
 `;
 
+const V3_ROUTER_YAML_NO_ACTIVE_PRESET = `version: 3
+active_catalog: default
+activation_state: active
+catalogs:
+  default:
+    presets:
+      balanced:
+        phases:
+          orchestrator:
+            - target: anthropic/claude-sonnet
+              phase: orchestrator
+              role: primary
+`;
+
 describe('runMigrations: full migration flow (v3 → v4)', () => {
+  test('re-plans and applies 002 after 001 when v3 input omits active_preset', async () => {
+    const dir = makeTempDir();
+
+    try {
+      writeRouterYaml(dir, V3_ROUTER_YAML_NO_ACTIVE_PRESET);
+
+      const result = await runMigrations(dir);
+
+      assert.ok(result.applied.includes('001'), 'migration 001 was applied');
+      assert.ok(result.applied.includes('002'), 'migration 002 was applied after re-plan');
+
+      const raw = fs.readFileSync(path.join(dir, 'router.yaml'), 'utf8');
+      assert.ok(raw.includes('version: 4'), 'router.yaml has version: 4 after migrations');
+      assert.ok(!raw.includes('active_preset:'), 'active_preset removed by migration 002');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
   test('applies migration and returns applied list', async () => {
     const dir = makeTempDir();
 

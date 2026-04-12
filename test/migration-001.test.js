@@ -82,6 +82,26 @@ const V3_CONFIG_MULTI_CATALOG = {
   },
 };
 
+const V3_CONFIG_PHASE_OBJECTS = {
+  version: 3,
+  active_catalog: 'default',
+  active_preset: 'cheap',
+  catalogs: {
+    default: {
+      presets: {
+        cheap: {
+          phases: {
+            orchestrator: {
+              model: 'openai/gpt-oss-20b',
+              fallbacks: ['google/gemma-3-27b'],
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
 const V1_CONFIG = {
   version: 1,
   active_profile: 'default',
@@ -136,6 +156,17 @@ describe('migration 001: canApply', () => {
 // ─── apply: v3 monolith ───────────────────────────────────────────────────────
 
 describe('migration 001: apply on v3 config', () => {
+  test('tolerates null active selectors by resolving a fallback preset', () => {
+    const dirtyConfig = {
+      ...V3_CONFIG,
+      active_preset: null,
+      active_profile: null,
+    };
+
+    const { coreConfig } = migration.apply(dirtyConfig, {});
+    assert.equal(coreConfig.active_preset, 'balanced');
+  });
+
   test('produces coreConfig with version 4', () => {
     const { coreConfig } = migration.apply(V3_CONFIG, {});
     assert.equal(coreConfig.version, 4);
@@ -199,6 +230,14 @@ describe('migration 001: apply on v3 config', () => {
 
     assert.ok(edge, 'edge profile exists');
     assert.equal(edge.catalog, 'experimental');
+  });
+
+  test('accepts v3 phase objects with model/fallbacks and migrates them', () => {
+    const { profiles } = migration.apply(V3_CONFIG_PHASE_OBJECTS, {});
+    assert.equal(profiles.length, 1);
+    const orchestrator = profiles[0].content.phases.orchestrator;
+    assert.ok(Array.isArray(orchestrator), 'phase migrated into lane array format');
+    assert.equal(orchestrator[0].target, 'openai/gpt-oss-20b');
   });
 });
 

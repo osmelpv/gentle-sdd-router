@@ -273,6 +273,13 @@ describe('migration 002: canApply', () => {
       false
     );
   });
+
+  test('returns false when active_preset contains only whitespace', () => {
+    assert.equal(
+      migration.canApply({ version: 4, active_preset: '   ' }, []),
+      false
+    );
+  });
 });
 
 // ─── apply: active_preset handling ───────────────────────────────────────────

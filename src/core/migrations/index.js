@@ -376,8 +376,17 @@ export async function runMigrations(routerDir, options = {}) {
 
   const applied = [];
   const backups = [];
+  let finalPlan = plan;
 
-  for (const pendingMigration of plan.pending) {
+  while (true) {
+    const currentPlan = planMigrations(routerDir);
+    finalPlan = currentPlan;
+    const pendingMigration = currentPlan.pending[0];
+
+    if (!pendingMigration) {
+      break;
+    }
+
     // Find the full migration script object
     const script = MIGRATIONS.find((m) => m.id === pendingMigration.id);
     if (!script) {
@@ -439,7 +448,7 @@ export async function runMigrations(routerDir, options = {}) {
     }
   }
 
-  return { applied, backups, plan };
+  return { applied, backups, plan: finalPlan };
 }
 
 // ─── Exports ─────────────────────────────────────────────────────────────────
