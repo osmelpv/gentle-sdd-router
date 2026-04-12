@@ -75,6 +75,27 @@ function loadHeartbeatProtocolText() {
 
 /** Heartbeat protocol text loaded once at module init. */
 const HEARTBEAT_PROTOCOL_TEXT = loadHeartbeatProtocolText();
+
+/**
+ * Load the intent-audit orchestrator protocol from router/skills/intent-audit-orchestrator.md.
+ * Injected into every agent prompt so they know how to handle [gsr-intent-audit] messages.
+ */
+function loadIntentAuditOrchestratorText() {
+  try {
+    const moduleDir = dirname(fileURLToPath(import.meta.url));
+    const skillPath = resolve(moduleDir, '..', '..', '..', 'router', 'skills', 'intent-audit-orchestrator.md');
+    if (existsSync(skillPath)) {
+      return readFileSync(skillPath, 'utf8').trim();
+    }
+    return '';
+  } catch {
+    return '';
+  }
+}
+
+/** Intent-audit orchestrator protocol loaded once at module init. */
+const INTENT_AUDIT_PROTOCOL_TEXT = loadIntentAuditOrchestratorText();
+
 const GSR_AGENT_PREFIX = 'gsr-';
 
 /**
@@ -219,6 +240,122 @@ export function generateOpenCodeOverlay(config, options = {}) {
     }
   }
 
+  // ── intent-audit: always-on agents ────────────────────────────────────────
+  // Router-level agents used by the verify-gate invocation mode (future).
+  // Command mode uses an anonymous Task sub-agent — these are for the SDD
+  // invocation flow where the blind reviewer and comparator run as named agents.
+
+  const blindProfileEntry = (config.profilesMap instanceof Map)
+    ? config.profilesMap.get('intent-audit-blind') : null;
+  const blindPhase = blindProfileEntry?.content?.phases?.['blind-review'];
+  const blindModel = (typeof blindPhase === 'object' && blindPhase !== null && !Array.isArray(blindPhase))
+    ? (blindPhase.model ?? null) : null;
+  const blindRawFallbacks = (typeof blindPhase === 'object' && blindPhase !== null && !Array.isArray(blindPhase))
+    ? (blindPhase.fallbacks ?? []) : [];
+  const blindFallbacks = normalizeFallbacks(blindRawFallbacks).map(fb => ({
+    model: typeof fb === 'string' ? fb : fb.model,
+    on: (typeof fb === 'object' && Array.isArray(fb.on)) ? fb.on : ['any'],
+  }));
+  const blindSkill = loadSkillContent('intent-audit-blind');
+  if (blindSkill) {
+    const blindEntry = {
+      // Name and description are intentionally opaque — suggestive names cause
+      // orchestrators to invent judgment-day style workflows automatically.
+      // This agent is ONLY for verify-gate invocation mode (not command mode).
+      description: 'GSR verify-gate phase worker A — reserved for SDD verify invocation. Do NOT use for [gsr-intent-audit] commands.',
+      hidden: true,
+      tools: { read: true, bash: true },
+      systemPrompt: blindSkill,
+      _gsr_generated: true,
+      _gsr_fallbacks: { 'blind-review': blindFallbacks },
+    };
+    if (blindModel) blindEntry.model = blindModel;
+    agents[`${GSR_AGENT_PREFIX}ia-verify-worker-a`] = blindEntry;
+  }
+
+  const compareProfileEntry = (config.profilesMap instanceof Map)
+    ? config.profilesMap.get('intent-audit-compare') : null;
+  const comparePhase = compareProfileEntry?.content?.phases?.['intent-comparison'];
+  const compareModel = (typeof comparePhase === 'object' && comparePhase !== null && !Array.isArray(comparePhase))
+    ? (comparePhase.model ?? null) : null;
+  const compareRawFallbacks = (typeof comparePhase === 'object' && comparePhase !== null && !Array.isArray(comparePhase))
+    ? (comparePhase.fallbacks ?? []) : [];
+  const compareFallbacks = normalizeFallbacks(compareRawFallbacks).map(fb => ({
+    model: typeof fb === 'string' ? fb : fb.model,
+    on: (typeof fb === 'object' && Array.isArray(fb.on)) ? fb.on : ['any'],
+  }));
+  const compareSkill = loadSkillContent('intent-audit-compare');
+  if (compareSkill) {
+    const compareEntry = {
+      // Same as above — opaque name to prevent automatic workflow invention.
+      description: 'GSR verify-gate phase worker B — reserved for SDD verify invocation. Do NOT use for [gsr-intent-audit] commands.',
+      hidden: true,
+      tools: { read: true },
+      systemPrompt: compareSkill,
+      _gsr_generated: true,
+      _gsr_fallbacks: { 'intent-comparison': compareFallbacks },
+    };
+    if (compareModel) compareEntry.model = compareModel;
+    agents[`${GSR_AGENT_PREFIX}ia-verify-worker-b`] = compareEntry;
+  }
+
+  // ── gsr-code-reader: reads code diffs and describes what the code does ────
+  // Dedicated single-mission agent for the /gsr-intent-audit command.
+  // Reads the diff, describes the functionality — no external context contamination.
+  // Model is configurable via intent-audit-runner.router.yaml.
+  const runnerProfileEntry = (config.profilesMap instanceof Map)
+    ? config.profilesMap.get('intent-audit-runner') : null;
+  const runnerPhase = runnerProfileEntry?.content?.phases?.['run'];
+  const runnerModel = (typeof runnerPhase === 'object' && runnerPhase !== null && !Array.isArray(runnerPhase))
+    ? (runnerPhase.model ?? null) : null;
+  const runnerRawFallbacks = (typeof runnerPhase === 'object' && runnerPhase !== null && !Array.isArray(runnerPhase))
+    ? (runnerPhase.fallbacks ?? []) : [];
+  const runnerFallbacks = normalizeFallbacks(runnerRawFallbacks).map(fb => ({
+    model: typeof fb === 'string' ? fb : fb.model,
+    on: (typeof fb === 'object' && Array.isArray(fb.on)) ? fb.on : ['any'],
+  }));
+  const runnerSkill = loadSkillContent('intent-audit-runner');
+  if (runnerSkill) {
+    const runnerEntry = {
+      description: 'Code Reader — reads diffs and describes what the code does, without external context contamination',
+      hidden: false,
+      tools: { bash: true, task: false, delegate: false, read: false, write: false, edit: false },
+      systemPrompt: runnerSkill,
+      _gsr_generated: true,
+      _gsr_fallbacks: { run: runnerFallbacks },
+    };
+    if (runnerModel) runnerEntry.model = runnerModel;
+    agents[`${GSR_AGENT_PREFIX}code-reader`] = runnerEntry;
+  }
+
+  // ── Local SDD agents: inject *-local agents from global opencode.json ─────
+  // When the global opencode config defines agents named *-local (e.g.
+  // sdd-orchestrator-local, sdd-apply-local, …), they are automatically
+  // included in every project overlay so the user can select them via Tab
+  // without manually copying them to each project's opencode.json.
+  //
+  // Rules:
+  //   - Only agents whose name ends with "-local" are picked up.
+  //   - Agents are injected AS-IS (model, prompt, tools, etc. unchanged).
+  //   - They are NOT prefixed with gsr- and NOT marked _gsr_generated,
+  //     so they survive the overlay cleanup cycle as permanent entries.
+  //   - If the project's opencode.json already has an agent with the same
+  //     name, the project-level definition wins (no overwrite).
+  try {
+    if (existsSync(OPENCODE_CONFIG_PATH)) {
+      const globalRaw = readFileSync(OPENCODE_CONFIG_PATH, 'utf8');
+      const globalConfig = JSON.parse(globalRaw);
+      const globalAgents = globalConfig?.agent ?? {};
+      for (const [name, def] of Object.entries(globalAgents)) {
+        if (!name.endsWith('-local')) continue;
+        if (agents[name]) continue;          // project already has it → skip
+        agents[name] = { ...def };           // inject a shallow copy
+      }
+    }
+  } catch {
+    // Non-blocking: if global config can't be read, skip silently.
+  }
+
   return { agent: agents, warnings };
 }
 
@@ -332,7 +469,7 @@ function buildTribunalSubAgents(profileName, tribunalConfig, agents) {
       description: `Tribunal minister ${i + 1} for ${profileName}`,
       hidden: true,
       tools: { ...TRIBUNAL_TOOLS.minister },
-      systemPrompt: loadSkillContent('gsr-usage') + HEARTBEAT_SKILL_REF,
+      systemPrompt: loadSkillContent('tribunal-minister') + HEARTBEAT_SKILL_REF,
       _gsr_generated: true,
     };
   }
@@ -346,6 +483,60 @@ function buildTribunalSubAgents(profileName, tribunalConfig, agents) {
       hidden: true,
       tools: { ...TRIBUNAL_TOOLS.radar },
       systemPrompt: loadSkillContent('tribunal-radar') + HEARTBEAT_SKILL_REF,
+      _gsr_generated: true,
+    };
+  }
+}
+
+/**
+ * Collect intent-audit configuration from a preset's `intent_audit` key.
+ *
+ * @param {object|null|undefined} preset
+ * @returns {{ hasAny: boolean, role: string|null, model: string|null }}
+ */
+export function collectIntentAuditConfig(preset) {
+  const ia = preset?.intent_audit;
+  if (!ia) return { hasAny: false };
+  return {
+    hasAny: true,
+    role: ia.role ?? null,    // 'blind-reviewer' | 'comparator'
+    model: ia.model ?? null,  // optional model override
+  };
+}
+
+/**
+ * Build intent-audit sub-agent entries for a profile.
+ *
+ * Follows the same pattern as buildTribunalSubAgents (design D10):
+ *   - Named `gsr-{profile}-intent-audit-blind` or `gsr-{profile}-intent-audit-compare`
+ *   - hidden: true — advisory agents, not for sidebar display
+ *   - tools: read-only — sub-agents read diffs only
+ *   - systemPrompt (NOT prompt) — replaces session context for full isolation
+ *   - _gsr_generated: true — unified-sync can manage these
+ *
+ * @param {string} profileName
+ * @param {object} config - Output of collectIntentAuditConfig()
+ * @param {object} agents - mutated in place
+ */
+function buildIntentAuditSubAgents(profileName, config, agents) {
+  if (!config.hasAny) return;
+
+  if (config.role === 'blind-reviewer') {
+    agents[`${GSR_AGENT_PREFIX}${profileName}-intent-audit-blind`] = {
+      description: `Intent audit blind reviewer for ${profileName}`,
+      hidden: true,
+      tools: { read: true },
+      systemPrompt: loadSkillContent('intent-audit-blind'),
+      _gsr_generated: true,
+    };
+  }
+
+  if (config.role === 'comparator') {
+    agents[`${GSR_AGENT_PREFIX}${profileName}-intent-audit-compare`] = {
+      description: `Intent audit comparator for ${profileName}`,
+      hidden: true,
+      tools: { read: true },
+      systemPrompt: loadSkillContent('intent-audit-compare'),
       _gsr_generated: true,
     };
   }
@@ -420,6 +611,12 @@ function buildAgentEntry(presetName, preset, agents, warnings, persona, cwd, rou
         resolvedPrompt = resolvedPrompt + '\n\n' + HEARTBEAT_PROTOCOL_TEXT;
       }
 
+      // Inject intent-audit protocol after other content but as a clearly delimited section.
+      // Explicit trigger-based protocol — model follows it when it sees [gsr-intent-audit].
+      if (INTENT_AUDIT_PROTOCOL_TEXT && !resolvedPrompt.includes('GSR Intent-Audit Protocol')) {
+        resolvedPrompt = resolvedPrompt + '\n\n' + INTENT_AUDIT_PROTOCOL_TEXT;
+      }
+
       // Build _gsr_fallbacks map keyed by phase name.
       // Each entry is Array<{model: string, on: string[]}> — preserves on-conditions
       // for error-type-aware fallback selection by the orchestrator.
@@ -476,6 +673,9 @@ function buildAgentEntry(presetName, preset, agents, warnings, persona, cwd, rou
       if (tribunalConfig.hasAny) {
         buildTribunalSubAgents(presetName, tribunalConfig, agents);
       }
+
+      // Note: intent-audit agents are generated at router level (not profile-scoped)
+      // — see the always-on block before the return statement in generateOpenCodeOverlay().
 }
 
 /**
@@ -683,6 +883,7 @@ export function deployGsrCommands(options = {}) {
   const RENAME_MAP = {
     'gsr.md': 'gsr-manual.md',
     'gsr-fallback.md': 'gsr-fallback-manual.md',
+    'gsr-intent-audit.md': 'gsr-intent-audit-manual.md',
   };
 
   for (const file of sourceFiles) {
